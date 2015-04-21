@@ -11,7 +11,7 @@ entity. So a load balanced entity may in fact comprise several hosts despite bei
 
 A bw2 packet is referred to as a *message* and is in no way restricted by the underlying network packet size.
 
-The component that distributes messages from *clients* that are *producers* to clients that are *consumers* is called a *layer 7 router* or simply *router* in bosswave 2. This differs from the original BOSSWAVE which refered to these as brokers. This is an attempt to prevent new users of bosswave from comparing it to traditional pub/sub architectures, as this will lead to many false assumptions about the system. 
+The component that distributes messages from *clients* that are *producers* to clients that are *consumers* is called a *layer 7 router* or simply *router* in bosswave 2. This differs from the original BOSSWAVE which refered to these as brokers. This is an attempt to prevent new users of bosswave from comparing it to traditional pub/sub architectures, as this will lead to many false assumptions about the system.
 
 There exists a distributed hash table referred to as *the DHT* throughout this document which is used to store certain bootstrapping information.
 
@@ -21,19 +21,19 @@ A *hash* in this system refers to a sha256 hash.
 
 A chain of DoTs from the canonical owner to another entity is called a *DoT chain* or *DChain*. Often this is also referred to by hash.
 
-A *URI* in this sytem follows the schema of: 
+A *URI* in this sytem follows the schema of:
 
 	bw://root_element/more/path/elements/
 
 The first element of the URI is the url safe base64 encoded verifying key of the canonical owner of the uri. This is referred to as the *master verifying key* or *MVK*. If this is replaced with a host name, the VK can be retrieved via a TXT record lookup on _bw2_vk.hostname via DNS, although implementers SHOULD reject any DNS servers not using DNSSEC.
 
 A *routing table* is the equivalent of the affinity certificate in the original BOSSWAVE. It is a signed document listing the URI prefixes, corresponding router verifying key, and preference weight for URI's under a given verifying key. If a producer lists multiple routers with the same prefix, it SHOULD duplicate all
-its messages and send them to all the listed routers. In this way, a consumer wishing to use a URI may choose any of the listed routers. This requirement is not a MUST, however, as network problems to one router should not prevent the producer from sending messages to the other routers on the routing table. 
+its messages and send them to all the listed routers. In this way, a consumer wishing to use a URI may choose any of the listed routers. This requirement is not a MUST, however, as network problems to one router should not prevent the producer from sending messages to the other routers on the routing table.
 
 ## Underlying network
 
-Bosswave 2 is an overlay network, constructed upon TCP/IP. The native bosswave protocol is over TCP, and the recommended port is 28589. Routers MAY also choose to support BW/HTTP, BW/UDP. In addition there 
-from clients or other routers. 
+Bosswave 2 is an overlay network, constructed upon TCP/IP. The native bosswave protocol is over TCP, and the recommended port is 28589. Routers MAY also choose to support BW/HTTP, BW/UDP. In addition there
+from clients or other routers.
 
 ## Router messages
 
@@ -111,7 +111,7 @@ for example).
 	master_verifying_key/further/elements
 
 	so as an optimisation, we transfer the MVK in binary. The URI is UTF-8 encoded, '/'
-	reserved for path seperators, '+' reserved for any one path element and '*' is reserved 
+	reserved for path seperators, '+' reserved for any one path element and '*' is reserved
 	as a match all. Note that both '+' and '*' require more permissions than a simple subscribe
 
 ### TAP
@@ -157,7 +157,7 @@ for example).
 
 ### OBTAIN_AFFINITY
 
-Clients obtain 
+Clients obtain
 
 
 ## Router verified capabilities
@@ -204,12 +204,12 @@ Allocations:
 
 1.0.0.0/8 Reserved for BOSSWAVE internal objects
 
-1.0.1.0 Symlink 
-A symlink contains a URI that should be transparently resolved for operations. 
+1.0.1.0 Symlink
+A symlink contains a URI that should be transparently resolved for operations.
 
 1.0.1.1 Privilege escalation
 A PrivEsc object indicates that it is possible for the recipient to escalate their
-privileges. It can be used for publicly accessible information (Any client messaging 
+privileges. It can be used for publicly accessible information (Any client messaging
 X URI will receive a DoT to access this URI). Or for conversion of permissions (show
 me your DCHain to URI X and I will issue you permissions for DChain Y, useful for simlinks).
 
@@ -235,8 +235,8 @@ first attempt to resolve it from the DHT.
 ## Relay
 
 If traffic is sent to the router, but it is not the designated carrier on the URI's routing table,
-should the router forward the traffic to the correct router, instead of sending BWCP_NOTCARRIER. 
-Similarly if a client subscribes to a URI outside the domain of the router, should it subscribe 
+should the router forward the traffic to the correct router, instead of sending BWCP_NOTCARRIER.
+Similarly if a client subscribes to a URI outside the domain of the router, should it subscribe
 upstream or should it reject.
 
 ## Elaborate (ondemand, preemptive, none)
@@ -253,8 +253,8 @@ translation. These mechansims might be unix domain socket, HTTP, or a symmetrica
 
 Although a router may be responsible for a given URI, it may only wish to serve responses to clients
 that can show a chain proving they are on the whitelist. This is useful for constructing high traffic
-topics: you can have multiple endpoint routers that handle the traffic, and stay synchronized via 
-a spanning tree of core routers that peer. Note that these permissions are not the same as pub/sub 
+topics: you can have multiple endpoint routers that handle the traffic, and stay synchronized via
+a spanning tree of core routers that peer. Note that these permissions are not the same as pub/sub
 on the underlying data.
 
 System architecture
@@ -303,12 +303,11 @@ Peering whitelist: No
 Implementation plan
 -------------------
 
-Go based router software. 
+Go based router software.
 - supports elaborated DChain verification
 - Supports publish + subscribe (no + or *, no publish to 1)
 - Supports text based OOB
 
-
-
-
-
+routers subscribe to routers. To handle a core router restart and the subsequent loss
+of subscription information, clients should retain a list of their subscriptions and
+resubscribe if the connection is terminated.

@@ -2,6 +2,7 @@ package core
 
 import (
 	"container/list"
+	"strings"
 	"sync"
 	"sync/atomic"
 )
@@ -26,22 +27,29 @@ type Topic struct {
 	V string
 }
 
+type subscription struct {
+	subid uint32
+	tap   bool
+}
 type Terminus struct {
 	// Crude workaround
 	q_lock sync.RWMutex
 	//topic onto cid onto subid
-	subs map[string]map[uint32]uint32
+	subs map[string]map[uint32]subscription
 	//subid onto string, uid is got from context
 	rsubs      map[uint32]string
 	c_maplock  sync.RWMutex
 	cmap       map[uint32]*Client
 	cid_head   uint32
 	subid_head uint32
+	//map topic onto message
+	persistLock sync.RWMutex
+	persist     map[string]*Message
 }
 
 func CreateTerminus() *Terminus {
 	rv := &Terminus{}
-	rv.subs = make(map[string]map[uint32]uint32)
+	rv.subs = make(map[string]map[uint32]subscription)
 	rv.rsubs = make(map[uint32]string)
 	rv.cmap = make(map[uint32]*Client)
 	return rv
@@ -57,12 +65,20 @@ func (tm *Terminus) CreateClient(queueChanged func()) *Client {
 }
 
 func (cl *Client) Publish(m *Message) {
+
 	cl.tm.q_lock.RLock()
 	clientlist, ok := cl.tm.subs[m.TopicSuffix]
 	cl.tm.q_lock.RUnlock()
 	changed_clients := make(map[uint32]*Client)
+	count := 0 //how many we delivered it to
 	if ok {
-		for c := range clientlist {
+		//We are relying on the fact that golang randomises iteration order here
+		//if this ever changes, we need to manually randomise it ourself
+
+		for c, sub := range clientlist {
+			if !sub.tap && m.Consumers != 0 && count == m.Consumers {
+				continue //We hit limit
+			}
 			cl.tm.c_maplock.RLock()
 			cle, ok := cl.tm.cmap[c]
 			if !ok {
@@ -71,38 +87,81 @@ func (cl *Client) Publish(m *Message) {
 			cl.tm.c_maplock.RUnlock()
 			cle.mlist.PushBack(m)
 			changed_clients[c] = cle
+			count++
 		}
 		for _, v := range changed_clients {
 			v.queueChanged()
 		}
 	}
+	if m.Consumers != 0 && count < m.Consumers {
+		m.Consumers -= count //Set consumers to how many deliveries we have left
+	}
+	if m.Persist != 0 && !(m.Consumers != 0 && count == m.Consumers) {
+		cl.tm.persistLock.Lock()
+		cl.tm.persist[m.TopicSuffix] = m
+		cl.tm.persistLock.Unlock()
+	}
 }
 
 //Subscribe should bind the given handler with the given topic
 //returns the identifier used for Unsubscribe
-func (cl *Client) Subscribe(topic string) uint32 {
+func (cl *Client) Subscribe(topic string, tap bool) uint32 {
 	subid := atomic.AddUint32(&cl.tm.subid_head, 1)
 	cl.tm.q_lock.Lock()
 	topicmap, ok := cl.tm.subs[topic]
 	if !ok {
-		topicmap = make(map[uint32]uint32)
+		topicmap = make(map[uint32]subscription)
 		cl.tm.subs[topic] = topicmap
-		topicmap[cl.cid] = subid
+		topicmap[cl.cid] = subscription{subid: subid, tap: tap}
 		cl.tm.rsubs[subid] = topic
 		cl.tm.q_lock.Unlock()
 		return subid
 	}
-	existing_subid, ok := topicmap[cl.cid]
+	existing_sub, ok := topicmap[cl.cid]
 	if ok {
 		cl.tm.q_lock.Unlock()
-		return existing_subid
-	} else {
-		topicmap[cl.cid] = subid
-		cl.tm.rsubs[subid] = topic
-		cl.tm.q_lock.Unlock()
-		return subid
+		return existing_sub.subid
 	}
+	topicmap[cl.cid] = subscription{subid: subid, tap: tap}
+	cl.tm.rsubs[subid] = topic
+	cl.tm.q_lock.Unlock()
+	return subid
 
+}
+
+func (cl *Client) Query(topic string, tap bool) *Message {
+	cl.tm.persistLock.RLock()
+	m, ok := cl.tm.persist[topic]
+	cl.tm.persistLock.RUnlock()
+	if ok {
+		//Should we be monitoring delivery count
+		if !tap && m.Consumers > 0 {
+			m.Consumers--
+			//Last delivery, delete it
+			if m.Consumers == 0 {
+				cl.tm.persistLock.Lock()
+				delete(cl.tm.persist, topic)
+				cl.tm.persistLock.Unlock()
+			}
+		}
+		return m
+	}
+	return nil
+}
+
+//List will return a list of known immediate children for a given URI. A known
+//child can only exist if the children streams have persisted messages
+func (cl *Client) List(topic string) []string {
+	rv := make([]string, 0, 30)
+	cl.tm.persistLock.RLock()
+	tlen := len(topic)
+	for key := range cl.tm.persist {
+		if strings.HasPrefix(key, topic) {
+			rv = append(rv, key[tlen:])
+		}
+	}
+	cl.tm.persistLock.RUnlock()
+	return rv
 }
 
 //Unsubscribe does what it says. For now the topic system is crude

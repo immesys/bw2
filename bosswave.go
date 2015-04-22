@@ -1,10 +1,6 @@
 package bw2
 
-import (
-	"fmt"
-
-	"github.com/immesys/bw2/internal/core"
-)
+import "github.com/immesys/bw2/internal/core"
 
 // This is the main function interface for BW2. All Out Of Band providers will
 // use this interface, and it is the main interface for creating GO based BW2
@@ -27,20 +23,17 @@ func OpenBWContext(config *core.BWConfig) *BW {
 }
 
 type BosswaveClient struct {
-	bw *BW
-	cl *core.Client
+	bw  *BW
+	cl  *core.Client
+	irq func()
 }
 
-func OnChanged() {
-	fmt.Println("Got changed")
-}
-
-func (bw *BW) CreateClient() *BosswaveClient {
-	return &BosswaveClient{bw: bw, cl: bw.tm.CreateClient(OnChanged)}
+func (bw *BW) CreateClient(queueChanged func()) *BosswaveClient {
+	return &BosswaveClient{bw: bw, irq: queueChanged, cl: bw.tm.CreateClient(queueChanged)}
 }
 
 func (c *BosswaveClient) Publish(topic string, message string) error {
-	//Typically we would now send this to a security check
+	//Typically we would now send this to a security check, also message would be different
 	msg := &core.Message{}
 	msg.TopicSuffix = topic
 	c.cl.Publish(msg)
@@ -68,6 +61,6 @@ func (c *BosswaveClient) Publish(topic string, message string) error {
 // 	h := HandlerWrapper{target: f}
 // 	return h
 // }
-func (c *BosswaveClient) Subscribe(topic string) {
-	c.cl.Subscribe(topic)
+func (c *BosswaveClient) Subscribe(topic string, tap bool) {
+	c.cl.Subscribe(topic, tap)
 }

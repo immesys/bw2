@@ -76,22 +76,10 @@ func (s *snode) rmatchSubs(parts []string, visitor func(s subscription)) {
 		s.lock.RUnlock()
 		return
 	}
-	// if parts[0] == "+" {
-	// 	ch := make([]*snode, len(s.children))
-	// 	s.lock.RLock()
-	// 	idx := 0
-	// 	for _, v := range s.children {
-	// 		ch[idx] = v
-	// 		idx++
-	// 	}
-	// 	s.lock.RUnlock()
-	// 	for _, v := range ch {
-	// 		v.rmatchSubs(parts[1:], visitor)
-	// 	}
-	// } else {
 	s.lock.RLock()
 	v1, ok1 := s.children[parts[0]]
 	v2, ok2 := s.children["+"]
+    v3, ok3 := s.children["*"]
 	s.lock.RUnlock()
 	if ok1 {
 		v1.rmatchSubs(parts[1:], visitor)
@@ -99,8 +87,11 @@ func (s *snode) rmatchSubs(parts []string, visitor func(s subscription)) {
 	if ok2 {
 		v2.rmatchSubs(parts[1:], visitor)
 	}
-
-	//}
+    if ok3 {
+        for i:=0; i<len(parts); i++ {
+            v3.rmatchSubs(parts[i:], visitor)
+        }
+    }
 }
 func (s *snode) addSub(parts []string, sub subscription) (uint32, *snode) {
 	if len(parts) == 0 {

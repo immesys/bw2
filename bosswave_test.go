@@ -14,7 +14,7 @@ func TestBasic0(t *testing.T) {
 		fmt.Println("Queue changed")
 
 	})
-	client.Subscribe("/a/+/+", false)
-	client.Publish("/a/b", "foo")
+	client.Subscribe("/a/*/b", false)
+	client.Publish("/a/b/b/b", "foo")
 	//client.Publish("/a/b/c", "foo")
 }

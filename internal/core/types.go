@@ -26,6 +26,22 @@ type Message struct {
 	ExpireTime  time.Time
 }
 
+type Dot struct {
+	FromVK    []byte
+	ToVK      []byte
+	Signature []byte
+	Params    map[string][]byte
+}
+type SubReq struct {
+	//	Type     uint8
+	DChain   []Dot
+	MVK      []byte
+	Topic    string
+	Tap      bool
+	Client   *Client
+	Dispatch func(m *Message)
+}
+
 func (m *Message) Init() {
 	m.RXTime = time.Now()
 	switch {

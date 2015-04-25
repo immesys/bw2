@@ -1,5 +1,15 @@
 package core
 
+// If a message enters the terminus, it has already had its signature verified,
+// and it is destined for an MVK that we are responsible for,
+// otherwise a different part of the program
+// would have handled it.
+
+// For subscribe requests, a valid D Similarly, any subscribe requests entering the
+// terminus have been verified, same for tap, ls etc.
+// This might not be possible for subscribes with wildcards, but the exiting
+// messages will be verified by outer layers
+
 import (
 	"container/list"
 	"math/rand"
@@ -7,13 +17,6 @@ import (
 	"sync"
 	"sync/atomic"
 )
-
-// If a message enters the terminus, it has already had its signature verified,
-// and it is destined for our MVK, otherwise a different part of the program
-// would have handled it. Similarly, any subscribe requests entering the
-// terminus have been verified, same for tap, ls etc.
-// This might not be possible for subscribes with wildcards, but the exiting
-// messages will be verified by outer layers
 
 type SubscriptionHandler interface {
 	Handle(m *Message)
@@ -25,9 +28,27 @@ type Client struct {
 	queueChanged func()
 	mlist        *list.List
 	tm           *Terminus
+	mlistLock    sync.Mutex
 }
+
+func (cl *Client) GetFront() *MsgSubPair {
+	cl.mlistLock.Lock()
+	defer cl.mlistLock.Unlock()
+	ms := cl.mlist.Front()
+	if ms != nil {
+		cl.mlist.Remove(ms)
+		return ms.Value.(*MsgSubPair)
+	}
+	return nil
+}
+
 type Topic struct {
 	V string
+}
+
+type MsgSubPair struct {
+	M *Message
+	S *SubReq
 }
 
 type snode struct {
@@ -45,6 +66,7 @@ type subscription struct {
 	subid  uint32
 	client *Client
 	tap    bool
+	req    *SubReq
 }
 type Terminus struct {
 	// Crude workaround
@@ -52,7 +74,7 @@ type Terminus struct {
 	//topic onto cid onto subid
 	//subs map[string]map[uint32]subscription
 	//subid onto string, uid is got from context
-	rsubs map[uint32]string
+	rsubs map[uint32]*SubReq
 
 	c_maplock  sync.RWMutex
 	cmap       map[uint32]*Client
@@ -79,7 +101,7 @@ func (s *snode) rmatchSubs(parts []string, visitor func(s subscription)) {
 	s.lock.RLock()
 	v1, ok1 := s.children[parts[0]]
 	v2, ok2 := s.children["+"]
-    v3, ok3 := s.children["*"]
+	v3, ok3 := s.children["*"]
 	s.lock.RUnlock()
 	if ok1 {
 		v1.rmatchSubs(parts[1:], visitor)
@@ -87,11 +109,11 @@ func (s *snode) rmatchSubs(parts []string, visitor func(s subscription)) {
 	if ok2 {
 		v2.rmatchSubs(parts[1:], visitor)
 	}
-    if ok3 {
-        for i:=0; i<len(parts); i++ {
-            v3.rmatchSubs(parts[i:], visitor)
-        }
-    }
+	if ok3 {
+		for i := 0; i < len(parts); i++ {
+			v3.rmatchSubs(parts[i:], visitor)
+		}
+	}
 }
 func (s *snode) addSub(parts []string, sub subscription) (uint32, *snode) {
 	if len(parts) == 0 {
@@ -138,7 +160,7 @@ func (tm *Terminus) RMatchSubs(topic string, visitor func(s subscription)) {
 
 func CreateTerminus() *Terminus {
 	rv := &Terminus{}
-	rv.rsubs = make(map[uint32]string)
+	rv.rsubs = make(map[uint32]*SubReq)
 	rv.cmap = make(map[uint32]*Client)
 	rv.stree = NewSnode()
 	return rv
@@ -170,8 +192,8 @@ func (cl *Client) Publish(m *Message) {
 		if !sub.tap && m.Consumers != 0 && count == m.Consumers {
 			continue //We hit limit
 		}
-
-		sub.client.mlist.PushBack(m)
+		ms := &MsgSubPair{M: m, S: sub.req}
+		sub.client.mlist.PushBack(ms)
 		changed_clients[c] = sub.client
 		count++
 	}
@@ -191,38 +213,24 @@ func (cl *Client) Publish(m *Message) {
 
 //Subscribe should bind the given handler with the given topic
 //returns the identifier used for Unsubscribe
-func (cl *Client) Subscribe(topic string, tap bool) uint32 {
+//func (cl *Client) Subscribe(topic string, tap bool, meta interface{}) (uint32, bool) {
+func (cl *Client) Subscribe(s *SubReq) *SubReq {
 	subid := atomic.AddUint32(&cl.tm.subid_head, 1)
-	newsub := subscription{subid: subid, tap: tap, client: cl}
+	newsub := subscription{subid: subid, tap: s.Tap, client: cl, req: s}
 
 	//Add to the sub tree
-	subid = cl.tm.AddSub(topic, newsub)
+	subid = cl.tm.AddSub(s.Topic, newsub)
 	//the subid might not be the one we specified, if it was already in the tree
 	if subid == newsub.subid { //was new
 		cl.tm.q_lock.Lock()
-		cl.tm.rsubs[subid] = topic
+		cl.tm.rsubs[subid] = s
 		cl.tm.q_lock.Unlock()
+		return s
 	}
-	return subid
-	// topicmap, ok := cl.tm.subs[topic]
-	// if !ok {
-	// 	topicmap = make(map[uint32]subscription)
-	// 	cl.tm.subs[topic] = topicmap
-	// 	topicmap[cl.cid] = subscription{subid: subid, tap: tap}
-	//
-	//
-	// 	return subid
-	// }
-	// existing_sub, ok := topicmap[cl.cid]
-	// if ok {
-	// 	cl.tm.q_lock.Unlock()
-	// 	return existing_sub.subid
-	// }
-	// topicmap[cl.cid] =
-	// cl.tm.rsubs[subid] = topic
-	// cl.tm.q_lock.Unlock()
-	// return subid
-
+	cl.tm.q_lock.RLock()
+	rv := cl.tm.rsubs[subid]
+	cl.tm.q_lock.RUnlock()
+	return rv
 }
 
 func (cl *Client) Query(topic string, tap bool) *Message {

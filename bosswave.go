@@ -144,7 +144,98 @@ func RestrictBy(from string, by string) (string, bool) {
 }
 */
 
-func RestrictBy1(from string, by string) (string, bool) {
+func RestrictBy(from string, by string) (string, bool) {
+	//case A F, B
+	//case B F* B
+	//case C F B*
+	//case D F* B*
+	fp := strings.Split(from, "/")
+	bp := strings.Split(by, "/")
+	fout := make([]string, 0, len(fp)+len(bp))
+	bout := make([]string, 0, len(fp)+len(bp))
+	var fsx, bsx int
+	for fsx = 0; fsx < len(fp) && fp[fsx] != "*"; fsx++ {
+	}
+	for bsx = 0; bsx < len(bp) && bp[bsx] != "*"; bsx++ {
+	}
+	fi, bi := 0, 0
+	fni, bni := len(fp)-1, len(bp)-1
+
+	//phase 1
+	//emit matching prefix
+	for ; fi < len(fp) && bi < len(bp); fi, bi = fi+1, bi+1 {
+		if fp[fi] == bp[bi] || bp[bi] == "+" {
+			fout = append(fout, fp[fi])
+		} else if fp[fi] == "+" {
+			fout = append(fout, bp[bi])
+		} else {
+			break
+		}
+	}
+	fmt.Printf("finished phase 1 fout=%v bout=%v\n", fout, bout)
+	//phase 2
+	//emit matching suffix
+	for fni > fi && bni > bi {
+		if fp[fni] == bp[bni] || bp[bni] == "+" {
+			bout = append(bout, fp[fni])
+		} else if fp[fi] == "+" {
+			bout = append(bout, bp[bni])
+		} else {
+			break
+		}
+		fni--
+		bni--
+	}
+	if fi == len(fp) && bi == len(bp) {
+		//valid A
+		return strings.Join(fout, "/"), true
+	}
+	fmt.Printf("finished phase 2 fout=%v bout=%v\n", fout, bout)
+	//phase 3
+	//emit front
+	//  a* : *b
+	//  *a : b*
+	//  *  : ab
+	//  ab : *
+	//  a* : bd !
+	//  *a : bd !
+	if fp[fi] == "*" {
+		for ; bp[bi] != "*" && bi <= bni; bi++ {
+			fout = append(fout, bp[bi])
+		}
+	} else if bp[bi] == "*" {
+		for ; fp[fi] != "*" && fi <= fni; fi++ {
+			fout = append(fout, fp[fi])
+		}
+	}
+	fmt.Printf("finished phase 3 fout=%v bout=%v\n", fout, bout)
+	//phase 4
+	//emit back
+	if fp[fni] == "*" {
+		for ; bp[bni] != "*" && bni >= bi; bni-- {
+			bout = append(bout, bp[bni])
+		}
+	} else if bp[bni] == "*" {
+		for ; fp[fni] != "*" && fni >= fi; fni-- {
+			bout = append(bout, fp[fni])
+		}
+	}
+
+	fmt.Printf("finished phase 4 fout=%v bout=%v\n", fout, bout)
+
+	//phase 5
+	//emit star if they both have it
+	if fi == fni && fp[fi] == "*" && bi=bni && bp[bi] == "*" {
+		fout = append(fout, "*")
+	} else {
+		fmt.Printf("Would fail, fout=%v, bout=%v, fi=%v, fni=%v, bi=%v, bni=%v",fout,bout,fi,fni,bi,bni)
+	}
+
+	return "", false
+}
+
+/*
+func RestrictBy(from string, by string) (string, bool) {
 	fp := strings.Split(from, "/")
 	bp := strings.Split(by, "/")
 	fmt.Printf("ivk %v %v\n", fp, bp)
@@ -159,7 +250,7 @@ func RestrictBy1(from string, by string) (string, bool) {
 	flp := fsx > bsx
 	fls := len(fp)-fsx > len(bp)-bsx
 	rightstar := fsx
-	if bsx > rightstar {
+	if bsx > rightstar && bsx != len(bp) {
 		rightstar = bsx
 	}
 	leftstar := fsx
@@ -210,9 +301,12 @@ func RestrictBy1(from string, by string) (string, bool) {
 	fmt.Printf("mid out is %v %v %v", out, fi, bi)
 	//phase 3 star
 	//emit a star
-	out = append(out, "*")
-	fi++
-	bi++
+	if fsx != len(fp) && bsx != len(bp) {
+		out = append(out, "*")
+		fi++
+		bi++
+	}
+
 	//phase 4 after star, before rightstar
 	//emit either f or b unchanged
 	if fls {
@@ -246,6 +340,7 @@ func RestrictBy1(from string, by string) (string, bool) {
 		return "", false
 	}
 }
+*/
 
 /*
 func RestrictBy(from string, by string) (string, bool) {

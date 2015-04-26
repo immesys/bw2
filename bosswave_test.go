@@ -66,13 +66,13 @@ func TestRestrict(t *testing.T) {
 		// {"a/b/c", "a/b", "", false},
 		// {"a/+/c", "a/b/c", "a/b/c", true},
 		// {"a/b/c", "a/+/c", "a/b/c", true},
-		// {"a/+/c", "a/+/c", "a/+/c", true},
+		//{"a/+/c", "a/+/c", "a/+/c", true},
 
 		//case 1: left star
 		// {"a/*", "a/b/c", "a/b/c", true},
 		// {"a/*", "a/*", "a/*", true},
 		//{"*/a", "a/b/c", "", false},
-		{"*/a", "a/b/c/a", "a/b/c/a", true},
+		//{"*/a", "a/b/c/a", "a/b/c/a", true},
 		//{"*/a", "a", "a", true},
 		// {"*/b/c", "a/b/c", "a/b/c", true},
 		// {"a/*/c", "a/c", "a/c", true},
@@ -81,7 +81,7 @@ func TestRestrict(t *testing.T) {
 		// {"+/*/+", "a/b/c/d", "a/b/c/d", true},
 		//
 		// {"a/b/*/c/d", "a/b/x/*/y/c/d", "a/b/x/*/y/c/d", true},
-		// {"a/b/c/d/*/x/y", "a/*/y", "a/b/c/d/*/x/y", true},
+		{"a/b/c/d/*/x/y", "a/*/y", "a/b/c/d/*/x/y", true},
 		// {"a/b/c/d/*/x/y", "a/*/w/x/y", "a/b/c/d/*/w/x/y", true},
 		// {"a/b/*/x/y", "a/b/c/d/*/y", "a/b/c/d/*/x/y", true},
 		// {"a/b/c", "a/b/c", "a/b/c", true},
@@ -91,6 +91,7 @@ func TestRestrict(t *testing.T) {
 		// {"*/c", "a/b/c", "a/b/c", true},
 	}
 	for _, v := range TV {
+		fmt.Printf("Testing %+v \n", v)
 		res, ok := RestrictBy(v.T, v.P)
 		if res != v.Rs || ok != v.Rb {
 			fmt.Printf("Fail %+v, got %v\n", v, res)

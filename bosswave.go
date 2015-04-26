@@ -93,7 +93,7 @@ func RestrictBy(from string, by string) (string, bool) {
 	}
 	//phase 2
 	//emit matching suffix
-	for fni >= fi && bni >= bi {
+	for ; fni >= fi && bni >= bi; fni, bni = fni-1, bni-1 {
 		if fp[fni] == bp[bni] || (bp[bni] == "+" && fp[fni] != "*") {
 			bout = append(bout, fp[fni])
 		} else if fp[fni] == "+" && bp[bni] != "*" {
@@ -101,8 +101,6 @@ func RestrictBy(from string, by string) (string, bool) {
 		} else {
 			break
 		}
-		fni--
-		bni--
 	}
 	//phase 3
 	//emit front

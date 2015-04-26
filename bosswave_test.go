@@ -61,34 +61,41 @@ func TestRestrict(t *testing.T) {
 		Rb bool
 	}{
 		//case 0: no stars
-		// {"a/b/c", "a/b/c", "a/b/c", true},
-		// {"a/b", "a/b/c", "", false},
-		// {"a/b/c", "a/b", "", false},
-		// {"a/+/c", "a/b/c", "a/b/c", true},
-		// {"a/b/c", "a/+/c", "a/b/c", true},
-		//{"a/+/c", "a/+/c", "a/+/c", true},
-
-		//case 1: left star
-		// {"a/*", "a/b/c", "a/b/c", true},
-		// {"a/*", "a/*", "a/*", true},
-		//{"*/a", "a/b/c", "", false},
-		//{"*/a", "a/b/c/a", "a/b/c/a", true},
-		//{"*/a", "a", "a", true},
-		// {"*/b/c", "a/b/c", "a/b/c", true},
-		// {"a/*/c", "a/c", "a/c", true},
-		// {"a/*/c", "a/b/d/e/c", "a/b/d/e/c", true},
-		// {"a/*/c", "a/+/c", "a/+/c", true},
-		// {"+/*/+", "a/b/c/d", "a/b/c/d", true},
+		{"a/b/c", "a/b/c", "a/b/c", true},
+		{"a/b", "a/b/c", "", false},
+		{"a/b/c", "a/b", "", false},
+		{"a/+/c", "a/b/c", "a/b/c", true},
+		{"a/b/c", "a/+/c", "a/b/c", true},
+		{"a/+/c", "a/+/c", "a/+/c", true},
 		//
-		// {"a/b/*/c/d", "a/b/x/*/y/c/d", "a/b/x/*/y/c/d", true},
+		//case 1: left star
+		{"a/*", "a/b/c", "a/b/c", true},
+		{"a/*", "a/*", "a/*", true},
+		{"*/a", "a/b/c", "", false},
+		{"*/a", "a/b/c/a", "a/b/c/a", true},
+		{"*/a", "a", "a", true},
+		{"*/b/c", "a/b/c", "a/b/c", true},
+		{"a/*/c", "a/c", "a/c", true},
+		{"a/*/c", "a/b/d/e/c", "a/b/d/e/c", true},
+		{"a/*/c", "a/+/c", "a/+/c", true},
+		{"a/+/c", "a/*/c", "a/+/c", true},
+		{"+/*/+", "a/b/c/d", "a/b/c/d", true},
+		//case 2: right star
+		{"a/b/c", "a/*", "a/b/c", true},
+		{"a/b/c", "*", "a/b/c", true},
+		{"+/b/c", "*", "+/b/c", true},
+		{"a/b/+", "*/+", "a/b/+", true},
+		{"a/b/c", "*/c", "a/b/c", true},
+		//case 3: both stars
+		{"a/b/*/c/d", "a/b/x/*/y/c/d", "a/b/x/*/y/c/d", true},
 		{"a/b/c/d/*/x/y", "a/*/y", "a/b/c/d/*/x/y", true},
-		// {"a/b/c/d/*/x/y", "a/*/w/x/y", "a/b/c/d/*/w/x/y", true},
-		// {"a/b/*/x/y", "a/b/c/d/*/y", "a/b/c/d/*/x/y", true},
-		// {"a/b/c", "a/b/c", "a/b/c", true},
-		// {"a/*", "a/b/c", "a/b/c", true},
-		// {"a/b/c", "a/*", "a/b/c", true},
-		// {"a/b/c", "*/c", "a/b/c", true},
-		// {"*/c", "a/b/c", "a/b/c", true},
+		{"a/b/c/d/*/x/y", "a/*/w/x/y", "a/b/c/d/*/w/x/y", true},
+		{"a/b/*/x/y", "a/b/c/d/*/y", "a/b/c/d/*/x/y", true},
+		{"a/b/c", "a/b/c", "a/b/c", true},
+		{"a/*", "a/b/c", "a/b/c", true},
+		{"a/b/c", "a/*", "a/b/c", true},
+		{"a/b/c", "*/c", "a/b/c", true},
+		{"*/c", "a/b/c", "a/b/c", true},
 	}
 	for _, v := range TV {
 		fmt.Printf("Testing %+v \n", v)

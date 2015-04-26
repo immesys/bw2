@@ -1,7 +1,6 @@
 package bw2
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/immesys/bw2/internal/core"
@@ -145,10 +144,6 @@ func RestrictBy(from string, by string) (string, bool) {
 */
 
 func RestrictBy(from string, by string) (string, bool) {
-	//case A F, B
-	//case B F* B
-	//case C F B*
-	//case D F* B*
 	fp := strings.Split(from, "/")
 	bp := strings.Split(by, "/")
 	fout := make([]string, 0, len(fp)+len(bp))
@@ -160,25 +155,29 @@ func RestrictBy(from string, by string) (string, bool) {
 	}
 	fi, bi := 0, 0
 	fni, bni := len(fp)-1, len(bp)-1
-
+	emit := func() (string, bool) {
+		for i := 0; i < len(bout); i++ {
+			fout = append(fout, bout[len(bout)-i-1])
+		}
+		return strings.Join(fout, "/"), true
+	}
 	//phase 1
 	//emit matching prefix
 	for ; fi < len(fp) && bi < len(bp); fi, bi = fi+1, bi+1 {
-		if fp[fi] == bp[bi] || bp[bi] == "+" {
+		if fp[fi] == bp[bi] || (bp[bi] == "+" && fp[fi] != "*") {
 			fout = append(fout, fp[fi])
-		} else if fp[fi] == "+" {
+		} else if fp[fi] == "+" && bp[bi] != "*" {
 			fout = append(fout, bp[bi])
 		} else {
 			break
 		}
 	}
-	fmt.Printf("finished phase 1 fout=%v bout=%v\n", fout, bout)
 	//phase 2
 	//emit matching suffix
-	for fni > fi && bni > bi {
-		if fp[fni] == bp[bni] || bp[bni] == "+" {
+	for fni >= fi && bni >= bi {
+		if fp[fni] == bp[bni] || (bp[bni] == "+" && fp[fni] != "*") {
 			bout = append(bout, fp[fni])
-		} else if fp[fi] == "+" {
+		} else if fp[fni] == "+" && bp[bni] != "*" {
 			bout = append(bout, bp[bni])
 		} else {
 			break
@@ -188,49 +187,46 @@ func RestrictBy(from string, by string) (string, bool) {
 	}
 	if fi == len(fp) && bi == len(bp) {
 		//valid A
-		return strings.Join(fout, "/"), true
+		return emit()
 	}
-	fmt.Printf("finished phase 2 fout=%v bout=%v\n", fout, bout)
 	//phase 3
 	//emit front
-	//  a* : *b
-	//  *a : b*
-	//  *  : ab
-	//  ab : *
-	//  a* : bd !
-	//  *a : bd !
-	if fp[fi] == "*" {
-		for ; bp[bi] != "*" && bi <= bni; bi++ {
+	if fi < len(fp) && fp[fi] == "*" {
+		for ; bi < len(bp) && bp[bi] != "*" && bi <= bni; bi++ {
 			fout = append(fout, bp[bi])
 		}
-	} else if bp[bi] == "*" {
-		for ; fp[fi] != "*" && fi <= fni; fi++ {
+	} else if bi < len(bp) && bp[bi] == "*" {
+		for ; fi < len(fp) && fp[fi] != "*" && fi <= fni; fi++ {
 			fout = append(fout, fp[fi])
 		}
 	}
-	fmt.Printf("finished phase 3 fout=%v bout=%v\n", fout, bout)
 	//phase 4
 	//emit back
-	if fp[fni] == "*" {
-		for ; bp[bni] != "*" && bni >= bi; bni-- {
+	if fni >= 0 && fp[fni] == "*" {
+		for ; bni >= 0 && bp[bni] != "*" && bni >= bi; bni-- {
 			bout = append(bout, bp[bni])
 		}
-	} else if bp[bni] == "*" {
-		for ; fp[fni] != "*" && fni >= fi; fni-- {
+	} else if bni >= 0 && bp[bni] == "*" {
+		for ; fni >= 0 && fp[fni] != "*" && fni >= fi; fni-- {
 			bout = append(bout, fp[fni])
 		}
 	}
-
-	fmt.Printf("finished phase 4 fout=%v bout=%v\n", fout, bout)
-
 	//phase 5
 	//emit star if they both have it
-	if fi == fni && fp[fi] == "*" && bi=bni && bp[bi] == "*" {
+	if fi == fni && fp[fi] == "*" && bi == bni && bp[bi] == "*" {
 		fout = append(fout, "*")
-	} else {
-		fmt.Printf("Would fail, fout=%v, bout=%v, fi=%v, fni=%v, bi=%v, bni=%v",fout,bout,fi,fni,bi,bni)
+		return emit()
 	}
-
+	//Remove any stars
+	if fi < len(fp) && fp[fi] == "*" {
+		fi++
+	}
+	if bi < len(bp) && bp[bi] == "*" {
+		bi++
+	}
+	if (fi == fni+1 || fi == len(fp)) && (bi == bni+1 || bi == len(bp)) {
+		return emit()
+	}
 	return "", false
 }
 

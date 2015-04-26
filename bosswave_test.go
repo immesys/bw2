@@ -96,15 +96,13 @@ func TestRestrict(t *testing.T) {
 		{"a/b/c", "a/*", "a/b/c", true},
 		{"a/b/c", "*/c", "a/b/c", true},
 		{"*/c", "a/b/c", "a/b/c", true},
+		{"a/b/c/*/x/y/z", "a/b/1/*/2/y/z", "", false},
 	}
 	for _, v := range TV {
-		fmt.Printf("Testing %+v \n", v)
 		res, ok := RestrictBy(v.T, v.P)
 		if res != v.Rs || ok != v.Rb {
 			fmt.Printf("Fail %+v, got %v\n", v, res)
 			t.Fail()
-		} else {
-			println("pass")
 		}
 	}
 }

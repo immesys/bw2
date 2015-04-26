@@ -26,6 +26,8 @@ func OpenBWContext(config *core.BWConfig) *BW {
 	return rv
 }
 
+// BosswaveClient represents an individual client. It contains the
+// handle to the terminus client that contains the message queue
 type BosswaveClient struct {
 	bw    *BW
 	cl    *core.Client
@@ -33,6 +35,10 @@ type BosswaveClient struct {
 	disch chan *core.MsgSubPair
 }
 
+// MatchTopic will check if t matches the pattern.
+// TODO this is not nearly as optimal as it can be, copy
+// logic from RestrictBy. In the meantime it may be faster
+// to call RestrictBy.
 func MatchTopic(t []string, pattern []string) bool {
 	if len(t) == 0 && len(pattern) == 0 {
 		return true
@@ -53,6 +59,9 @@ func MatchTopic(t []string, pattern []string) bool {
 	return false
 }
 
+// RestrictBy takes a topic, and a permission, and returns the intersection
+// that represents the from topic restricted by the permission. It took a
+// looong time to work out this logic...
 func RestrictBy(from string, by string) (string, bool) {
 	fp := strings.Split(from, "/")
 	bp := strings.Split(by, "/")
@@ -95,10 +104,6 @@ func RestrictBy(from string, by string) (string, bool) {
 		fni--
 		bni--
 	}
-	if fi == len(fp) && bi == len(bp) {
-		//valid A
-		return emit()
-	}
 	//phase 3
 	//emit front
 	if fi < len(fp) && fp[fi] == "*" {
@@ -140,8 +145,6 @@ func RestrictBy(from string, by string) (string, bool) {
 	return "", false
 }
 
-//InternalQueueChanged is a placeholder that can be passed to CreateClient
-
 func (c *BosswaveClient) dispatch() {
 	if c.irq == nil {
 		//Do dispatch to the subreq's Dispatch field
@@ -155,6 +158,12 @@ func (c *BosswaveClient) dispatch() {
 		c.irq()
 	}
 }
+
+// CreateClient will create a new BosswaveClient. If the queueChanged function
+// is nil, the dispatch handlers in each subscription will be invoked when
+// a message appears for them. If a queueChanged function is specified, this
+// behaviour is supressed, and the caller needs to work out how to dispatch
+// messages when the queue has changed.
 func (bw *BW) CreateClient(queueChanged func()) *BosswaveClient {
 	rv := &BosswaveClient{bw: bw, irq: queueChanged}
 	rv.cl = bw.tm.CreateClient(rv.dispatch)
@@ -170,12 +179,14 @@ func (bw *BW) CreateClient(queueChanged func()) *BosswaveClient {
 	return rv
 }
 
+// Publish the given message using the permissions contained in the message
 func (c *BosswaveClient) Publish(m *core.Message) error {
 	//Typically we would now send this to a security check, also message would be different
 	c.cl.Publish(m)
 	return nil
 }
 
+// Subscribe with the given subscription request
 func (c *BosswaveClient) Subscribe(s *core.SubReq) bool {
 	new := c.cl.Subscribe(s)
 	return new == s

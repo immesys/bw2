@@ -1,29 +1,14 @@
 package core
 
-import "time"
-
-const (
-	TypePublish   = 0x01
-	TypeSubscribe = 0x02
-	TypeTap       = 0x03
-	TypeQuery     = 0x04
-	TypeTapQuery  = 0x06
-	TypeLS        = 0x06
+import (
+	"encoding/base64"
+	"time"
 )
 
 var Forever = time.Date(2050, time.January, 1, 1, 1, 1, 1, time.UTC)
 
-// Message is the primary Bosswave message type that is passed all the way through
-type Message struct {
-	Type        uint8
-	MVK         []byte
-	TopicSuffix string
-	Signature   []byte
-	Payload     []byte
-	Persist     uint8
-	Consumers   int
-	RXTime      time.Time
-	ExpireTime  time.Time
+func SplitURI(uri string) (mvk []byte, urisuffix string) {
+	return base64.URLEncoding.DecodeString(uri[:32]), uri[33:]
 }
 
 type Dot struct {

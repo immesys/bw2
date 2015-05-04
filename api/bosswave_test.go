@@ -1,4 +1,4 @@
-package bw2
+package api
 
 import (
 	"fmt"

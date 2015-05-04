@@ -45,12 +45,11 @@ from clients or other routers.
 		0x04 : QUERY
 		0x05 : TAP_QUERY
 		0x06 : LS
-		0x07
 
-	<type specific block>
-	routing_objects
-	payload_objects
-	tag_objects
+	<type specific block>, covered later
+	routing_objects?
+	payload_objects?
+	tag_objects?
 
 	routing object:
 		object type
@@ -58,7 +57,8 @@ from clients or other routers.
 			0x11 : Permission DChain hash
 			0x02 : Access full DChain of DoT hashes
 			0x12 : Permission full DChain of DoT hashes
-			0x20 : DoT
+			0x20 : Access DoT
+			0x21 : Permission DoT
 			0xFF : no more objects
 		object length: 1 byte (omitted if type is 0xff)
 	payload object:
@@ -78,6 +78,9 @@ for example).
 ### PUBLISH
 	COMMAND_TYPE: 0x01
 	MESSAGE ID: 2 byte
+	MVK: 32 bytes
+	URI SUFFIX LEN: 2 bytes
+	URI SUFFIX: <URI LEN> bytes
 	CONSUMER_LIMIT: 1 byte, 0x00 implies no limit
 	PERSIST: 1 byte
 		0x00: do not persist
@@ -85,14 +88,11 @@ for example).
 		0x4?: bottom 6 bits are seconds
 		0x8?: bottom 6 bits are minutes
 		0xc?: bottom 6 bits are hours
-	SIGNATURE: 32 bytes
-		the signature covers everything from the MVK until the last payload
-		object. It does NOT cover any tag objects
-	MVK: 32 bytes
-	URI SUFFIX LEN: 2 bytes
-	URI SUFFIX: <URI LEN> bytes
 	routing objects
 	payload objects
+	SIGNATURE: 32 bytes
+		the signature covers everything from the command type until the last payload
+		object. It does NOT cover any tag objects
 	tag objects
 
 	If the routing objects contains a dchain or a dchain hash, the first one found
@@ -190,7 +190,7 @@ Like CONSUME_STAR but using TAP semantics
 
 ### PUBLISH(uri_prefix, tx_limit, store_limit)
 
-This capability is granted from the router via the MVK to a potential consumer. It allows the grantee to publish messages to any uri below the given path. Tx_limit is the number of bytes the grantee can publish in a time period (including headers). The time period is not currently defined. The store_limit, if nonzero, allows the grantee to publish messages that persist on the server. These messages can be obtained by consumers using the QUERY message. Store_limit is the total number of bytes (including metadata) that can be stored.
+This capability is granted from the router via the MVK to a potential consumer. It allows the grantee to publish messages to any uri below the given path. Tx_limit is the number of bytes the grantee can publish in an hour period (including headers). The time period is not necesssarily measured hour by hour, it is implementation defined. The store_limit, if nonzero, allows the grantee to publish messages that persist on the server. These messages can be obtained by consumers using the QUERY message. Store_limit is the total number of bytes (including metadata) that can be stored.
 
 ### LIST(uri_prefix)
 
@@ -213,6 +213,62 @@ privileges. It can be used for publicly accessible information (Any client messa
 X URI will receive a DoT to access this URI). Or for conversion of permissions (show
 me your DCHain to URI X and I will issue you permissions for DChain Y, useful for simlinks).
 
+Routing objects
+---------------
+
+## Access DoT
+
+An Access DoT is mainly for use by the router. It specifies permissions for a URI
+
+ GRANTORVK: 32 bytes
+ GRANTEEVK: 32 bytes
+ TTL: 1 byte
+ <repeat>
+ NextOption: 1 byte
+ OptionSize: 1 byte
+ </repeat>
+ 0x00 : 1 byte
+ PERMISSIONS: 2 bytes little endian
+	consume: 0x01
+	consume_plus: 0x02
+	consume_star: 0x04
+	tap: 0x08
+	tap_plus: 0x10
+	tap_star: 0x20
+	publish: 0x40
+	list: 0x80
+ MVK: 32 bytes
+ uri suffix len: 2 bytes
+ uri suffix: len bytes
+ SIGNATURE: 32 bytes
+
+Options:
+0x01: publish limits: 17 bytes TX limit(8) + store limit(8) + persist max time(1)
+0x02: creation date: 8 bytes ms since the UTC epoch, only once
+0x03: expiry date: 8 bytes ms since the UTC epoch, only once
+0x04: delegated revoker: 32 bytes of VK that can revoke this DoT, may appear more than once
+0x05: contact: variable length string e.g Michael Andersen <m.andersen@berkeley.edu>
+0x06: comment: variable length comment string
+0x07: registered revocation: to be determined, allows a DoT to specify a resource that needs
+			to be queried for a revocation before this DoT can be trusted
+
+
+## Permission DoT
+GRANTORVK: 32 bytes
+GRANTEEVK: 32 bytes
+TTL: 1 byte
+<repeat>
+NextOption: 1 byte
+OptionSize: 1 byte
+</repeat>
+0x00 : 1 byte
+	<numkv pairs:>
+	KEYLEN: 1 byte
+	KEY: key bytes
+	VALUELEN: 2 bytes
+	VALUE: valuelen bytes
+Keylen == 0 to end
+SIGNATURE: 32 bytes
 
 Declaration of Trust
 --------------------

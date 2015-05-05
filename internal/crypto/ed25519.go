@@ -1,6 +1,6 @@
 package crypto
 
-// #cgo LDFLAGS: -lssl -lcrypto
+// #cgo LDFLAGS: -lssl -lcrypto -ldl -lz
 // #include "ed25519.h"
 import "C"
 

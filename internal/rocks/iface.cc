@@ -8,13 +8,12 @@
 
 using namespace rocksdb;
 
-std::string persistDBPath = "bw.db";
-static DB* persistDB;
+std::string DBPath = "bw.db";
+static DB* db;
 
-std::string cacheDBPath = "bw.cache";
-static DB* cacheDB;
-
-void init() 
+extern "C"
+{
+void init()
 {
   Options options;
   // Optimize RocksDB. This is the easiest way to get RocksDB to perform well
@@ -24,60 +23,32 @@ void init()
   options.create_if_missing = true;
 
   // open DB
-  Status s = DB::Open(options, persistDBPath, &persistDB);
+  Status s = DB::Open(options, DBPath, &db);
   assert(s.ok());
-  s = DB::Open(options, cacheDBPath, &cacheDB);
-  assert(s.ok());
+}
 
-#if 0
-  // get value
-  s = db->Get(ReadOptions(), "key1", &value);
+void put_object(const char *key, size_t keylen, const char *value, size_t valuelen)
+{
+  std::string skey = std::string(key, keylen);
+  std::string sval = std::string(value, valuelen);
+  // Put key-value
+  Status s = db->Put(WriteOptions(), skey, sval);
   assert(s.ok());
-  assert(value == "value");
-
-  // atomically apply a set of updates
+}
+char *get_object(const char *key, size_t keylen, size_t *valuelen)
+{
+  std::string skey = std::string(key, keylen);
+  std::string value;
+  char *rv;
+  Status s = db->Get(ReadOptions(), skey, &value);
+  if (s.IsNotFound())
   {
-    WriteBatch batch;
-    batch.Delete("key1");
-    batch.Put("key2", value);
-    s = db->Write(WriteOptions(), &batch);
+    return NULL;
   }
-
-  s = db->Get(ReadOptions(), "key1", &value);
-  assert(s.IsNotFound());
-
-  db->Get(ReadOptions(), "key2", &value);
-  assert(value == "value");
-
-  delete db;
-#endif
-}
-
-void putCacheObject(const char *key, size_t keylen, const char *value, size_t valuelen) 
-{
-  std::string skey = std::string(key, keylen);
-  std::string sval = std::string(value, valuelen);
-  // Put key-value
-  Status s = cacheDB->Put(WriteOptions(), skey, sval);
   assert(s.ok());
+  rv = (char*) malloc(value.length());
+  *valuelen = value.length();
+  memcpy(rv, value.data(), value.length());
+  return rv;
 }
-void putPersistObject(const char *key, size_t keylen, const char *value, size_t valuelen) 
-{
-  std::string skey = std::string(key, keylen);
-  std::string sval = std::string(value, valuelen);
-  // Put key-value
-  Status s = persistDB->Put(WriteOptions(), skey, sval);
-  assert(s.ok());
-}
-char *getCacheObject(const char *key, size_t keylen, size_t *valuelen)
-{
- std::string skey = std::string(key, keylen);
- std::string value;
- char *rv;
- Status s = cacheDB->Get(ReadOptions(), skey, &value);
- assert(s.ok());
- rv = (char*) malloc(value.length());
- *valuelen = value.length();
- memcpy(rv, value.data(), value.length());
- return rv;
 }

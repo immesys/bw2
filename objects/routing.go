@@ -26,24 +26,6 @@ const (
 	sigInvalid
 )
 
-//ROAccessDChainHash is the constant for an Access DChain hash
-const ROAccessDChainHash = 0x01
-
-//ROPermissionDChainHash is the constant for a Permission DChain hash
-const ROPermissionDChainHash = 0x11
-
-//ROAccessDChain is the constant for a full Access DChain
-const ROAccessDChain = 0x02
-
-//ROPermissionDChain is the constant for a full Permission DChain
-const ROPermissionDChain = 0x12
-
-//ROAccessDOT is the constant for an Access DOT
-const ROAccessDOT = 0x20
-
-//ROPermissionDOT is the constant for a Permission DOT
-const ROPermissionDOT = 0x21
-
 //RoutingObjectConstruct allows you to map a ROnum into a constructor that takes a
 //binary representation and returns a Routing Object
 var RoutingObjectConstructor = map[int]func(ronum int, content []byte) (RoutingObject, error){
@@ -52,6 +34,7 @@ var RoutingObjectConstructor = map[int]func(ronum int, content []byte) (RoutingO
 	0x02: NewDChain,
 	0x12: NewDChain,
 	0x20: NewDOT,
+	0x30: NewEntity,
 }
 
 // DChain is a list of DOT hashes
@@ -125,6 +108,50 @@ func (ro *DChain) GetContent() []byte {
 	default:
 		panic("Invalid RONUM")
 	}
+}
+
+//CreateDChain creates a dot chain from the given DOTs. The DOTs must have
+//the hash field populated
+func CreateDChain(access bool, dots ...DOT) (*DChain, error) {
+	rv := &DChain{
+		dothashes:  make([]byte, len(dots)*32),
+		chainhash:  make([]byte, 32),
+		dots:       dots,
+		isAccess:   access,
+		elaborated: true,
+	}
+	for i, v := range dots {
+		copy(rv.dothashes[i*32:(i+1)*32], v.hash)
+		if v.isAccess != access {
+			return nil, NewObjectError(-1, "DOT/DChain access mismatch")
+		}
+	}
+	hash := sha256.Sum256(rv.dothashes)
+	rv.chainhash = hash[:]
+	if access {
+		rv.ronum = ROAccessDChain
+	} else {
+		rv.ronum = ROPermissionDChain
+	}
+	return rv, nil
+}
+
+//ConvertToDChainHash creates a hash RO from a dchain RO that may or may not
+//be fully elaborated. Note that there are shared resources in the result
+func (ro *DChain) ConvertToDChainHash() (*DChain, error) {
+	if len(ro.chainhash) != 32 {
+		return nil, NewObjectError(-1, "Cannot convert: no chainhash")
+	}
+	rv := &DChain{
+		chainhash: ro.chainhash,
+		isAccess:  ro.isAccess,
+	}
+	if ro.isAccess {
+		rv.ronum = ROAccessDChainHash
+	} else {
+		rv.ronum = ROPermissionDChainHash
+	}
+	return rv, nil
 }
 
 //PublishLimits is an option found in an AccessDOT that governs
@@ -611,4 +638,178 @@ func (ro *DOT) Encode(sk []byte) {
 	ro.content = buf
 	ro.signature = sig
 
+}
+
+type Entity struct {
+	content   []byte
+	signature []byte
+	vk        []byte
+	sk        []byte
+	expires   *time.Time
+	created   *time.Time
+	revokers  [][]byte
+	contact   string
+	comment   string
+}
+
+func CreateNewEntity(contact, comment string, revokers [][]byte, expiry time.Duration) *Entity {
+	c := RoundTime(time.Now())
+	e := RoundTime(time.Now().Add(expiry))
+	rv := &Entity{contact: contact, comment: comment, created: &c, expires: &e, revokers: revokers}
+	rv.sk, rv.vk = crypto.GenerateKeypair()
+	return rv
+}
+
+func (ro *Entity) AddRevoker(rvk []byte) {
+	if len(rvk) != 32 {
+		panic("What kind of VK is this?")
+	}
+	ro.revokers = append(ro.revokers, rvk)
+}
+
+func (ro *Entity) GetContact() string {
+	return ro.contact
+}
+
+func (ro *Entity) GetComment() string {
+	return ro.comment
+}
+
+func (ro *Entity) SetSK(sk []byte) {
+	ro.sk = sk
+}
+
+func (ro *Entity) GetSK() []byte {
+	return ro.sk
+}
+
+func (ro *Entity) Encode() {
+	if len(ro.sk) != 32 {
+		panic("Requires SK to Encode")
+	}
+	buf := make([]byte, 32)
+	copy(buf, ro.vk)
+	if ro.created != nil {
+		buf = append(buf, 0x02, 8)
+		tmp := make([]byte, 8)
+		binary.LittleEndian.PutUint64(tmp, uint64(ro.created.UnixNano()/1000000))
+		buf = append(buf, tmp...)
+	}
+	if ro.expires != nil {
+		buf = append(buf, 0x03, 8)
+		tmp := make([]byte, 8)
+		binary.LittleEndian.PutUint64(tmp, uint64(ro.expires.UnixNano()/1000000))
+		buf = append(buf, tmp...)
+	}
+	for _, k := range ro.revokers {
+		buf = append(buf, 0x04, 32)
+		buf = append(buf, k...)
+	}
+	if ro.contact != "" {
+		if len(ro.contact) > 255 {
+			panic("Bad contact")
+		}
+		buf = append(buf, 0x05, byte(len(ro.contact)))
+		buf = append(buf, []byte(ro.contact)...)
+	}
+	if ro.comment != "" {
+		if len(ro.comment) > 255 {
+			panic("Bad comment")
+		}
+		buf = append(buf, 0x06, byte(len(ro.comment)))
+		buf = append(buf, []byte(ro.comment)...)
+	}
+	buf = append(buf, 0)
+	sig := make([]byte, 64)
+	crypto.SignBlob(ro.sk, ro.vk, sig, buf)
+	buf = append(buf, sig...)
+	ro.content = buf
+	ro.signature = sig
+}
+
+func NewEntity(ronum int, content []byte) (RoutingObject, error) {
+	if ronum != ROEntity {
+		panic("Bad RONUM")
+	}
+	e := &Entity{
+		content:  content,
+		vk:       content[:32],
+		revokers: make([][]byte, 0),
+	}
+	idx := 32
+	for {
+		switch content[idx] {
+		case 0x02: //Creation date
+			if content[idx+1] != 8 {
+				return nil, NewObjectError(ROEntity, "Invalid creation date in Entity")
+			}
+			idx += 2
+			t := time.Unix(0, int64(binary.LittleEndian.Uint64(content[idx:])*1000000))
+			e.created = &t
+			idx += 8
+		case 0x03: //Expiry date
+			if content[idx+1] != 8 {
+				return nil, NewObjectError(ROEntity, "Invalid expiry date in Entity")
+			}
+			idx += 2
+			t := time.Unix(0, int64(binary.LittleEndian.Uint64(content[idx:])*1000000))
+			e.expires = &t
+			idx += 8
+		case 0x04: //Delegated revoker
+			if content[idx+1] != 8 {
+				return nil, NewObjectError(ROEntity, "Invalid delegated revoker in DoT")
+			}
+			idx += 2
+			e.revokers = append(e.revokers, content[idx:idx+32])
+			idx += 32
+		case 0x05: //contact
+			ln := int(content[idx+1])
+			e.contact = string(content[idx+2 : idx+2+ln])
+			idx += 2 + ln
+		case 0x06: //Comment
+			ln := int(content[idx+1])
+			e.comment = string(content[idx+2 : idx+2+ln])
+			idx += 2 + ln
+		case 0x00: //End
+			idx++
+			goto done
+		default: //Skip unknown header
+			fmt.Println("Unknown Entity option type: ", content[idx])
+			idx += int(content[idx+1]) + 1
+		}
+	}
+done:
+	e.signature = content[idx : idx+64]
+	return e, nil
+}
+
+func (ro *Entity) GetRONum() int {
+	return ROEntity
+}
+
+func (ro *Entity) GetContent() []byte {
+	return ro.content
+}
+
+func (ro *Entity) FullString() string {
+	rv := "Entity: "
+	if len(ro.sk) != 0 {
+		rv += "+SK"
+	}
+	rv += "\n VK: " + crypto.FmtKey(ro.vk)
+	if ro.contact != "" {
+		rv += "\n Contact: " + ro.contact
+	}
+	if ro.comment != "" {
+		rv += "\n Comment: " + ro.comment
+	}
+	if ro.created != nil {
+		rv += "\n Created: " + ro.created
+	}
+	if ro.expires != nil {
+		rv += "\n Expires: " + ro.expires.String()
+	}
+	for _, v := range ro.revokers {
+		rv += "\n Revoker: " + crypto.FmtKey(v)
+	}
 }

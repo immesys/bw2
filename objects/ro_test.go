@@ -179,7 +179,25 @@ func TestMakePermissionDOT(t *testing.T) {
 		fmt.Println("Signature invalid")
 		t.Fail()
 	}
+}
 
+func TestMakeEntity(t *testing.T) {
+	e := CreateNewEntity("contact", "comment", [][]byte{}, 1*time.Minute)
+	e.Encode()
+	cnt := e.GetContent()
+
+	netmp, err := NewEntity(ROEntity, cnt)
+	if err != nil {
+		fmt.Println("Creation error: ", err)
+	}
+	ne := netmp.(*Entity)
+	ne.SetSK(e.sk)
+	if !reflect.DeepEqual(e, ne) {
+		fmt.Println("Not Equal!!")
+		fmt.Printf("\nold: %+v\n", e)
+		fmt.Printf("\nnew: %+v\n", ne)
+		t.Fail()
+	}
 }
 
 // func TestMakeDOT(t *testing.T) {

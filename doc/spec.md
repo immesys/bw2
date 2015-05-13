@@ -60,7 +60,7 @@ from clients or other routers.
 			0x20 : Access DoT
 			0x21 : Permission DoT
 			0xFF : no more objects
-		object length: 1 byte (omitted if type is 0xff)
+		object length: 2 bytes (omitted if type is 0xff)
 	payload object:
 		4 bytes : object type
 			0.0.0.0 : no more objects

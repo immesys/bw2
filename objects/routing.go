@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"runtime/debug"
 	"time"
 
@@ -16,6 +17,8 @@ import (
 type RoutingObject interface {
 	GetRONum() int
 	GetContent() []byte
+	WriteToStream(w io.Writer, fullObjNum bool) error
+	IsPayloadObject() bool
 }
 
 type sigState int8
@@ -35,6 +38,16 @@ var RoutingObjectConstructor = map[int]func(ronum int, content []byte) (RoutingO
 	0x12: NewDChain,
 	0x20: NewDOT,
 	0x30: NewEntity,
+}
+
+func (ro *DOT) IsPayloadObject() bool {
+	return false
+}
+func (ro *DChain) IsPayloadObject() bool {
+	return false
+}
+func (ro *Entity) IsPayloadObject() bool {
+	return false
 }
 
 // DChain is a list of DOT hashes
@@ -78,6 +91,47 @@ func NewDChain(ronum int, content []byte) (rv RoutingObject, err error) {
 	default:
 		panic("Should not have reached here")
 	}
+}
+
+func (ro *DChain) WriteToStream(s io.Writer, fullObjNum bool) error {
+	var ln int
+	if ro.elaborated {
+		ln = len(ro.dothashes)
+	} else {
+		ln = len(ro.chainhash)
+	}
+	if fullObjNum {
+		//Little endian
+		_, err := s.Write([]byte{byte(ro.GetRONum()), 0, 0, 0,
+			byte(ln),
+			byte(ln >> 8),
+			byte(ln >> 16),
+			byte(ln >> 24),
+		})
+		if err != nil {
+			return err
+		}
+	} else {
+		_, err := s.Write([]byte{byte(ro.GetRONum()),
+			byte(ln),
+			byte(ln >> 8),
+		})
+		if err != nil {
+			return err
+		}
+	}
+	if ro.elaborated {
+		_, err := s.Write(ro.dothashes)
+		if err != nil {
+			return err
+		}
+	} else {
+		_, err := s.Write(ro.chainhash)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 //NumHashes returns the length of the chain
@@ -345,6 +399,35 @@ done:
 	ro.hash = hash[:]
 	ro.signature = content[idx : idx+64]
 	return &ro, nil
+}
+
+func (ro *DOT) WriteToStream(s io.Writer, fullObjNum bool) error {
+	if len(ro.content) == 0 {
+		return NewObjectError(ro.GetRONum(), "Cannot write to stream: no content")
+	}
+	ln := len(ro.content)
+	if fullObjNum {
+		//Little endian
+		_, err := s.Write([]byte{byte(ro.GetRONum()), 0, 0, 0,
+			byte(ln),
+			byte(ln >> 8),
+			byte(ln >> 16),
+			byte(ln >> 24),
+		})
+		if err != nil {
+			return err
+		}
+	} else {
+		_, err := s.Write([]byte{byte(ro.GetRONum()),
+			byte(ln),
+			byte(ln >> 8),
+		})
+		if err != nil {
+			return err
+		}
+	}
+	_, err := s.Write(ro.content)
+	return err
 }
 
 //SigValid returns if the DOT's signature is valid. This only checks
@@ -650,6 +733,7 @@ type Entity struct {
 	revokers  [][]byte
 	contact   string
 	comment   string
+	sigok     sigState
 }
 
 func CreateNewEntity(contact, comment string, revokers [][]byte, expiry time.Duration) *Entity {
@@ -681,6 +765,39 @@ func (ro *Entity) SetSK(sk []byte) {
 
 func (ro *Entity) GetSK() []byte {
 	return ro.sk
+}
+
+func (ro *Entity) SetVK(vk []byte) {
+	ro.vk = vk
+}
+
+func (ro *Entity) GetVK() []byte {
+	return ro.vk
+}
+
+func (ro *Entity) StringKey() string {
+	return crypto.FmtKey(ro.vk)
+}
+
+//SigValid returns if the Entity's signature is valid. This only checks
+//the signature on the first call, so the content must not change
+//after encoding for this to be valid
+func (ro *Entity) SigValid() bool {
+	if ro.sigok == sigValid {
+		return true
+	} else if ro.sigok == sigInvalid {
+		return false
+	}
+	if len(ro.signature) != 64 || len(ro.content) == 0 {
+		panic("Entity in invalid state")
+	}
+	ok := crypto.VerifyBlob(ro.vk, ro.signature, ro.content[:len(ro.content)-64])
+	if ok {
+		ro.sigok = sigValid
+		return true
+	}
+	ro.sigok = sigInvalid
+	return false
 }
 
 func (ro *Entity) Encode() {
@@ -783,6 +900,35 @@ done:
 	return e, nil
 }
 
+func (ro *Entity) WriteToStream(s io.Writer, fullObjNum bool) error {
+	if len(ro.content) == 0 {
+		return NewObjectError(ro.GetRONum(), "Cannot write to stream: no content")
+	}
+	ln := len(ro.content)
+	if fullObjNum {
+		//Little endian
+		_, err := s.Write([]byte{byte(ro.GetRONum()), 0, 0, 0,
+			byte(ln),
+			byte(ln >> 8),
+			byte(ln >> 16),
+			byte(ln >> 24),
+		})
+		if err != nil {
+			return err
+		}
+	} else {
+		_, err := s.Write([]byte{byte(ro.GetRONum()),
+			byte(ln),
+			byte(ln >> 8),
+		})
+		if err != nil {
+			return err
+		}
+	}
+	_, err := s.Write(ro.content)
+	return err
+}
+
 func (ro *Entity) GetRONum() int {
 	return ROEntity
 }
@@ -804,7 +950,7 @@ func (ro *Entity) FullString() string {
 		rv += "\n Comment: " + ro.comment
 	}
 	if ro.created != nil {
-		rv += "\n Created: " + ro.created
+		rv += "\n Created: " + ro.created.String()
 	}
 	if ro.expires != nil {
 		rv += "\n Expires: " + ro.expires.String()
@@ -812,4 +958,5 @@ func (ro *Entity) FullString() string {
 	for _, v := range ro.revokers {
 		rv += "\n Revoker: " + crypto.FmtKey(v)
 	}
+	return rv
 }

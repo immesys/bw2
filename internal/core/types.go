@@ -8,7 +8,11 @@ import (
 var Forever = time.Date(2050, time.January, 1, 1, 1, 1, 1, time.UTC)
 
 func SplitURI(uri string) (mvk []byte, urisuffix string) {
-	return base64.URLEncoding.DecodeString(uri[:32]), uri[33:]
+	rv, err := base64.URLEncoding.DecodeString(uri[:32])
+	if err != nil {
+		panic(err)
+	}
+	return rv, uri[33:]
 }
 
 type Dot struct {

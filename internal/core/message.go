@@ -1,11 +1,6 @@
 package core
 
-import (
-	"encoding/base64"
-	"encoding/binary"
-	"fmt"
-	"time"
-)
+import "time"
 
 const (
 	TypePublish   = 0x01
@@ -23,7 +18,7 @@ type Message struct {
 	MessageID   uint16
 	Invalid     bool
 	MVK         []byte
-	Topic 			string
+	Topic       string
 	TopicSuffix string
 	Signature   []byte
 
@@ -35,6 +30,7 @@ type Message struct {
 	ExpireTime time.Time
 }
 
+/*
 func (m *Message) Load(b []byte) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -57,7 +53,7 @@ func (m *Message) Load(b []byte) (err error) {
 		m.Topic = base64.URLEncoding.EncodeString(string(m.MVK)) + "/" + m.TopicSuffix
 	}
 	func rd_routing_objects() {
-		
+
 	}
 	//Load type specific block
 	switch m.Type {
@@ -81,3 +77,4 @@ func (m *Message) Load(b []byte) (err error) {
 	case TypeLS:
 	}
 }
+*/

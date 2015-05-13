@@ -5,7 +5,9 @@ package crypto
 import "C"
 
 import (
+	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"unsafe"
 )
 
@@ -69,14 +71,44 @@ func GenerateKeypair() (sk []byte, vk []byte) {
 	return
 }
 
+func CheckKeypair(sk []byte, vk []byte) bool {
+	blob := make([]byte, 128)
+	rand.Read(blob)
+	sig := make([]byte, 64)
+	SignBlob(sk, vk, sig, blob)
+	return VerifyBlob(vk, sig, blob)
+}
+
 func FmtKey(key []byte) string {
 	return base64.URLEncoding.EncodeToString(key)
+}
+
+func UnFmtKey(key string) ([]byte, error) {
+	rv, err := base64.URLEncoding.DecodeString(key)
+	if len(rv) != 32 {
+		return nil, errors.New("Invalid length")
+	}
+	return rv, err
 }
 
 func FmtSig(sig []byte) string {
 	return base64.URLEncoding.EncodeToString(sig)
 }
+func UnFmtSig(sig string) ([]byte, error) {
+	rv, err := base64.URLEncoding.DecodeString(sig)
+	if len(rv) != 64 {
+		return nil, errors.New("Invalid length")
+	}
+	return rv, err
+}
 
 func FmtHash(hash []byte) string {
 	return base64.URLEncoding.EncodeToString(hash)
+}
+func UnFmtHash(hash string) ([]byte, error) {
+	rv, err := base64.URLEncoding.DecodeString(hash)
+	if len(rv) != 32 {
+		return nil, errors.New("Invalid length")
+	}
+	return rv, err
 }

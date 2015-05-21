@@ -9,26 +9,31 @@ import (
 	"unsafe"
 )
 
-//InitDatabase creates or opens the local bosswave database
-func InitDatabase() {
+func init() {
 	C.init()
 }
+
+const (
+	CFDot    = 1
+	CFDChain = 2
+	CFMsg    = 3
+	CFMsgI   = 4
+	CFEntity = 5
+)
 
 //ErrObjNotFound is returned from GetObject if the object cannot be found
 var ErrObjNotFound = errors.New("Object Not Found")
 
-//PutObject puts the given object into the local database
-func PutObject(key []byte, val []byte) {
-	C.put_object((*C.char)(unsafe.Pointer(&key[0])),
+func PutObject(cf int, key []byte, val []byte) {
+	C.put_object(C.int(cf), (*C.char)(unsafe.Pointer(&key[0])),
 		(C.size_t)(len(key)),
 		(*C.char)(unsafe.Pointer(&val[0])),
 		(C.size_t)(len(val)))
 }
 
-//GetObject puts the given object into the local database
-func GetObject(key []byte) ([]byte, error) {
+func GetObject(cf int, key []byte) ([]byte, error) {
 	var ln C.size_t
-	val := C.get_object((*C.char)(unsafe.Pointer(&key[0])),
+	val := C.get_object(C.int(cf), (*C.char)(unsafe.Pointer(&key[0])),
 		(C.size_t)(len(key)),
 		&ln)
 	if val == nil {
@@ -38,4 +43,17 @@ func GetObject(key []byte) ([]byte, error) {
 	C.memcpy(unsafe.Pointer(&rv[0]), unsafe.Pointer(val), ln)
 	C.free(unsafe.Pointer(val))
 	return rv, nil
+}
+
+func DeleteObject(cf int, key []byte) {
+	C.delete_object(C.int(cf), (*C.char)(unsafe.Pointer(&key[0])),
+		(C.size_t)(len(key)))
+}
+
+func Exists(cf int, key []byte) bool {
+	if C.exists(C.int(cf),
+		(*C.char)(unsafe.Pointer(&key[0])), (C.size_t)(len(key))) != 0 {
+		return true
+	}
+	return false
 }

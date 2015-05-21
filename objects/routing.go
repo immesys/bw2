@@ -38,6 +38,7 @@ var RoutingObjectConstructor = map[int]func(ronum int, content []byte) (RoutingO
 	0x12: NewDChain,
 	0x20: NewDOT,
 	0x30: NewEntity,
+	0x40: NewExpiry,
 }
 
 func (ro *DOT) IsPayloadObject() bool {
@@ -142,9 +143,19 @@ func (ro *DChain) NumHashes() int {
 	panic("DChain not elaborated")
 }
 
-//GetHash returns the hash at the specific index
-func (ro *DChain) GetHash(num int) []byte {
+//GetDotHash returns the dot hash at the specific index
+func (ro *DChain) GetDotHash(num int) []byte {
 	return ro.dothashes[num*32 : (num+1)*32]
+}
+
+//GetChainHash returns the hash of the chain
+func (ro *DChain) GetChainHash() []byte {
+	return ro.chainhash
+}
+
+//IsElaborated returns true if the dot hashes are populated
+func (ro *DChain) IsElaborated() bool {
+	return ro.elaborated
 }
 
 //GetRONum returns the RONum for this object
@@ -430,6 +441,15 @@ func (ro *DOT) WriteToStream(s io.Writer, fullObjNum bool) error {
 	return err
 }
 
+//GetHash returns the dot hash or panics if it has not been set
+//by encoding/reading from stream etc.
+func (ro *DOT) GetHash() []byte {
+	if len(ro.hash) == 0 {
+		panic("Badness")
+	}
+	return ro.hash
+}
+
 //SigValid returns if the DOT's signature is valid. This only checks
 //the signature on the first call, so the content must not change
 //after encoding for this to be valid
@@ -535,6 +555,9 @@ func (ro *DOT) GetRONum() int {
 
 //GetContent returns the binary representation of the DOT if Encode has been called
 func (ro *DOT) GetContent() []byte {
+	if len(ro.content) == 0 {
+		panic("Bad content")
+	}
 	return ro.content
 }
 
@@ -959,4 +982,69 @@ func (ro *Entity) FullString() string {
 		rv += "\n Revoker: " + crypto.FmtKey(v)
 	}
 	return rv
+}
+
+type Expiry struct {
+	time    time.Time
+	content []byte
+}
+
+func CreateNewExpiryFromNow(expiry time.Duration) *Expiry {
+	edate := time.Now().Add(expiry)
+	rv := Expiry{time: edate, content: make([]byte, 8)}
+	binary.LittleEndian.PutUint64(rv.content, uint64(edate.UnixNano()/1000000))
+	return &rv
+}
+func CreateNewExpiry(expiry time.Time) *Expiry {
+	rv := Expiry{time: expiry, content: make([]byte, 8)}
+	binary.LittleEndian.PutUint64(rv.content, uint64(expiry.UnixNano()/1000000))
+	return &rv
+}
+func NewExpiry(ronum int, content []byte) (RoutingObject, error) {
+	if ronum != ROExpiry {
+		panic("Bad ronum")
+	}
+	if len(content) != 8 {
+		return nil, NewObjectError(ronum, "Content is the wrong size")
+	}
+	t := time.Unix(0, int64(binary.LittleEndian.Uint64(content[:8])*1000000))
+	rv := Expiry{time: t, content: content}
+	return &rv, nil
+}
+func (ro *Expiry) GetRONum() int {
+	return ROExpiry
+}
+func (ro *Expiry) GetContent() []byte {
+	return ro.content
+}
+func (ro *Expiry) IsPayloadObject() bool {
+	return false
+}
+func (ro *Expiry) WriteToStream(s io.Writer, fullObjNum bool) error {
+	if len(ro.content) == 0 {
+		return NewObjectError(ro.GetRONum(), "Cannot write to stream: no content")
+	}
+	ln := len(ro.content)
+	if fullObjNum {
+		//Little endian
+		_, err := s.Write([]byte{byte(ro.GetRONum()), 0, 0, 0,
+			byte(ln),
+			byte(ln >> 8),
+			byte(ln >> 16),
+			byte(ln >> 24),
+		})
+		if err != nil {
+			return err
+		}
+	} else {
+		_, err := s.Write([]byte{byte(ro.GetRONum()),
+			byte(ln),
+			byte(ln >> 8),
+		})
+		if err != nil {
+			return err
+		}
+	}
+	_, err := s.Write(ro.content)
+	return err
 }

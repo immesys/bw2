@@ -76,18 +76,12 @@ way to get a router to accept a message (a cache free, non-hash-resolving config
 for example).
 
 ### PUBLISH
-	COMMAND_TYPE: 0x01
+	message type
 	MESSAGE ID: 2 byte
 	MVK: 32 bytes
 	URI SUFFIX LEN: 2 bytes
 	URI SUFFIX: <URI LEN> bytes
 	CONSUMER_LIMIT: 1 byte, 0x00 implies no limit
-	PERSIST: 1 byte
-		0x00: do not persist
-		0x01: persist forever
-		0x4?: bottom 6 bits are seconds
-		0x8?: bottom 6 bits are minutes
-		0xc?: bottom 6 bits are hours
 	routing objects
 	payload objects
 	SIGNATURE: 32 bytes
@@ -100,6 +94,11 @@ for example).
 	the dots in the chain cannot be resolved, BWCP_UNRESOLVEABLE will be sent with
 	the list of hashes that could not be resolved.
 
+### PUBLISH_PERSIST
+	Same as publish, but the message is persisted. In particular if there is an
+	expiry in the routing objects, it will be persisted only until the expiry
+	date is reached.
+	
 ### SUBSCRIBE
 	MESSAGE_ID: 2 byte
 	MVK: 32 bytes

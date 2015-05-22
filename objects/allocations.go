@@ -10,3 +10,5 @@ const (
 	ROEntity               = 0x30
 	ROExpiry               = 0x40
 )
+
+const ()

@@ -3,6 +3,7 @@ package objects
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"time"
 )
@@ -44,6 +45,10 @@ func RoundTime(t time.Time) time.Time {
 type PayloadObject interface {
 	GetPONum() int
 	GetContent() []byte
+}
+
+func PONumDotForm(ponum int) string {
+	return fmt.Sprintf("%d.%d.%d.%d", ponum>>24, (ponum>>16)&0xFF, (ponum>>8)&0xFF, ponum&0xFF)
 }
 
 // LoadBosswaveObject loads an object from a reader.

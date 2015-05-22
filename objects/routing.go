@@ -41,6 +41,15 @@ var RoutingObjectConstructor = map[int]func(ronum int, content []byte) (RoutingO
 	0x40: NewExpiry,
 }
 
+//LoadRoutingObject takes the ronum and the content and returns the object
+func LoadRoutingObject(ronum int, content []byte) (RoutingObject, error) {
+	constructor, ok := RoutingObjectConstructor[ronum]
+	if !ok {
+		return nil, NewObjectError(ronum, "Unknown RONum")
+	}
+	return constructor(ronum, content)
+}
+
 func (ro *DOT) IsPayloadObject() bool {
 	return false
 }

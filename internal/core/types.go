@@ -30,17 +30,3 @@ type SubReq struct {
 	Client   *Client
 	Dispatch func(m *Message)
 }
-
-func (m *Message) Init() {
-	m.RXTime = time.Now()
-	switch {
-	case m.Persist == 0x01:
-		m.ExpireTime = Forever
-	case m.Persist&0xc0 == 0x40:
-		m.ExpireTime = time.Now().Add(time.Duration(m.Persist&0x3F) * time.Second)
-	case m.Persist&0xc0 == 0x80:
-		m.ExpireTime = time.Now().Add(time.Duration(m.Persist&0x3F) * time.Minute)
-	case m.Persist&0xc0 == 0xc0:
-		m.ExpireTime = time.Now().Add(time.Duration(m.Persist&0x3F) * time.Hour)
-	}
-}

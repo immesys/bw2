@@ -40,15 +40,21 @@ from clients or other routers.
 ### Data message structure:
 	MESSAGE TYPE 1 byte
 		0x01 : PUBLISH
-		0x02 : SUBSCRIBE
-		0x03 : TAP
-		0x04 : QUERY
-		0x05 : TAP_QUERY
-		0x06 : LS
+		0x02 : PERSIST
+		0x03 : SUBSCRIBE
+		0x04 : TAP
+		0x05 : QUERY
+		0x06 : TAP_QUERY
+		0x07 : LS
 
-	<type specific block>, covered later
+  MESSAGE ID: 2 byte
+	MVK: 32 bytes
+	URI SUFFIX LEN: 2 bytes
+	URI SUFFIX: <URI LEN> bytes
+	<type specific block>
 	routing_objects?
 	payload_objects?
+	SIGNATURE 64 bytes
 	tag_objects?
 
 	routing object:
@@ -59,8 +65,8 @@ from clients or other routers.
 			0x12 : Permission full DChain of DoT hashes
 			0x20 : Access DoT
 			0x21 : Permission DoT
-			0xFF : no more objects
-		object length: 2 bytes (omitted if type is 0xff)
+			0x00 : no more objects
+		object length: 2 bytes (omitted if type is 0x00)
 	payload object:
 		4 bytes : object type
 			0.0.0.0 : no more objects
@@ -94,11 +100,11 @@ for example).
 	the dots in the chain cannot be resolved, BWCP_UNRESOLVEABLE will be sent with
 	the list of hashes that could not be resolved.
 
-### PUBLISH_PERSIST
+### PERSIST
 	Same as publish, but the message is persisted. In particular if there is an
 	expiry in the routing objects, it will be persisted only until the expiry
 	date is reached.
-	
+
 ### SUBSCRIBE
 	MESSAGE_ID: 2 byte
 	MVK: 32 bytes

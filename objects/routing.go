@@ -1,6 +1,7 @@
 package objects
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/immesys/bw2/internal/crypto"
+	"github.com/immesys/bw2/internal/util"
 )
 
 //RoutingObject is the interface that is common among all objects that
@@ -32,13 +34,15 @@ const (
 //RoutingObjectConstruct allows you to map a ROnum into a constructor that takes a
 //binary representation and returns a Routing Object
 var RoutingObjectConstructor = map[int]func(ronum int, content []byte) (RoutingObject, error){
-	0x01: NewDChain,
-	0x11: NewDChain,
-	0x02: NewDChain,
-	0x12: NewDChain,
-	0x20: NewDOT,
-	0x30: NewEntity,
-	0x40: NewExpiry,
+	ROAccessDChain:         NewDChain,
+	ROAccessDChainHash:     NewDChain,
+	ROPermissionDChain:     NewDChain,
+	ROPermissionDChainHash: NewDChain,
+	ROAccessDOT:            NewDOT,
+	ROPermissionDOT:        NewDOT,
+	ROEntity:               NewEntity,
+	ROOriginVK:             NewOriginVK,
+	ROExpiry:               NewExpiry,
 }
 
 //LoadRoutingObject takes the ronum and the content and returns the object
@@ -64,7 +68,7 @@ func (ro *Entity) IsPayloadObject() bool {
 type DChain struct {
 	dothashes  []byte
 	chainhash  []byte
-	dots       []DOT
+	dots       []*DOT
 	isAccess   bool
 	ronum      int
 	elaborated bool
@@ -89,7 +93,7 @@ func NewDChain(ronum int, content []byte) (rv RoutingObject, err error) {
 		ro.chainhash = sum[:]
 		ro.isAccess = ronum == 0x02
 		ro.elaborated = true
-		ro.dots = make([]DOT, len(content)/32)
+		ro.dots = make([]*DOT, len(content)/32)
 		return &ro, nil
 	case ROAccessDChainHash, ROPermissionDChainHash:
 		if len(content) != 32 {
@@ -152,6 +156,27 @@ func (ro *DChain) NumHashes() int {
 	panic("DChain not elaborated")
 }
 
+//AugmentBy fills the given dot into the right position in the chain
+//assuming it is referred to at all
+func (ro *DChain) AugmentBy(d *DOT) {
+	for i := 0; i < ro.NumHashes(); i++ {
+		if bytes.Equal(ro.GetDotHash(i), d.GetHash()) {
+			ro.dots[i] = d
+		}
+	}
+}
+
+//SetDOT sets the specific DOT
+func (ro *DChain) SetDOT(num int, d *DOT) {
+	ro.dots[num] = d
+}
+
+//GetDOT returns the DOT at the given index if it has been
+//stored in the chain, otherwise nil
+func (ro *DChain) GetDOT(num int) *DOT {
+	return ro.dots[num]
+}
+
 //GetDotHash returns the dot hash at the specific index
 func (ro *DChain) GetDotHash(num int) []byte {
 	return ro.dothashes[num*32 : (num+1)*32]
@@ -172,6 +197,10 @@ func (ro *DChain) GetRONum() int {
 	return ro.ronum
 }
 
+func (ro *DChain) UnElaborate() {
+	ro.elaborated = false
+}
+
 //GetContent returns the serialised content for this object
 func (ro *DChain) GetContent() []byte {
 	switch ro.ronum {
@@ -184,9 +213,18 @@ func (ro *DChain) GetContent() []byte {
 	}
 }
 
+func (ro *DChain) CheckAllSigs() bool {
+	for i := 0; i < ro.NumHashes(); i++ {
+		if ro.GetDOT(i) == nil || !ro.GetDOT(i).SigValid() {
+			return false
+		}
+	}
+	return true
+}
+
 //CreateDChain creates a dot chain from the given DOTs. The DOTs must have
 //the hash field populated
-func CreateDChain(access bool, dots ...DOT) (*DChain, error) {
+func CreateDChain(access bool, dots ...*DOT) (*DChain, error) {
 	rv := &DChain{
 		dothashes:  make([]byte, len(dots)*32),
 		chainhash:  make([]byte, 32),
@@ -279,6 +317,28 @@ type DOT struct {
 	kv map[string]string
 }
 
+type AccessDOTPermissionSet struct {
+	CanPublish     bool
+	CanConsume     bool
+	CanConsumePlus bool
+	CanConsumeStar bool
+	CanTap         bool
+	CanTapPlus     bool
+	CanTapStar     bool
+	CanList        bool
+}
+
+func (ps *AccessDOTPermissionSet) ReduceBy(rhs *AccessDOTPermissionSet) {
+	ps.CanPublish = ps.CanPublish && rhs.CanPublish
+	ps.CanConsume = ps.CanConsume && rhs.CanConsume
+	ps.CanConsumePlus = ps.CanConsumePlus && rhs.CanConsumePlus && rhs.CanConsume
+	ps.CanConsumeStar = ps.CanConsumeStar && rhs.CanConsumeStar && rhs.CanConsumePlus && rhs.CanConsume
+	ps.CanTap = ps.CanTap && rhs.CanTap
+	ps.CanTapPlus = ps.CanTapPlus && rhs.CanTapPlus && rhs.CanTap
+	ps.CanTapStar = ps.CanTapStar && rhs.CanTapStar && rhs.CanTapPlus && rhs.CanTap
+	ps.CanList = ps.CanList && rhs.CanList
+}
+
 //NewDOT constructs a DOT from its packed form
 func NewDOT(ronum int, content []byte) (rv RoutingObject, err error) {
 	defer func() {
@@ -300,7 +360,14 @@ func NewDOT(ronum int, content []byte) (rv RoutingObject, err error) {
 		content:    content,
 	}
 
-	idx = 65
+	//Sentinel: added so that a malicious attacker cannot replay an access
+	//dot as a permission dot and vice versa
+	if (content[65] != 0x01 && ronum == ROAccessDOT) ||
+		(content[65] != 0x02 && ronum == ROPermissionDOT) {
+		return nil, NewObjectError(ronum, "Bad DoT")
+	}
+
+	idx = 66
 	for {
 		switch content[idx] {
 		case 0x01: //Publish limits
@@ -459,13 +526,35 @@ func (ro *DOT) GetHash() []byte {
 	return ro.hash
 }
 
+func (ro *DOT) GetPermissionSet() *AccessDOTPermissionSet {
+	if !ro.isAccess {
+		panic("Should be an access DOT")
+	}
+	return &AccessDOTPermissionSet{
+		CanPublish:     ro.canPublish,
+		CanConsume:     ro.canConsume,
+		CanConsumePlus: ro.canConsumePlus,
+		CanConsumeStar: ro.canConsumeStar,
+		CanTap:         ro.canTap,
+		CanTapPlus:     ro.canTapPlus,
+		CanTapStar:     ro.canTapStar,
+		CanList:        ro.canList,
+	}
+}
+
 //SigValid returns if the DOT's signature is valid. This only checks
 //the signature on the first call, so the content must not change
-//after encoding for this to be valid
+//after encoding for this to be valid. As a plus it also verifies that
+//the topic is sane
 func (ro *DOT) SigValid() bool {
 	if ro.sigok == sigValid {
 		return true
 	} else if ro.sigok == sigInvalid {
+		return false
+	}
+	uriSane, _, _, _, _ := util.AnalyzeSuffix(ro.uriSuffix)
+	if !uriSane {
+		ro.sigok = sigInvalid
 		return false
 	}
 	if len(ro.signature) != 64 || len(ro.content) == 0 {
@@ -478,6 +567,12 @@ func (ro *DOT) SigValid() bool {
 	}
 	ro.sigok = sigInvalid
 	return false
+}
+
+//OverrideSetSigValid sets this dots signature as valid without checking it
+//this is used if the DOT is known good (say from the store)
+func (ro *DOT) OverrideSetSignatureValid() {
+	ro.sigok = sigValid
 }
 
 //SetCanConsume sets the consume privileges on an access dot
@@ -580,6 +675,22 @@ func (ro *DOT) SetAccessURI(mvk []byte, suffix string) {
 	ro.uri = base64.URLEncoding.EncodeToString(ro.mVK) + "/" + ro.uriSuffix
 }
 
+//GetAccessURISuffix returns the suffix if this is an access DOT
+func (ro *DOT) GetAccessURISuffix() string {
+	if !ro.isAccess {
+		panic("Should be an access DOT")
+	}
+	return ro.uriSuffix
+}
+
+//GetAccessURIMVK gets the mvk if this is an access DOT
+func (ro *DOT) GetAccessURIMVK() []byte {
+	if !ro.isAccess {
+		panic("Should be an access DOT")
+	}
+	return ro.mVK
+}
+
 //SetPermission sets the given key in a Permission DOT's table
 func (ro *DOT) SetPermission(key string, value string) {
 	if ro.isAccess {
@@ -659,30 +770,32 @@ func (ro *DOT) String() string {
 //Encode will work out the content of the DOT based on the fields
 //that have been set, and sign it with the given sk (must match the vk)
 func (ro *DOT) Encode(sk []byte) {
-	buf := make([]byte, 65, 256)
+	buf := make([]byte, 66, 256)
 	copy(buf, ro.giverVK)
 	copy(buf[32:], ro.receiverVK)
 	buf[64] = byte(ro.ttl)
-	//max = 64
+	if ro.isAccess {
+		buf[65] = 0x01
+	} else {
+		buf[65] = 0x02
+	}
+	//max = 65
 	if ro.pubLim != nil {
 		buf = append(buf, 0x01, 17)
 		buf = append(buf, ro.pubLim.toBytes()...)
 	}
-	//max = 83
 	if ro.created != nil {
 		buf = append(buf, 0x02, 8)
 		tmp := make([]byte, 8)
 		binary.LittleEndian.PutUint64(tmp, uint64(ro.created.UnixNano()/1000000))
 		buf = append(buf, tmp...)
 	}
-	//max = 93
 	if ro.expires != nil {
 		buf = append(buf, 0x03, 8)
 		tmp := make([]byte, 8)
 		binary.LittleEndian.PutUint64(tmp, uint64(ro.expires.UnixNano()/1000000))
 		buf = append(buf, tmp...)
 	}
-	//max = 103
 	for _, dr := range ro.revokers {
 		buf = append(buf, 0x04, 32)
 		buf = append(buf, dr...)
@@ -752,7 +865,17 @@ func (ro *DOT) Encode(sk []byte) {
 	buf = append(buf, sig...)
 	ro.content = buf
 	ro.signature = sig
+}
 
+//GetGiverVK returns the verifying key of the entity that created this DOT
+func (ro *DOT) GetGiverVK() []byte {
+	return ro.giverVK
+}
+
+//GetReceiverVK gets the verifying key of the entity that is the recipient of
+//trust in this DOT
+func (ro *DOT) GetReceiverVK() []byte {
+	return ro.receiverVK
 }
 
 type Entity struct {
@@ -993,6 +1116,10 @@ func (ro *Entity) FullString() string {
 	return rv
 }
 
+func (ro *Entity) OverrideSetSignatureValid() {
+	ro.sigok = sigValid
+}
+
 type Expiry struct {
 	time    time.Time
 	content []byte
@@ -1055,5 +1182,67 @@ func (ro *Expiry) WriteToStream(s io.Writer, fullObjNum bool) error {
 		}
 	}
 	_, err := s.Write(ro.content)
+	return err
+}
+func (ro *Expiry) GetExpiry() time.Time {
+	return ro.time
+}
+
+type OriginVK struct {
+	vk []byte
+}
+
+func CreateOriginVK(vk []byte) *OriginVK {
+	return &OriginVK{vk: vk}
+}
+func NewOriginVK(ronum int, content []byte) (RoutingObject, error) {
+	if ronum != ROOriginVK {
+		panic("Bad ronum")
+	}
+	if len(content) != 32 {
+		return nil, NewObjectError(ronum, "Content is the wrong size")
+	}
+	rv := OriginVK{vk: content}
+	return &rv, nil
+}
+func (ro *OriginVK) GetRONum() int {
+	return ROOriginVK
+}
+
+func (ro *OriginVK) GetContent() []byte {
+	return ro.vk
+}
+
+func (ro *OriginVK) IsPayloadObject() bool {
+	return false
+}
+
+func (ro *OriginVK) GetVK() []byte {
+	return ro.vk
+}
+
+func (ro *OriginVK) WriteToStream(s io.Writer, fullObjNum bool) error {
+	ln := 32
+	if fullObjNum {
+		//Little endian
+		_, err := s.Write([]byte{byte(ro.GetRONum()), 0, 0, 0,
+			byte(ln),
+			byte(ln >> 8),
+			byte(ln >> 16),
+			byte(ln >> 24),
+		})
+		if err != nil {
+			return err
+		}
+	} else {
+		_, err := s.Write([]byte{byte(ro.GetRONum()),
+			byte(ln),
+			byte(ln >> 8),
+		})
+		if err != nil {
+			return err
+		}
+	}
+	_, err := s.Write(ro.vk)
 	return err
 }

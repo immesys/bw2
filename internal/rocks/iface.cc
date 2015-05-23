@@ -93,7 +93,7 @@ void init()
 
 void put_object(int cf, const char *key, size_t keylen, const char *value, size_t valuelen)
 {
-  printf("RPUT %d %d %s\n", cf, keylen, key);
+  printf("RPUT %d %d %s\n", cf, (int)keylen, key);
   Status s = db->Put(WriteOptions(), handles[cf], Slice(key, keylen), Slice(value, valuelen));
   assert(s.ok());
 }
@@ -103,7 +103,7 @@ void delete_object(int cf, const char *key, size_t keylen)
 }
 char *get_object(int cf, const char *key, size_t keylen, size_t *valuelen)
 {
-  printf("RGET %d, %d %s\n", cf, keylen, key);
+  printf("RGET %d, %d %s\n", cf, (int)keylen, key);
   std::string value;
   char *rv;
   Status s = db->Get(ReadOptions(), handles[cf], Slice(key, keylen), &value);
@@ -120,7 +120,7 @@ char *get_object(int cf, const char *key, size_t keylen, size_t *valuelen)
 
 int exists(int cf, const char* key, size_t keylen)
 {
-  printf("REXISTS %d %d %s\n", cf, keylen, key);
+  printf("REXISTS %d %d %s\n", cf, (int)keylen, key);
   std::string value;
   char *rv;
   Status s = db->Get(ReadOptions(), handles[cf], Slice(key, keylen), &value);

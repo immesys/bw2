@@ -47,7 +47,8 @@ from clients or other routers.
 		0x06 : TAP_QUERY
 		0x07 : LS
 
-  MESSAGE ID: 2 byte
+  MESSAGE ID: 8 bytes. This should be generated with 48 bits of randomness,
+							and 16 bits of incrementing ID
 	MVK: 32 bytes
 	URI SUFFIX LEN: 2 bytes
 	URI SUFFIX: <URI LEN> bytes
@@ -228,6 +229,7 @@ An Access DoT is mainly for use by the router. It specifies permissions for a UR
  GRANTORVK: 32 bytes
  GRANTEEVK: 32 bytes
  TTL: 1 byte
+ Sentinel : 1 byte: 0x01
  <repeat>
  NextOption: 1 byte
  OptionSize: 1 byte
@@ -262,6 +264,7 @@ Options:
 GRANTORVK: 32 bytes
 GRANTEEVK: 32 bytes
 TTL: 1 byte
+Sentinel : 1 byte: 0x02
 <repeat>
 NextOption: 1 byte
 OptionSize: 1 byte

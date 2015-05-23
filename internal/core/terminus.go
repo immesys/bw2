@@ -204,11 +204,13 @@ func (cl *Client) Publish(m *Message) {
 	if m.Consumers != 0 && count < m.Consumers {
 		m.Consumers -= count //Set consumers to how many deliveries we have left
 	}
-	if m.Persist != 0 && !(m.Consumers != 0 && count == m.Consumers) {
-		cl.tm.persistLock.Lock()
-		cl.tm.persist[m.TopicSuffix] = m
-		cl.tm.persistLock.Unlock()
-	}
+	/*
+		if m.Persist != 0 && !(m.Consumers != 0 && count == m.Consumers) {
+			cl.tm.persistLock.Lock()
+			cl.tm.persist[m.TopicSuffix] = m
+			cl.tm.persistLock.Unlock()
+		}
+	*/
 }
 
 //Subscribe should bind the given handler with the given topic

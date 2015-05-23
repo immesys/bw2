@@ -1,10 +1,6 @@
 package api
 
-import (
-	"strings"
-
-	"github.com/immesys/bw2/internal/core"
-)
+import "github.com/immesys/bw2/internal/core"
 
 //The version of BW2 this is
 var BW2Version = "2.0.0 - 'Anarchy'"
@@ -60,90 +56,6 @@ func MatchTopic(t []string, pattern []string) bool {
 		}
 	}
 	return false
-}
-
-// RestrictBy takes a topic, and a permission, and returns the intersection
-// that represents the from topic restricted by the permission. It took a
-// looong time to work out this logic...
-func RestrictBy(from string, by string) (string, bool) {
-	fp := strings.Split(from, "/")
-	bp := strings.Split(by, "/")
-	fout := make([]string, 0, len(fp)+len(bp))
-	bout := make([]string, 0, len(fp)+len(bp))
-	var fsx, bsx int
-	for fsx = 0; fsx < len(fp) && fp[fsx] != "*"; fsx++ {
-	}
-	for bsx = 0; bsx < len(bp) && bp[bsx] != "*"; bsx++ {
-	}
-	fi, bi := 0, 0
-	fni, bni := len(fp)-1, len(bp)-1
-	emit := func() (string, bool) {
-		for i := 0; i < len(bout); i++ {
-			fout = append(fout, bout[len(bout)-i-1])
-		}
-		return strings.Join(fout, "/"), true
-	}
-	//phase 1
-	//emit matching prefix
-	for ; fi < len(fp) && bi < len(bp); fi, bi = fi+1, bi+1 {
-		if fp[fi] == bp[bi] || (bp[bi] == "+" && fp[fi] != "*") {
-			fout = append(fout, fp[fi])
-		} else if fp[fi] == "+" && bp[bi] != "*" {
-			fout = append(fout, bp[bi])
-		} else {
-			break
-		}
-	}
-	//phase 2
-	//emit matching suffix
-	for ; fni >= fi && bni >= bi; fni, bni = fni-1, bni-1 {
-		if fp[fni] == bp[bni] || (bp[bni] == "+" && fp[fni] != "*") {
-			bout = append(bout, fp[fni])
-		} else if fp[fni] == "+" && bp[bni] != "*" {
-			bout = append(bout, bp[bni])
-		} else {
-			break
-		}
-	}
-	//phase 3
-	//emit front
-	if fi < len(fp) && fp[fi] == "*" {
-		for ; bi < len(bp) && bp[bi] != "*" && bi <= bni; bi++ {
-			fout = append(fout, bp[bi])
-		}
-	} else if bi < len(bp) && bp[bi] == "*" {
-		for ; fi < len(fp) && fp[fi] != "*" && fi <= fni; fi++ {
-			fout = append(fout, fp[fi])
-		}
-	}
-	//phase 4
-	//emit back
-	if fni >= 0 && fp[fni] == "*" {
-		for ; bni >= 0 && bp[bni] != "*" && bni >= bi; bni-- {
-			bout = append(bout, bp[bni])
-		}
-	} else if bni >= 0 && bp[bni] == "*" {
-		for ; fni >= 0 && fp[fni] != "*" && fni >= fi; fni-- {
-			bout = append(bout, fp[fni])
-		}
-	}
-	//phase 5
-	//emit star if they both have it
-	if fi == fni && fp[fi] == "*" && bi == bni && bp[bi] == "*" {
-		fout = append(fout, "*")
-		return emit()
-	}
-	//Remove any stars
-	if fi < len(fp) && fp[fi] == "*" {
-		fi++
-	}
-	if bi < len(bp) && bp[bi] == "*" {
-		bi++
-	}
-	if (fi == fni+1 || fi == len(fp)) && (bi == bni+1 || bi == len(bp)) {
-		return emit()
-	}
-	return "", false
 }
 
 func (c *BosswaveClient) dispatch() {

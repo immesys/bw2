@@ -43,3 +43,7 @@ type ObjectResponse struct {
 	UMid    UniqueMessageID
 	Objects []objects.PayloadObject
 }
+
+func (s *StatusMessage) Ok() bool {
+	return s.Code == BWStatusOkay
+}

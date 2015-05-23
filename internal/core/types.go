@@ -15,12 +15,7 @@ func SplitURI(uri string) (mvk []byte, urisuffix string) {
 	return rv, uri[33:]
 }
 
-type Dot struct {
-	FromVK    []byte
-	ToVK      []byte
-	Signature []byte
-	Params    map[string][]byte
-}
+/*
 type SubReq struct {
 	//	Type     uint8
 	DChain   []Dot
@@ -30,3 +25,4 @@ type SubReq struct {
 	Client   *Client
 	Dispatch func(m *Message)
 }
+*/

@@ -1,6 +1,11 @@
 package api
 
-import "github.com/immesys/bw2/internal/core"
+import (
+	"fmt"
+
+	log "github.com/cihub/seelog"
+	"github.com/immesys/bw2/internal/core"
+)
 
 //The version of BW2 this is
 var BW2Version = "2.0.0 - 'Anarchy'"
@@ -18,6 +23,7 @@ type BW struct {
 // OpenBWContext will create a new Bosswave context and initialise the
 // daemons specified in the configuration file
 func OpenBWContext(config *core.BWConfig) *BW {
+	log.Infof("Opening context")
 	if config == nil {
 		config = core.LoadConfig("")
 	}
@@ -81,26 +87,55 @@ func (bw *BW) CreateClient(queueChanged func()) *BosswaveClient {
 	rv := &BosswaveClient{bw: bw, irq: queueChanged}
 	rv.cl = bw.tm.CreateClient(rv.dispatch)
 	if queueChanged == nil {
-		rv.disch = make(chan *core.MsgSubPair, 5)
+		/*rv.disch = make(chan *core.MsgSubPair, 5)
 		go func() {
 			for {
 				ms := <-rv.disch
 				ms.S.Dispatch(ms.M)
 			}
-		}()
+		}()*/
+		panic("!")
 	}
 	return rv
 }
 
+func (c *BosswaveClient) DispatchMessage(m *core.Message) *core.StatusMessage {
+	//Not clear we would do this for messages arriving from OOB
+	s := m.Verify()
+	if !s.Ok() {
+		fmt.Printf("Failed verification: %d\n", s.Code)
+		return s
+	}
+	//Probably check for remote vs local delivery. Assume local for now
+	switch m.Type {
+	case core.TypePublish:
+		c.cl.Publish(m)
+	default:
+		//Subscribes need their own channel or something.
+		panic("ARGH WTF EVEN FUCK!")
+	}
+	return s
+}
+
+/*
 // Publish the given message using the permissions contained in the message
-func (c *BosswaveClient) Publish(m *core.Message) error {
-	//Typically we would now send this to a security check, also message would be different
+func (c *BosswaveClient) Publish(m *core.Message) *core.StatusMessage {
+
+	//In real life we would now check if this message was destined for local
+	//delivery or remote delivery. If remote, we would create the client for that
+	//for now lets assume its local. Furthermore, lets pretend it needs its
+	//security checked (maybe we decide to do that in future anyway)
+	s := m.Verify()
+	if s.Code != core.BWStatusOkay {
+		return s
+	}
 	c.cl.Publish(m)
 	return nil
 }
-
+*/
 // Subscribe with the given subscription request
-func (c *BosswaveClient) Subscribe(s *core.SubReq) bool {
-	new := c.cl.Subscribe(s)
-	return new == s
+func (c *BosswaveClient) Subscribe(m *core.Message) bool {
+	n := c.cl.Subscribe(m)
+	fmt.Printf("Subid: %v\n", n)
+	return true
 }

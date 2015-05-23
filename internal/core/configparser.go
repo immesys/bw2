@@ -9,13 +9,11 @@ import (
 
 // BWConfig is the configuration for a router
 type BWConfig struct {
-	Adapters struct {
-		Native struct {
-			ListenOn string
-		}
-		Plaintext struct {
-			ListenOn string
-		}
+	Native struct {
+		ListenOn string
+	}
+	Plaintext struct {
+		ListenOn string
 	}
 }
 
@@ -26,13 +24,13 @@ func LoadConfig(filename string) *BWConfig {
 	if filename != "" {
 		err := gcfg.ReadFileInto(rv, filename)
 		if err != nil {
-			log.Criticalf("Could not load specified config file")
+			log.Criticalf("Could not load specified config file: %v", err)
 			os.Exit(1)
 		}
 	} else {
 		err := gcfg.ReadFileInto(rv, "bw2.ini")
 		if err != nil {
-			log.Criticalf("Could not load default config file")
+			log.Criticalf("Could not load default config file: %v", err)
 			os.Exit(1)
 		}
 	}

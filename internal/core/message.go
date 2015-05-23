@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math/rand"
 	"sync/atomic"
 	"time"
 
@@ -95,7 +96,9 @@ func (m *Message) Encode(sk []byte, vk []byte) {
 	}
 	b = append(b, 0, 0, 0, 0)
 	sig := make([]byte, 64)
+	m.Signature = sig
 	crypto.SignBlob(sk, vk, sig, b)
+	m.SigCoverEnd = len(b)
 	b = append(b, sig...)
 	m.Encoded = b
 }
@@ -275,17 +278,20 @@ func AnalyzeAccessDOTChain(mtype int, targetURI string, dc *objects.DChain) (cod
 	uri, uriok := util.RestrictBy(targetURI, firstdot.GetAccessURISuffix())
 	if !uriok {
 		code = BWStatusBadURI
+		log.Infof("AZ: BadURI %v", uri)
 		return
 	}
 	mvk = firstdot.GetAccessURIMVK()
 	ps = firstdot.GetPermissionSet()
 	if !bytes.Equal(head, mvk) {
 		code = BWStatusBadPermissions
+		log.Infof("AZ: BadPermissions (mvk) %v != %v", crypto.FmtKey(head), crypto.FmtKey(mvk))
 		return
 	}
 	for i := 1; i < dc.NumHashes(); i++ {
 		d := dc.GetDOT(i)
 		if ttl == 0 {
+			log.Infof("AZ: TTLExpired")
 			code = BWStatusTTLExpired
 			return
 		}
@@ -296,12 +302,14 @@ func AnalyzeAccessDOTChain(mtype int, targetURI string, dc *objects.DChain) (cod
 		}
 		if !bytes.Equal(tail, d.GetGiverVK()) ||
 			!bytes.Equal(mvk, d.GetAccessURIMVK()) {
+			log.Infof("AZ: InvalidDot (chain link mismatch)")
 			code = BWStatusInvalidDOT
 			return
 		}
 		var okay bool
 		uri, okay = util.RestrictBy(uri, d.GetAccessURISuffix())
 		if !okay {
+			log.Infof("AZ: BadPermissions (merging URI)")
 			code = BWStatusBadPermissions
 			return
 		}
@@ -312,7 +320,7 @@ func AnalyzeAccessDOTChain(mtype int, targetURI string, dc *objects.DChain) (cod
 	tValid, star, plus, _, _ := util.AnalyzeSuffix(uri)
 
 	if !tValid {
-		log.Criticalf("Didn't expect bad uri after merge: %s", uri)
+		log.Infof("AZ: BadURI (merged URI)")
 		code = BWStatusBadURI
 		return
 	}
@@ -323,25 +331,30 @@ func AnalyzeAccessDOTChain(mtype int, targetURI string, dc *objects.DChain) (cod
 	//(and resource groups too)
 	case TypePublish, TypePersist:
 		if !ps.CanPublish {
+			log.Infof("AZ: BadPermissions (ps.pub)")
 			code = BWStatusBadPermissions
 			return
 		}
 	case TypeQuery, TypeSubscribe:
 		if !ps.CanConsume || (plus && !ps.CanConsumePlus) || (star && !ps.CanConsumeStar) {
+			log.Infof("AZ: BadPermissions (ps.consume...)")
 			code = BWStatusBadPermissions
 			return
 		}
 	case TypeTapQuery, TypeTap:
 		if !ps.CanTap || (plus && !ps.CanTapPlus) || (star && !ps.CanTapStar) {
+			log.Infof("AZ: BadPermissions (ps.tap...)")
 			code = BWStatusBadPermissions
 			return
 		}
 	case TypeLS:
 		if !ps.CanList {
+			log.Infof("AZ: BadPermissions (ps.list)")
 			code = BWStatusBadPermissions
 			return
 		}
 	default:
+		log.Infof("AZ: BadOperation (typecode)")
 		code = BWStatusBadOperation
 		return
 	}
@@ -379,6 +392,7 @@ func (m *Message) Verify() *StatusMessage {
 	//Can't publish to wildcards
 	if (star || plus) && (m.Type == TypePublish || m.Type == TypePersist) {
 		m.status.Code = BWStatusBadOperation
+		log.Infof("V: BadOperation (pub to wild)")
 		return &m.status
 	}
 	if !urivalid {
@@ -391,18 +405,21 @@ func (m *Message) Verify() *StatusMessage {
 
 	//Can't get permissions if there is no access chain
 	if pac == nil {
+		log.Infof("V: BadPermissions (no PAC)")
 		m.status.Code = BWStatusBadPermissions
 		goto badperm
 	} else {
 		pac = ElaborateDChain(pac)
 		if pac == nil {
 			m.status.Code = BWStatusUnresolvable
+			log.Infof("V: Unresolvable (elaborating chain)")
 			goto badperm
 		}
 
 		ok := ResolveDotsInDChain(pac, m.RoutingObjects)
 		if !ok {
 			m.status.Code = BWStatusUnresolvable
+			log.Infof("V: Unresolvable (dots in chain)")
 			goto badperm
 		}
 
@@ -410,14 +427,15 @@ func (m *Message) Verify() *StatusMessage {
 		//well formed
 		if !pac.CheckAllSigs() {
 			m.status.Code = BWStatusInvalidDOT
+			log.Infof("V: InvalidDOT (dot signature)")
 			goto badperm
 		}
 
 		//Next check the chain is connected end to end, check the TTL and construct
 		//the merged topic
 		azCode, azMVK, azURI, _, _, _, azOVK := AnalyzeAccessDOTChain(int(m.Type), m.TopicSuffix, pac)
+		m.status.Code = azCode
 		if azCode != BWStatusOkay {
-			m.status.Code = azCode
 			goto badperm
 		}
 		m.MergedTopic = azURI
@@ -426,6 +444,7 @@ func (m *Message) Verify() *StatusMessage {
 		if bytes.Equal(azOVK, allzeroes) {
 			if m.OriginVK == nil {
 				m.status.Code = BWStatusNoOrigin
+				log.Infof("V: NoOrigin (allgrant, no OVK ro)")
 				goto badperm
 			}
 		} else {
@@ -436,6 +455,7 @@ func (m *Message) Verify() *StatusMessage {
 		//Also check chain MVK matches message
 		if !bytes.Equal(m.MVK, azMVK) {
 			m.status.Code = BWStatusMVKMismatch
+			log.Infof("V: MVKMismatch %v != %v", crypto.FmtKey(m.MVK), crypto.FmtKey(azMVK))
 			goto badperm
 		}
 	}
@@ -451,8 +471,10 @@ badperm:
 	}
 
 	//Now check if the signature is correct
+	fmt.Printf("enclen %v, sce %v, siglen %v", len(m.Encoded), m.SigCoverEnd, len(m.Signature))
 	if !crypto.VerifyBlob(*m.OriginVK, m.Signature, m.Encoded[:m.SigCoverEnd]) {
 		m.status.Code = BWStatusInvalidSig
+		log.Infof("V: InvalidSig (whole sig)")
 		//Not even a dollar can save you
 		return &m.status
 	}
@@ -464,6 +486,7 @@ badperm:
 	case TypePublish, TypePersist:
 		if dollarpath {
 			m.status.Code = BWStatusBadPermissions
+			log.Infof("V: BadPermissions (dollarpath pub)")
 			return &m.status
 		}
 	case TypeQuery, TypeSubscribe:
@@ -474,6 +497,7 @@ badperm:
 	case TypeTapQuery, TypeTap:
 		if dollarpath {
 			m.status.Code = BWStatusBadPermissions
+			log.Infof("V: BadPermissions (dollarpath tap)")
 			return &m.status
 		}
 	case TypeLS:
@@ -483,9 +507,11 @@ badperm:
 		}
 	default:
 		m.status.Code = BWStatusBadOperation
+		log.Infof("V: BadOperation (type)")
 		return &m.status
 	}
 
+	log.Infof("V: OK")
 	m.status.Code = BWStatusOkay
 	return &m.status
 }
@@ -504,13 +530,11 @@ type ConstructionMessage struct {
 }
 
 func NewMessageFactory() *MessageFactory {
-	epoch := time.Date(2015, time.January, 1, 0, 0, 0, 0, time.UTC)
-	//milliseconds since the epoch
-	delta := time.Now().Sub(epoch).Nanoseconds() / 1000000
-	return &MessageFactory{mid: uint64(delta << 16)}
+	return &MessageFactory{mid: uint64(rand.Int63() << 16)}
 }
 func (f *MessageFactory) GetMid() uint64 {
 	mid := atomic.AddUint64(&f.mid, 1)
+	fmt.Printf("Returning mid %v\n", mid)
 	return mid
 }
 
@@ -573,6 +597,12 @@ func (cm *ConstructionMessage) SetConsumers(v int) {
 //will be included as an elaborated DChain. If includeDOTs is set, the DOTs it
 //references will be included (if this router has them)
 func (cm *ConstructionMessage) AddDChain(dc *objects.DChain, elaborate bool, includeDOTs bool) {
+	if cm.bad {
+		return
+	}
+	if dc.IsAccess() && cm.m.PrimaryAccessChain == nil {
+		cm.m.PrimaryAccessChain = dc
+	}
 	if elaborate && !dc.IsElaborated() {
 		dc = ElaborateDChain(dc)
 		if dc == nil {
@@ -598,5 +628,8 @@ func (cm *ConstructionMessage) Finish() *Message {
 		return nil
 	}
 	cm.m.Encode(cm.f.us.GetSK(), cm.f.us.GetVK())
+	cm.m.Topic = base64.URLEncoding.EncodeToString(cm.m.MVK) + "/" + cm.m.TopicSuffix
+	cm.m.UMid.Mid = cm.m.MessageID
+	cm.m.UMid.Sig = binary.LittleEndian.Uint64(cm.m.Signature)
 	return cm.m
 }

@@ -148,6 +148,11 @@ func (ro *DChain) WriteToStream(s io.Writer, fullObjNum bool) error {
 	return nil
 }
 
+func (ro *DChain) IsAccess() bool {
+	return ro.GetRONum() == ROAccessDChain ||
+		ro.GetRONum() == ROAccessDChainHash
+}
+
 //NumHashes returns the length of the chain
 func (ro *DChain) NumHashes() int {
 	if ro.elaborated {

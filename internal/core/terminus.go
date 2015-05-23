@@ -12,25 +12,32 @@ package core
 
 import (
 	"container/list"
+	"fmt"
 	"math/rand"
 	"strings"
 	"sync"
 	"sync/atomic"
 )
 
+/*
 type SubscriptionHandler interface {
 	Handle(m *Message)
 }
+*/
 
+//A handle to a queue that gets messages dispatched to it
 type Client struct {
 	//MVK etc
-	cid          uint32
+	cid          clientid
 	queueChanged func()
 	mlist        *list.List
 	tm           *Terminus
 	mlistLock    sync.Mutex
 }
 
+type clientid uint32
+
+//Get a message from the front of the queue
 func (cl *Client) GetFront() *MsgSubPair {
 	cl.mlistLock.Lock()
 	defer cl.mlistLock.Unlock()
@@ -42,51 +49,54 @@ func (cl *Client) GetFront() *MsgSubPair {
 	return nil
 }
 
+/*
 type Topic struct {
 	V string
 }
+*/
 
 type MsgSubPair struct {
 	M *Message
-	S *SubReq
+	S UniqueMessageID
 }
 
 type snode struct {
 	lock     sync.RWMutex
 	children map[string]*snode
 	//map cid to subscription (NOT SUBID)
-	subs map[uint32]subscription
+	subs map[clientid]subscription
 }
 
 func NewSnode() *snode {
-	return &snode{children: make(map[string]*snode), subs: make(map[uint32]subscription, 0)}
+	return &snode{children: make(map[string]*snode), subs: make(map[clientid]subscription, 0)}
 }
 
 type subscription struct {
-	subid  uint32
+	subid  UniqueMessageID
 	client *Client
 	tap    bool
-	req    *SubReq
 }
+
 type Terminus struct {
 	// Crude workaround
 	q_lock sync.RWMutex
 	//topic onto cid onto subid
 	//subs map[string]map[uint32]subscription
 	//subid onto string, uid is got from context
-	rsubs map[uint32]*SubReq
+	//rsubs map[UniqueMessageID]*SubReq
 
-	c_maplock  sync.RWMutex
-	cmap       map[uint32]*Client
-	cid_head   uint32
-	subid_head uint32
+	c_maplock sync.RWMutex
+	cmap      map[clientid]*Client
+	cid_head  uint32
 	//map topic onto message
-	persistLock sync.RWMutex
-	persist     map[string]*Message
+	/*
+		persistLock sync.RWMutex
+		persist     map[string]*Message
+	*/
 
 	stree *snode
 	//map subid to a tree node
-	rstree map[uint32]*snode
+	rstree map[UniqueMessageID]*snode
 }
 
 func (s *snode) rmatchSubs(parts []string, visitor func(s subscription)) {
@@ -98,11 +108,13 @@ func (s *snode) rmatchSubs(parts []string, visitor func(s subscription)) {
 		s.lock.RUnlock()
 		return
 	}
+	fmt.Printf("Checking part: %v\n", parts[0])
 	s.lock.RLock()
 	v1, ok1 := s.children[parts[0]]
 	v2, ok2 := s.children["+"]
 	v3, ok3 := s.children["*"]
 	s.lock.RUnlock()
+	fmt.Printf("Got: %v %v %v\n", ok1, ok2, ok3)
 	if ok1 {
 		v1.rmatchSubs(parts[1:], visitor)
 	}
@@ -115,7 +127,7 @@ func (s *snode) rmatchSubs(parts []string, visitor func(s subscription)) {
 		}
 	}
 }
-func (s *snode) addSub(parts []string, sub subscription) (uint32, *snode) {
+func (s *snode) addSub(parts []string, sub subscription) (UniqueMessageID, *snode) {
 	if len(parts) == 0 {
 		s.lock.Lock()
 		existing, ok := s.subs[sub.client.cid]
@@ -143,10 +155,10 @@ func (s *snode) addSub(parts []string, sub subscription) (uint32, *snode) {
 	}
 }
 
-func (tm *Terminus) AddSub(topic string, s subscription) uint32 {
+func (tm *Terminus) AddSub(topic string, s subscription) UniqueMessageID {
 	parts := strings.Split(topic, "/")
 	subid, node := tm.stree.addSub(parts, s)
-	if subid != s.subid {
+	if subid == s.subid { //This was a new subscription
 		tm.q_lock.Lock()
 		tm.rstree[subid] = node
 		tm.q_lock.Unlock()
@@ -160,14 +172,15 @@ func (tm *Terminus) RMatchSubs(topic string, visitor func(s subscription)) {
 
 func CreateTerminus() *Terminus {
 	rv := &Terminus{}
-	rv.rsubs = make(map[uint32]*SubReq)
-	rv.cmap = make(map[uint32]*Client)
+	//rv.rsubs = make(map[uint32]*SubReq)
+	rv.cmap = make(map[clientid]*Client)
 	rv.stree = NewSnode()
+	rv.rstree = make(map[UniqueMessageID]*snode)
 	return rv
 }
 
 func (tm *Terminus) CreateClient(queueChanged func()) *Client {
-	cid := atomic.AddUint32(&tm.cid_head, 1)
+	cid := clientid(atomic.AddUint32(&tm.cid_head, 1))
 	c := Client{cid: cid, queueChanged: queueChanged, mlist: list.New(), tm: tm}
 	tm.q_lock.Lock()
 	tm.cmap[cid] = &c
@@ -176,8 +189,10 @@ func (tm *Terminus) CreateClient(queueChanged func()) *Client {
 }
 
 func (cl *Client) Publish(m *Message) {
+	fmt.Printf("Publishing in terminus\n")
 	var clientlist []subscription
-	cl.tm.RMatchSubs(m.TopicSuffix, func(s subscription) {
+	cl.tm.RMatchSubs(m.Topic, func(s subscription) {
+		fmt.Printf("sub match")
 		clientlist = append(clientlist, s)
 	})
 	if m.Consumers != 0 {
@@ -192,7 +207,7 @@ func (cl *Client) Publish(m *Message) {
 		if !sub.tap && m.Consumers != 0 && count == m.Consumers {
 			continue //We hit limit
 		}
-		ms := &MsgSubPair{M: m, S: sub.req}
+		ms := &MsgSubPair{M: m, S: sub.subid}
 		sub.client.mlist.PushBack(ms)
 		changed_clients[c] = sub.client
 		count++
@@ -216,25 +231,19 @@ func (cl *Client) Publish(m *Message) {
 //Subscribe should bind the given handler with the given topic
 //returns the identifier used for Unsubscribe
 //func (cl *Client) Subscribe(topic string, tap bool, meta interface{}) (uint32, bool) {
-func (cl *Client) Subscribe(s *SubReq) *SubReq {
-	subid := atomic.AddUint32(&cl.tm.subid_head, 1)
-	newsub := subscription{subid: subid, tap: s.Tap, client: cl, req: s}
+func (cl *Client) Subscribe(m *Message) UniqueMessageID {
+	newsub := subscription{subid: m.UMid, tap: m.Type == TypeTap, client: cl}
 
-	//Add to the sub tree
-	subid = cl.tm.AddSub(s.Topic, newsub)
-	//the subid might not be the one we specified, if it was already in the tree
-	if subid == newsub.subid { //was new
-		cl.tm.q_lock.Lock()
-		cl.tm.rsubs[subid] = s
-		cl.tm.q_lock.Unlock()
-		return s
+	if len(m.Topic) < 39 {
+		panic("Bad topic: " + m.Topic)
 	}
-	cl.tm.q_lock.RLock()
-	rv := cl.tm.rsubs[subid]
-	cl.tm.q_lock.RUnlock()
-	return rv
+	//Add to the sub tree
+	subid := cl.tm.AddSub(m.Topic, newsub)
+	//the subid might not be the one we specified, if it was already in the tree
+	return subid
 }
 
+/*
 func (cl *Client) Query(topic string, tap bool) *Message {
 	cl.tm.persistLock.RLock()
 	m, ok := cl.tm.persist[topic]
@@ -254,7 +263,9 @@ func (cl *Client) Query(topic string, tap bool) *Message {
 	}
 	return nil
 }
+*/
 
+/*
 //List will return a list of known immediate children for a given URI. A known
 //child can only exist if the children streams have persisted messages
 func (cl *Client) List(topic string) []string {
@@ -269,19 +280,18 @@ func (cl *Client) List(topic string) []string {
 	cl.tm.persistLock.RUnlock()
 	return rv
 }
+*/
 
 //Unsubscribe does what it says. For now the topic system is crude
 //so this doesn't seem necessary to have the subid instead of topic
 //but it will make sense when we are doing wildcards later.
-func (cl *Client) Unsubscribe(subid uint32) {
+func (cl *Client) Unsubscribe(subid UniqueMessageID) {
 	cl.tm.q_lock.Lock()
-	_, ok1 := cl.tm.rsubs[subid]
-	node := cl.tm.rstree[subid]
-	if !ok1 {
+	node, ok := cl.tm.rstree[subid]
+	if !ok {
 		cl.tm.q_lock.Unlock()
 		return
 	}
-	delete(cl.tm.rsubs, subid)
 	delete(node.subs, cl.cid)
 	//TODO we don't clean up the tree!
 	cl.tm.q_lock.Unlock()

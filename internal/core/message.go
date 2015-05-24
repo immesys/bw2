@@ -6,8 +6,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"math/rand"
-	"sync/atomic"
 	"time"
 
 	log "github.com/cihub/seelog"
@@ -97,7 +95,11 @@ func (m *Message) Encode(sk []byte, vk []byte) {
 	b = append(b, 0, 0, 0, 0)
 	sig := make([]byte, 64)
 	m.Signature = sig
+	fmt.Printf("\nSigning message blob len %d\n", len(b))
+	fmt.Println("SK: ", crypto.FmtKey(sk))
+	fmt.Println("VK: ", crypto.FmtKey(vk))
 	crypto.SignBlob(sk, vk, sig, b)
+	fmt.Println("Signature: ", crypto.FmtSig(m.Signature))
 	m.SigCoverEnd = len(b)
 	b = append(b, sig...)
 	m.Encoded = b
@@ -363,6 +365,7 @@ func AnalyzeAccessDOTChain(mtype int, targetURI string, dc *objects.DChain) (cod
 	return
 }
 
+//TODO remove the damn status message thing and just use an int
 //A piece of critical documentation:
 //There are a few "exceptions" to the obvious rules.
 // a) A DOT granting a VK of all zeroes applies to anyone
@@ -434,6 +437,7 @@ func (m *Message) Verify() *StatusMessage {
 		//Next check the chain is connected end to end, check the TTL and construct
 		//the merged topic
 		azCode, azMVK, azURI, _, _, _, azOVK := AnalyzeAccessDOTChain(int(m.Type), m.TopicSuffix, pac)
+		fmt.Println("AZDC says OVK is ", crypto.FmtKey(azOVK))
 		m.status.Code = azCode
 		if azCode != BWStatusOkay {
 			goto badperm
@@ -471,7 +475,9 @@ badperm:
 	}
 
 	//Now check if the signature is correct
-	fmt.Printf("enclen %v, sce %v, siglen %v", len(m.Encoded), m.SigCoverEnd, len(m.Signature))
+	fmt.Printf("\nenclen %v, sce %v, siglen %v\n", len(m.Encoded), m.SigCoverEnd, len(m.Signature))
+	fmt.Println("Signature: ", crypto.FmtSig(m.Signature))
+	fmt.Println("VK: ", crypto.FmtKey(*m.OriginVK))
 	if !crypto.VerifyBlob(*m.OriginVK, m.Signature, m.Encoded[:m.SigCoverEnd]) {
 		m.status.Code = BWStatusInvalidSig
 		log.Infof("V: InvalidSig (whole sig)")
@@ -516,17 +522,12 @@ badperm:
 	return &m.status
 }
 
+/*
 // Message is the primary Bosswave message type that is passed all the way through
 type MessageFactory struct {
 	m   *Message
 	mid uint64
 	us  *objects.Entity
-}
-type ConstructionMessage struct {
-	f   *MessageFactory
-	m   *Message
-	s   *StatusMessage
-	bad bool
 }
 
 func NewMessageFactory() *MessageFactory {
@@ -547,89 +548,4 @@ func (f *MessageFactory) SetEntity(e *objects.Entity) bool {
 	f.us = e
 	return true
 }
-
-func (f *MessageFactory) NewMessage(mtype int, mvk []byte, urisuffix string) *ConstructionMessage {
-	m := Message{Type: uint8(mtype),
-		TopicSuffix:    urisuffix,
-		MVK:            mvk,
-		RoutingObjects: []objects.RoutingObject{},
-		PayloadObjects: []objects.PayloadObject{},
-		MessageID:      f.GetMid()}
-	rv := ConstructionMessage{f: f, m: &m}
-	valid, star, plus, _, _ := util.AnalyzeSuffix(urisuffix)
-	if !valid {
-		rv.bail(BWStatusBadURI)
-	} else if len(mvk) != 32 {
-		rv.bail(BWStatusBadURI)
-	} else if (star || plus) && (mtype == TypePublish || mtype == TypePersist) {
-		rv.bail(BWStatusBadOperation)
-	}
-	return &rv
-}
-func (cm *ConstructionMessage) bail(code int) {
-	cm.bad = true
-	cm.s.Code = code
-}
-func (cm *ConstructionMessage) AddRoutingObject(ro objects.RoutingObject) {
-	if cm.bad {
-		return
-	}
-	cm.m.RoutingObjects = append(cm.m.RoutingObjects, ro)
-}
-func (cm *ConstructionMessage) AddPayloadObject(po objects.PayloadObject) {
-	if cm.bad {
-		return
-	}
-	cm.m.PayloadObjects = append(cm.m.PayloadObjects, po)
-}
-func (cm *ConstructionMessage) Ok() (bool, int) {
-	return !cm.bad, cm.s.Code
-}
-func (cm *ConstructionMessage) SetConsumers(v int) {
-	if cm.bad {
-		return
-	}
-	//We don't really mind if its the wrong type
-	cm.m.Consumers = v
-}
-
-//AddDChain will add the given DChain to the message. if elaborate is set, it
-//will be included as an elaborated DChain. If includeDOTs is set, the DOTs it
-//references will be included (if this router has them)
-func (cm *ConstructionMessage) AddDChain(dc *objects.DChain, elaborate bool, includeDOTs bool) {
-	if cm.bad {
-		return
-	}
-	if dc.IsAccess() && cm.m.PrimaryAccessChain == nil {
-		cm.m.PrimaryAccessChain = dc
-	}
-	if elaborate && !dc.IsElaborated() {
-		dc = ElaborateDChain(dc)
-		if dc == nil {
-			cm.bail(BWStatusUnresolvable)
-		}
-	}
-	if includeDOTs && dc.IsElaborated() {
-		for i := 0; i < dc.NumHashes(); i++ {
-			d := dc.GetDOT(i)
-			if d != nil {
-				cm.m.RoutingObjects = append(cm.m.RoutingObjects, d)
-			}
-		}
-	}
-	if !elaborate {
-		dc.UnElaborate()
-	}
-	cm.m.RoutingObjects = append(cm.m.RoutingObjects, dc)
-}
-
-func (cm *ConstructionMessage) Finish() *Message {
-	if cm.bad {
-		return nil
-	}
-	cm.m.Encode(cm.f.us.GetSK(), cm.f.us.GetVK())
-	cm.m.Topic = base64.URLEncoding.EncodeToString(cm.m.MVK) + "/" + cm.m.TopicSuffix
-	cm.m.UMid.Mid = cm.m.MessageID
-	cm.m.UMid.Sig = binary.LittleEndian.Uint64(cm.m.Signature)
-	return cm.m
-}
+*/

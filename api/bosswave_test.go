@@ -7,27 +7,27 @@ import (
 	"time"
 
 	"github.com/immesys/bw2/internal/core"
+	"github.com/immesys/bw2/internal/crypto"
 	"github.com/immesys/bw2/internal/util"
 	"github.com/immesys/bw2/objects"
 )
 
 func TestBasicX(t *testing.T) {
-
-	bw := OpenBWContext(nil)
-	client1 := bw.CreateClient(func() {
-		fmt.Println("C1 Queue changed")
-	})
-	client2 := bw.CreateClient(func() {
-		fmt.Println("C2 Queue changed")
-	})
-
 	//Create the three entities in this test. E1 is publishing to namespace
 	//E2 is subscribing to namespace
 	e1 := objects.CreateNewEntity("contact1", "comment1", nil, 30*time.Hour)
 	e2 := objects.CreateNewEntity("contact2", "comment2", nil, 30*time.Hour)
 	namespace := objects.CreateNewEntity("contact3", "comment3", nil, 30*time.Hour)
+
+	fmt.Printf("Created the three entities\ne1: %v\ne2: %v\nns: %v\n",
+		crypto.FmtKey(e1.GetVK()), crypto.FmtKey(e2.GetVK()), crypto.FmtKey(namespace.GetVK()))
+	bw := OpenBWContext(nil)
+	client1 := bw.CreateClient(e1)
+	client2 := bw.CreateClient(e2)
+
 	mvk := namespace.GetVK()
 
+	//TODO replace this with async_full implementations of CreateDOT
 	//allow E1 to publish to a/*
 	nToE1 := objects.CreateDOT(true, mvk, e1.GetVK())
 	nToE1.SetAccessURI(mvk, "a/*")
@@ -35,11 +35,12 @@ func TestBasicX(t *testing.T) {
 	nToE1.Encode(namespace.GetSK())
 
 	//allow E2 to subscribe to a/b/* with plus privilege
-	nToE2 := objects.CreateDOT(true, mvk, e1.GetVK())
+	nToE2 := objects.CreateDOT(true, mvk, e2.GetVK())
 	nToE2.SetAccessURI(mvk, "a/b/*")
 	nToE2.SetCanConsume(true, true, false)
 	nToE2.Encode(namespace.GetSK())
 
+	//TODO replace this with async_full implementations of CreateChain
 	dcE1, err := objects.CreateDChain(true, nToE1)
 	if err != nil {
 		panic(err)
@@ -49,28 +50,35 @@ func TestBasicX(t *testing.T) {
 		panic(err)
 	}
 
-	e1MF := core.NewMessageFactory()
-	e1MF.SetEntity(e1)
+	sp := SubscribeParams{
+		MVK:                mvk,
+		URISuffix:          "a/b/c",
+		PrimaryAccessChain: dcE2,
+		ElaboratePAC:       FullElaboration,
+		DoVerify:           true,
+	}
+	client2.Subscribe(&sp,
+		func(code int, isnew bool, subid core.UniqueMessageID) {
+			fmt.Println("Got Scode", code)
+			if code != core.BWStatusOkay {
+				fmt.Println("FAIL")
+				return
+			}
+			pp := PublishParams{
+				MVK:                mvk,
+				URISuffix:          "a/b/c",
+				PrimaryAccessChain: dcE1,
+				ElaboratePAC:       FullElaboration,
+				DoVerify:           true,
+			}
+			client1.Publish(&pp, func(code int) {
+				fmt.Println("Got Pcode", code)
+			})
+		},
+		func(m *core.Message) {
+			fmt.Println("Got message")
+		})
 
-	e2MF := core.NewMessageFactory()
-	e2MF.SetEntity(e2)
-
-	//Send subscribe mesage first
-
-	e2SubMsg := e2MF.NewMessage(core.TypeSubscribe, mvk, "a/b/*")
-	e2SubMsg.AddDChain(dcE2, true, true)
-	e2SubMsgF := e2SubMsg.Finish()
-
-	//Send subscribe?
-	client2.Subscribe(e2SubMsgF)
-
-	//Send payload message
-	e1PubMsg := e1MF.NewMessage(core.TypePublish, mvk, "a/b/c")
-	e1PubMsg.AddDChain(dcE1, true, true)
-	e1PubMsgF := e1PubMsg.Finish()
-
-	//Send publish?
-	client1.DispatchMessage(e1PubMsgF)
 }
 
 func TestMatchTopic(t *testing.T) {

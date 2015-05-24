@@ -202,6 +202,21 @@ func (ro *DChain) GetRONum() int {
 	return ro.ronum
 }
 
+func (ro *DChain) GetGiverVK() []byte {
+	if !ro.IsElaborated() || ro.GetDOT(0) == nil {
+		return nil
+	}
+	return ro.GetDOT(0).GetGiverVK()
+}
+
+func (ro *DChain) GetReceiverVK() []byte {
+	ln := ro.NumHashes()
+	if !ro.IsElaborated() || ro.GetDOT(ln-1) == nil {
+		return nil
+	}
+	return ro.GetDOT(ln - 1).GetReceiverVK()
+}
+
 func (ro *DChain) UnElaborate() {
 	ro.elaborated = false
 }
@@ -604,6 +619,16 @@ func (ro *DOT) SetCreationToNow() {
 	t *= 1000000
 	to := time.Unix(0, t)
 	ro.created = &to
+}
+
+//Check is vk is all zeroes
+func IsEveryoneVK(vk []byte) bool {
+	for _, b := range vk {
+		if b != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 //SetExpiry sets the expiry time to the given time

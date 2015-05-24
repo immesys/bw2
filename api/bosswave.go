@@ -1,10 +1,11 @@
 package api
 
 import (
-	"fmt"
+	"math/rand"
 
 	log "github.com/cihub/seelog"
 	"github.com/immesys/bw2/internal/core"
+	"github.com/immesys/bw2/objects"
 )
 
 //The version of BW2 this is
@@ -34,10 +35,12 @@ func OpenBWContext(config *core.BWConfig) *BW {
 // BosswaveClient represents an individual client. It contains the
 // handle to the terminus client that contains the message queue
 type BosswaveClient struct {
-	bw    *BW
-	cl    *core.Client
-	irq   func()
-	disch chan *core.MsgSubPair
+	bw *BW
+	cl *core.Client
+
+	//MessageFactory stuff
+	mid uint64
+	us  *objects.Entity
 }
 
 // MatchTopic will check if t matches the pattern.
@@ -64,6 +67,7 @@ func MatchTopic(t []string, pattern []string) bool {
 	return false
 }
 
+/*
 func (c *BosswaveClient) dispatch() {
 	if c.irq == nil {
 		//Do dispatch to the subreq's Dispatch field
@@ -77,28 +81,23 @@ func (c *BosswaveClient) dispatch() {
 		c.irq()
 	}
 }
+*/
 
 // CreateClient will create a new BosswaveClient. If the queueChanged function
 // is nil, the dispatch handlers in each subscription will be invoked when
 // a message appears for them. If a queueChanged function is specified, this
 // behaviour is supressed, and the caller needs to work out how to dispatch
 // messages when the queue has changed.
-func (bw *BW) CreateClient(queueChanged func()) *BosswaveClient {
-	rv := &BosswaveClient{bw: bw, irq: queueChanged}
-	rv.cl = bw.tm.CreateClient(rv.dispatch)
-	if queueChanged == nil {
-		/*rv.disch = make(chan *core.MsgSubPair, 5)
-		go func() {
-			for {
-				ms := <-rv.disch
-				ms.S.Dispatch(ms.M)
-			}
-		}()*/
-		panic("!")
+func (bw *BW) CreateClient(us *objects.Entity) *BosswaveClient {
+	rv := &BosswaveClient{bw: bw, us: us, mid: uint64(rand.Int63() << 16)}
+	if len(us.GetSK()) == 0 {
+		return nil
 	}
+	rv.cl = bw.tm.CreateClient()
 	return rv
 }
 
+/*
 func (c *BosswaveClient) DispatchMessage(m *core.Message) *core.StatusMessage {
 	//Not clear we would do this for messages arriving from OOB
 	s := m.Verify()
@@ -116,6 +115,7 @@ func (c *BosswaveClient) DispatchMessage(m *core.Message) *core.StatusMessage {
 	}
 	return s
 }
+*/
 
 /*
 // Publish the given message using the permissions contained in the message
@@ -134,8 +134,10 @@ func (c *BosswaveClient) Publish(m *core.Message) *core.StatusMessage {
 }
 */
 // Subscribe with the given subscription request
+/*
 func (c *BosswaveClient) Subscribe(m *core.Message) bool {
 	n := c.cl.Subscribe(m)
 	fmt.Printf("Subid: %v\n", n)
 	return true
 }
+*/

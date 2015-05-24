@@ -10,6 +10,7 @@ import (
 	"runtime/debug"
 	"time"
 
+	log "github.com/cihub/seelog"
 	"github.com/immesys/bw2/internal/crypto"
 	"github.com/immesys/bw2/internal/util"
 )
@@ -537,6 +538,14 @@ func (ro *DOT) WriteToStream(s io.Writer, fullObjNum bool) error {
 	return err
 }
 
+func (ro *DOT) SetComment(v string) {
+	ro.comment = v
+}
+
+func (ro *DOT) SetContact(v string) {
+	ro.contact = v
+}
+
 //GetHash returns the dot hash or panics if it has not been set
 //by encoding/reading from stream etc.
 func (ro *DOT) GetHash() []byte {
@@ -560,6 +569,10 @@ func (ro *DOT) GetPermissionSet() *AccessDOTPermissionSet {
 		CanTapStar:     ro.canTapStar,
 		CanList:        ro.canList,
 	}
+}
+
+func (ro *DOT) AddRevoker(rvk []byte) {
+	ro.revokers = append(ro.revokers, rvk)
 }
 
 //SigValid returns if the DOT's signature is valid. This only checks
@@ -772,6 +785,69 @@ func (ro *DOT) GetPermString() string {
 		rv += "L"
 	}
 	return rv
+}
+
+//SetPermString sets the permissions of this (access) dot.
+//it returns true on success, false if the string is bad or this was
+//not an access dot
+func (ro *DOT) SetPermString(v string) bool {
+	if !ro.isAccess {
+		return false
+	}
+	ro.canConsume = false
+	ro.canConsumePlus = false
+	ro.canConsumeStar = false
+	ro.canList = false
+	ro.canPublish = false
+	ro.canTap = false
+	ro.canTapPlus = false
+	ro.canTapStar = false
+	for len(v) > 0 {
+		switch v[0] {
+		case 'C', 'c':
+			ro.canConsume = true
+			if len(v) > 1 && v[1] == '*' {
+				ro.canConsumeStar = true
+				ro.canConsumePlus = true
+				v = v[2:]
+				continue
+			}
+			if len(v) > 1 && v[1] == '+' {
+				ro.canConsumePlus = true
+				v = v[2:]
+				continue
+			}
+			v = v[1:]
+			continue
+		case 'P', 'p':
+			ro.canPublish = true
+			v = v[1:]
+			continue
+		case 'T', 't':
+			ro.canTap = true
+			if len(v) > 1 && v[1] == '*' {
+				ro.canTapStar = true
+				ro.canTapPlus = true
+				v = v[2:]
+				continue
+			}
+			if len(v) > 1 && v[1] == '+' {
+				ro.canTapPlus = true
+				v = v[2:]
+				continue
+			}
+			v = v[1:]
+			continue
+		case 'L', 'l':
+			ro.canList = true
+			v = v[1:]
+			continue
+		default:
+			log.Infof("Hit default permstring case: %v", v[0])
+			return false
+		}
+	}
+	return true
 }
 
 //String returns a string representation of the DOT

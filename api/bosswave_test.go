@@ -24,61 +24,80 @@ func TestBasicX(t *testing.T) {
 	bw := OpenBWContext(nil)
 	client1 := bw.CreateClient(e1)
 	client2 := bw.CreateClient(e2)
+	clientN := bw.CreateClient(namespace)
 
 	mvk := namespace.GetVK()
 
-	//TODO replace this with async_full implementations of CreateDOT
-	//allow E1 to publish to a/*
-	nToE1 := objects.CreateDOT(true, mvk, e1.GetVK())
-	nToE1.SetAccessURI(mvk, "a/*")
-	nToE1.SetCanPublish(true)
-	nToE1.Encode(namespace.GetSK())
-
-	//allow E2 to subscribe to a/b/* with plus privilege
-	nToE2 := objects.CreateDOT(true, mvk, e2.GetVK())
-	nToE2.SetAccessURI(mvk, "a/b/*")
-	nToE2.SetCanConsume(true, true, false)
-	nToE2.Encode(namespace.GetSK())
-
-	//TODO replace this with async_full implementations of CreateChain
-	dcE1, err := objects.CreateDChain(true, nToE1)
-	if err != nil {
-		panic(err)
+	cdp := CreateDotParams{
+		To:                e1.GetVK(),
+		MVK:               mvk,
+		URISuffix:         "a/*",
+		AccessPermissions: "p",
 	}
-	dcE2, err := objects.CreateDChain(true, nToE2)
-	if err != nil {
-		panic(err)
+	dToE1 := clientN.CreateDOT(&cdp)
+	if dToE1 == nil {
+		t.Fatalf("dot1 is nil")
+	}
+	fmt.Printf("dToE1 %+v\n", dToE1)
+	cdp.To = e2.GetVK()
+	cdp.AccessPermissions = "c*"
+	dToE2 := clientN.CreateDOT(&cdp)
+	if dToE2 == nil {
+		t.Fatalf("dot2 is nil")
+	}
+	fmt.Printf("dToE2 %+v\n", dToE2)
+	dcE1 := client1.CreateDotChain(&CreateDotChainParams{
+		DOTs: []*objects.DOT{dToE1},
+	})
+	dcE2 := client1.CreateDotChain(&CreateDotChainParams{
+		DOTs: []*objects.DOT{dToE2},
+	})
+	if dcE1 == nil || dcE2 == nil {
+		t.FailNow()
 	}
 
-	sp := SubscribeParams{
+	gm := make(chan bool)
+	client2.Subscribe(&SubscribeParams{
 		MVK:                mvk,
 		URISuffix:          "a/b/c",
 		PrimaryAccessChain: dcE2,
 		ElaboratePAC:       FullElaboration,
 		DoVerify:           true,
-	}
-	client2.Subscribe(&sp,
+	},
 		func(code int, isnew bool, subid core.UniqueMessageID) {
 			fmt.Println("Got Scode", code)
 			if code != core.BWStatusOkay {
 				fmt.Println("FAIL")
-				return
+				gm <- false
 			}
-			pp := PublishParams{
+			client1.Publish(&PublishParams{
 				MVK:                mvk,
 				URISuffix:          "a/b/c",
 				PrimaryAccessChain: dcE1,
 				ElaboratePAC:       FullElaboration,
 				DoVerify:           true,
-			}
-			client1.Publish(&pp, func(code int) {
-				fmt.Println("Got Pcode", code)
-			})
+			},
+				func(code int) {
+					fmt.Println("Got Pcode", code)
+				})
 		},
 		func(m *core.Message) {
 			fmt.Println("Got message")
+			gm <- true
 		})
 
+	//Check if the test passed or we timed out
+	select {
+	case direct := <-gm:
+		if !direct {
+			t.FailNow()
+			return
+		}
+	case <-time.After(3 * time.Second):
+		fmt.Println("Timed out")
+		t.FailNow()
+		return
+	}
 }
 
 func TestMatchTopic(t *testing.T) {

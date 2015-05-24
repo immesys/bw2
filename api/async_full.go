@@ -4,9 +4,11 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
+	"os"
 	"sync/atomic"
 	"time"
 
+	log "github.com/cihub/seelog"
 	"github.com/immesys/bw2/internal/core"
 	"github.com/immesys/bw2/internal/util"
 	"github.com/immesys/bw2/objects"
@@ -17,6 +19,31 @@ const (
 	PartialElaboration = 1
 	FullElaboration    = 2
 )
+
+func init() {
+	fmt.Println("init called")
+	cfg := `
+	<seelog>
+    <outputs>
+        <splitter formatid="common">
+            <console/>
+            <file path="bw.log"/>
+        </splitter>
+    </outputs>
+		<formats>
+				<format id="common" format="[%LEV] %Time %Date %File:%Line %Msg%n"/>
+		</formats>
+	</seelog>`
+
+	nlogger, err := log.LoggerFromConfigAsString(cfg)
+	if err == nil {
+		log.ReplaceLogger(nlogger)
+		log.Infof("Logger loaded")
+	} else {
+		fmt.Printf("Bad log config: %v\n", err)
+		os.Exit(1)
+	}
+}
 
 type PublishParams struct {
 	MVK                []byte
@@ -124,11 +151,80 @@ func (c *BosswaveClient) Subscribe(params *SubscribeParams,
 	actionCB(core.BWStatusOkay, isNew, subid)
 }
 
-type ConstructionMessage struct {
-	c   *BosswaveClient
-	m   *core.Message
-	s   *core.StatusMessage
-	bad bool
+type CreateDotParams struct {
+	IsPermission     bool
+	To               []byte
+	TTL              uint8
+	Expiry           *time.Time
+	ExpiryDelta      *time.Duration
+	Contact          string
+	Comment          string
+	Revokers         [][]byte
+	OmitCreationDate bool
+
+	//For Access
+	URISuffix         string
+	MVK               []byte
+	AccessPermissions string
+
+	//For Permissions
+	Permissions map[string]string
+}
+
+func (c *BosswaveClient) CreateDOT(p *CreateDotParams) *objects.DOT {
+	if len(p.To) != 32 {
+		log.Info("To VK bad")
+		return nil
+	}
+	d := objects.CreateDOT(!p.IsPermission, c.us.GetVK(), p.To)
+	d.SetTTL(int(p.TTL))
+	d.SetContact(p.Contact)
+	d.SetComment(p.Comment)
+	if p.ExpiryDelta != nil {
+		d.SetExpiry(time.Now().Add(*p.ExpiryDelta))
+	} else if p.Expiry != nil {
+		d.SetExpiry(*p.Expiry)
+	}
+	if !p.OmitCreationDate {
+		d.SetCreationToNow()
+	}
+	for _, r := range p.Revokers {
+		if len(r) != 32 {
+			log.Info("Delegated revoker bad")
+			return nil
+		}
+		d.AddRevoker(r)
+	}
+	if p.IsPermission {
+		for k, v := range p.Permissions {
+			d.SetPermission(k, v)
+		}
+	} else {
+		d.SetAccessURI(p.MVK, p.URISuffix)
+		if !d.SetPermString(p.AccessPermissions) {
+			log.Info("Failed to set access permissions")
+			return nil
+		}
+	}
+	d.Encode(c.us.GetSK())
+	return d
+}
+
+type CreateDotChainParams struct {
+	DOTs         []*objects.DOT
+	IsPermission bool
+	UnElaborate  bool
+}
+
+func (c *BosswaveClient) CreateDotChain(p *CreateDotChainParams) *objects.DChain {
+	rv, err := objects.CreateDChain(!p.IsPermission, p.DOTs...)
+	if err != nil || rv == nil {
+		return nil
+	}
+	if p.UnElaborate {
+		rv.UnElaborate()
+	}
+	return rv
 }
 
 func (c *BosswaveClient) doPAC(m *core.Message, elaboratePAC int) int {
@@ -201,37 +297,6 @@ func (c *BosswaveClient) newMessage(mtype int, mvk []byte, urisuffix string) (*c
 	return &m, core.BWStatusOkay
 }
 
-//AddDChain will add the given DChain to the message. if elaborate is set, it
-//will be included as an elaborated DChain. If includeDOTs is set, the DOTs it
-//references will be included (if this router has them)
-/*
-func addDChain(dc *objects.DChain, elaborate bool, includeDOTs bool) {
-	if cm.bad {
-		return
-	}
-	if dc.IsAccess() && cm.m.PrimaryAccessChain == nil {
-		cm.m.PrimaryAccessChain = dc
-	}
-	if elaborate && !dc.IsElaborated() {
-		dc = ElaborateDChain(dc)
-		if dc == nil {
-			cm.bail(BWStatusUnresolvable)
-		}
-	}
-	if includeDOTs && dc.IsElaborated() {
-		for i := 0; i < dc.NumHashes(); i++ {
-			d := dc.GetDOT(i)
-			if d != nil {
-				cm.m.RoutingObjects = append(cm.m.RoutingObjects, d)
-			}
-		}
-	}
-	if !elaborate {
-		dc.UnElaborate()
-	}
-	cm.m.RoutingObjects = append(cm.m.RoutingObjects, dc)
-}
-*/
 func (c *BosswaveClient) finishMessage(m *core.Message) {
 	m.Encode(c.us.GetSK(), c.us.GetVK())
 	m.Topic = base64.URLEncoding.EncodeToString(m.MVK) + "/" + m.TopicSuffix

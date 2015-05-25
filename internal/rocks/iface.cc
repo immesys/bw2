@@ -93,7 +93,7 @@ void init()
 
 void put_object(int cf, const char *key, size_t keylen, const char *value, size_t valuelen)
 {
-  printf("RXPUT cf=%d keylen=%d k0=%d k=%s vl=%d\n", cf, (int)keylen, key[0], key+1, (int)valuelen);
+  //printf("RXPUT cf=%d keylen=%d k0=%d k=%s vl=%d\n", cf, (int)keylen, key[0], key+1, (int)valuelen);
   Status s = db->Put(WriteOptions(), handles[cf], Slice(key, keylen), Slice(value, valuelen));
   assert(s.ok());
 }
@@ -103,7 +103,7 @@ void delete_object(int cf, const char *key, size_t keylen)
 }
 char *get_object(int cf, const char *key, size_t keylen, size_t *valuelen)
 {
-  printf("RXGET cf=%d keylen=%d k0=%d k=%s\n", cf, (int)keylen, key[0], key+1);
+  //printf("RXGET cf=%d keylen=%d k0=%d k=%s\n", cf, (int)keylen, key[0], key+1);
   std::string value;
   char *rv;
   Status s = db->Get(ReadOptions(), handles[cf], Slice(key, keylen), &value);
@@ -120,7 +120,7 @@ char *get_object(int cf, const char *key, size_t keylen, size_t *valuelen)
 
 int exists(int cf, const char* key, size_t keylen)
 {
-  printf("RXEXISTS cf=%d keylen=%d k0=%d k=%s\n", cf, (int)keylen, key[0], key+1);
+  //printf("RXEXISTS cf=%d keylen=%d k0=%d k=%s\n", cf, (int)keylen, key[0], key+1);
   std::string value;
   char *rv;
   Status s = db->Get(ReadOptions(), handles[cf], Slice(key, keylen), &value);

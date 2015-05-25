@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"testing"
+	"time"
 )
 
 func PrintSync(ch chan SM) {
@@ -54,6 +55,9 @@ func TestIcle(t *testing.T) {
 		{"tstes/a/b/c", "1"},
 		{"tstes/a/b/d", "2"},
 		{"tstes/a/b/c/1", "4"},
+		{"tstes/x/b/c/1", "8"},
+		{"tstes/foo/c/1", "10"},
+		{"tstes/foo/c/2", "20"},
 	}
 	testvector := []struct {
 		QRY      string
@@ -62,19 +66,30 @@ func TestIcle(t *testing.T) {
 		{"tstes/a/b/c", 1},
 		{"tstes/a/b/+", 1 + 2},
 		{"tstes/a/b/*", 1 + 2 + 4},
+		{"tstes/+/c/+", 0x10 + 0x20},
+		{"*/1", 0x4 + 0x8 + 0x10},
+		{"+/*", 0x3F},
+		{"*/+", 0x3F},
 	}
 	for _, v := range datasetvector {
 		PutMessage(v.URI, []byte(v.Data))
 	}
 	fmt.Println("============= PUT COMPLETE ================")
 	for i, v := range testvector {
-		fmt.Println("===== TESTING", v.QRY, " ================")
+		time.Sleep(100 * time.Millisecond)
+		fmt.Println("===== TESTING [", i, "] ", v.QRY, " ================")
 		rc := make(chan SM, 3)
 		go GetMatchingMessage(v.QRY, rc)
 		got := SumSync(rc)
+		time.Sleep(100 * time.Millisecond)
 		if got != v.Expected {
 			fmt.Printf("For test vector %d expected %d, got %d\n", i, v.Expected, got)
-			t.Fail()
+			t.FailNow()
+		} else {
+			fmt.Printf("Test vector ok\n")
 		}
 	}
+	time.Sleep(100 * time.Millisecond)
+	fmt.Println("Done")
+
 }

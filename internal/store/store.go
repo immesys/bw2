@@ -451,6 +451,9 @@ func GetMatchingMessage(uri string, handle chan SM) {
 		wg := &sync.WaitGroup{}
 		wg.Add(1)
 		getMatchingMessage(true, uri, 0, frontD, backD, false, handle, wg)
+
+		//Test: this should make it hang
+		//wg.Add(1)
 		wg.Wait()
 		close(handle)
 	}

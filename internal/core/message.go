@@ -393,9 +393,9 @@ func (m *Message) Verify() *StatusMessage {
 	//permission process fails
 	urivalid, star, plus, uridollar, _ := util.AnalyzeSuffix(m.TopicSuffix)
 	//Can't publish to wildcards
-	if (star || plus) && (m.Type == TypePublish || m.Type == TypePersist) {
+	if (star || plus) && (m.Type == TypePublish || m.Type == TypePersist || m.Type == TypeLS) {
 		m.status.Code = BWStatusBadOperation
-		log.Infof("V: BadOperation (pub to wild)")
+		log.Infof("V: BadOperation (bad wild)")
 		return &m.status
 	}
 	if !urivalid {

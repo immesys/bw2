@@ -214,13 +214,13 @@ func GetExactMessage(topic string) ([]byte, bool) {
 }
 
 type SM struct {
-	uri  string
-	body []byte
+	URI  string
+	Body []byte
 }
 
 func MakeSMFromParts(uriparts []string, body []byte) SM {
-	return SM{uri: strings.Join(uriparts, "/"),
-		body: body,
+	return SM{URI: strings.Join(uriparts, "/"),
+		Body: body,
 	}
 }
 
@@ -366,7 +366,17 @@ func getMatchingMessage(interlaced bool, uri []string, prefix int, frontD []stri
 		wg.Done()
 		return
 	}
-
+}
+func ListChildren(uri string, handle chan string) {
+	parts := strings.Split(uri, "/")
+	ckey := mkchildkey(parts)
+	it := rocks.CreateIterator(rocks.CFMsg, ckey)
+	for it.OK() {
+		k := it.Key()
+		handle <- string(k[1:])
+		it.Next()
+	}
+	close(handle)
 }
 func GetMatchingMessage(uri string, handle chan SM) {
 	parts := strings.Split(uri, "/")

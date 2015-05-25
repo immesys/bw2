@@ -10,6 +10,7 @@ import (
 
 	log "github.com/cihub/seelog"
 	"github.com/immesys/bw2/internal/core"
+	"github.com/immesys/bw2/internal/crypto"
 	"github.com/immesys/bw2/internal/store"
 	"github.com/immesys/bw2/internal/util"
 	"github.com/immesys/bw2/objects"
@@ -56,12 +57,17 @@ type PublishParams struct {
 	ExpiryDelta        *time.Duration
 	ElaboratePAC       int
 	DoVerify           bool
+	Persist            bool
 }
 type PublishCallback func(status int)
 
 func (c *BosswaveClient) Publish(params *PublishParams,
 	cb PublishCallback) {
-	m, code := c.newMessage(core.TypePublish, params.MVK, params.URISuffix)
+	t := core.TypePublish
+	if params.Persist {
+		t = core.TypePersist
+	}
+	m, code := c.newMessage(t, params.MVK, params.URISuffix)
 	if m == nil {
 		cb(code)
 		return
@@ -99,7 +105,11 @@ func (c *BosswaveClient) Publish(params *PublishParams,
 		}
 	}
 	//Probably wanna do shit like determine if this is for remote delivery or local
-	c.cl.Publish(m)
+	if params.Persist {
+		c.cl.Persist(m)
+	} else {
+		c.cl.Publish(m)
+	}
 	cb(core.BWStatusOkay)
 }
 
@@ -150,6 +160,118 @@ func (c *BosswaveClient) Subscribe(params *SubscribeParams,
 	})
 	isNew := subid == m.UMid
 	actionCB(core.BWStatusOkay, isNew, subid)
+}
+
+type SetEntityParams struct {
+	Keyfile []byte
+}
+
+func (c *BosswaveClient) SetEntity(p *SetEntityParams) int {
+	e, err := objects.NewEntity(objects.ROEntity, p.Keyfile[32:])
+	if err != nil {
+		return core.BWStatusBadOperation
+	}
+	entity := e.(*objects.Entity)
+	entity.SetSK(p.Keyfile[:32])
+	keysOk := crypto.CheckKeypair(entity.GetSK(), entity.GetVK())
+	sigOk := entity.SigValid()
+	if !keysOk || !sigOk {
+		return core.BWStatusInvalidSig
+	}
+	c.us = entity
+	return core.BWStatusOkay
+}
+
+type ListParams struct {
+	MVK                []byte
+	URISuffix          string
+	PrimaryAccessChain *objects.DChain
+	RoutingObjects     []objects.RoutingObject
+	ElaboratePAC       int
+	DoVerify           bool
+}
+type ListInitialCallback func(status int)
+type ListResultCallback func(s string, ok bool)
+
+func (c *BosswaveClient) List(params *ListParams,
+	actionCB ListInitialCallback,
+	resultCB ListResultCallback) {
+	m, code := c.newMessage(core.TypeLS, params.MVK, params.URISuffix)
+	if m == nil {
+		actionCB(code)
+		return
+	}
+	m.PrimaryAccessChain = params.PrimaryAccessChain
+	m.RoutingObjects = params.RoutingObjects
+	if s := c.doPAC(m, params.ElaboratePAC); s != core.BWStatusOkay {
+		actionCB(s)
+		return
+	}
+	//Check if we need to add an origin VK header
+	if m.PrimaryAccessChain == nil ||
+		m.PrimaryAccessChain.GetReceiverVK() == nil ||
+		objects.IsEveryoneVK(m.PrimaryAccessChain.GetReceiverVK()) {
+		m.RoutingObjects = append(m.RoutingObjects, objects.CreateOriginVK(c.us.GetVK()))
+	}
+
+	c.finishMessage(m)
+
+	if params.DoVerify {
+		s := m.Verify()
+		if s.Code != core.BWStatusOkay {
+			actionCB(s.Code)
+			return
+		}
+	}
+	//Would do remote dispatch?
+	actionCB(core.BWStatusOkay)
+	c.cl.List(m, resultCB)
+}
+
+type QueryParams struct {
+	MVK                []byte
+	URISuffix          string
+	PrimaryAccessChain *objects.DChain
+	RoutingObjects     []objects.RoutingObject
+	ElaboratePAC       int
+	DoVerify           bool
+}
+type QueryInitialCallback func(status int)
+type QueryResultCallback func(m *core.Message)
+
+func (c *BosswaveClient) Query(params *QueryParams,
+	actionCB QueryInitialCallback,
+	resultCB QueryResultCallback) {
+	m, code := c.newMessage(core.TypeQuery, params.MVK, params.URISuffix)
+	if m == nil {
+		actionCB(code)
+		return
+	}
+	m.PrimaryAccessChain = params.PrimaryAccessChain
+	m.RoutingObjects = params.RoutingObjects
+	if s := c.doPAC(m, params.ElaboratePAC); s != core.BWStatusOkay {
+		actionCB(s)
+		return
+	}
+	//Check if we need to add an origin VK header
+	if m.PrimaryAccessChain == nil ||
+		m.PrimaryAccessChain.GetReceiverVK() == nil ||
+		objects.IsEveryoneVK(m.PrimaryAccessChain.GetReceiverVK()) {
+		m.RoutingObjects = append(m.RoutingObjects, objects.CreateOriginVK(c.us.GetVK()))
+	}
+
+	c.finishMessage(m)
+
+	if params.DoVerify {
+		s := m.Verify()
+		if s.Code != core.BWStatusOkay {
+			actionCB(s.Code)
+			return
+		}
+	}
+	//Would do remote dispatch?
+	actionCB(core.BWStatusOkay)
+	c.cl.Query(m, resultCB)
 }
 
 type CreateDotParams struct {

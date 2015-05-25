@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+
+	"github.com/immesys/bw2/internal/store"
 )
 
 /*
@@ -212,6 +214,47 @@ func (cl *Client) Subscribe(m *Message, cb func(m *Message, id UniqueMessageID))
 	subid := cl.tm.AddSub(m.Topic, newsub)
 	//the subid might not be the one we specified, if it was already in the tree
 	return subid
+}
+
+func (cl *Client) Persist(m *Message) {
+	store.PutMessage(m.Topic, m.Encoded)
+	cl.Publish(m)
+}
+
+func (cl *Client) Query(m *Message, cb func(m *Message)) {
+	rc := make(chan store.SM, 3)
+	go store.GetMatchingMessage(m.Topic, rc)
+	for {
+		select {
+		case sm, ok := <-rc:
+			if ok {
+				m, err := LoadMessage(sm.Body)
+				if err != nil {
+					panic("Not expecting error from unpersist: " + err.Error())
+				}
+				cb(m)
+			} else {
+				cb(nil)
+				return
+			}
+		}
+	}
+}
+
+func (cl *Client) List(m *Message, cb func(s string, ok bool)) {
+	rc := make(chan string, 3)
+	go store.ListChildren(m.Topic, rc)
+	for {
+		select {
+		case uri, ok := <-rc:
+			if ok {
+				cb(uri, true)
+			} else {
+				cb("", false)
+				return
+			}
+		}
+	}
 }
 
 /*

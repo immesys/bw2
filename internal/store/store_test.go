@@ -12,7 +12,7 @@ func PrintSync(ch chan SM) {
 		select {
 		case c, ok := <-ch:
 			if ok {
-				fmt.Printf("k: %s -> %s\n", c.uri, string(c.body))
+				fmt.Printf("k: %s -> %s\n", c.URI, string(c.Body))
 			} else {
 				return
 			}
@@ -25,8 +25,22 @@ func SumSync(ch chan SM) int {
 		select {
 		case c, ok := <-ch:
 			if ok {
-				nrv, _ := strconv.ParseInt(string(c.body), 16, 64)
+				nrv, _ := strconv.ParseInt(string(c.Body), 16, 64)
 				rv += int(nrv)
+			} else {
+				return rv
+			}
+		}
+	}
+}
+func CountSync(ch chan string) int {
+	rv := 0
+	for {
+		select {
+		case c, ok := <-ch:
+			if ok {
+				fmt.Println("RV:", string(c))
+				rv += 1
 			} else {
 				return rv
 			}
@@ -195,6 +209,45 @@ func BenchmarkStar3(b *testing.B) {
 		}
 	}
 }
+func TestChildren(t *testing.T) {
+	datasetvector := []struct {
+		URI  string
+		Data string
+	}{
+		{"tstes/a/b/c", "1"},
+		{"tstes/a/b/d", "2"},
+		{"tstes/a/b/c/1", "4"},
+		{"tstes/x/b/c/1", "8"},
+		{"tstes/foo/c/1", "10"},
+		{"tstes/foo/c/2", "20"},
+	}
+	testvector := []struct {
+		QRY      string
+		Expected int
+	}{
+		{"tstes", 3},
+		{"tstes/a/b", 2},
+		{"tstes/foo", 1},
+	}
+	for _, v := range datasetvector {
+		PutMessage(v.URI, []byte(v.Data))
+	}
+	for i, v := range testvector {
+		time.Sleep(100 * time.Millisecond)
+		fmt.Println("===== TESTING [", i, "] ", v.QRY, " ================")
+		rc := make(chan string, 3)
+		go ListChildren(v.QRY, rc)
+		got := CountSync(rc)
+		time.Sleep(100 * time.Millisecond)
+		if got != v.Expected {
+			fmt.Printf("For test vector %d expected %d, got %d\n", i, v.Expected, got)
+			t.FailNow()
+		} else {
+			fmt.Printf("Test vector ok\n")
+		}
+	}
+}
+
 func TestIcle(t *testing.T) {
 	datasetvector := []struct {
 		URI  string

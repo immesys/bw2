@@ -100,6 +100,10 @@ func TestBasicX(t *testing.T) {
 	}
 }
 
+func TestAPI2(t *testing.T) {
+	bw := OpenBWContext(nil)
+	c1 := bw.
+}
 func TestMatchTopic(t *testing.T) {
 	TV := []struct {
 		T string

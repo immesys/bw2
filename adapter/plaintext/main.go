@@ -1,15 +1,6 @@
 package plaintext
 
-import (
-	"bufio"
-	"fmt"
-	"net"
-	"os"
-
-	log "github.com/cihub/seelog"
-	"github.com/immesys/bw2/api"
-)
-
+/*
 type Adapter struct {
 	bw *api.BW
 }
@@ -38,3 +29,5 @@ func (a *Adapter) handleClient(conn net.Conn) {
 	rw.WriteString("Ready.\n")
 	rw.Flush()
 }
+
+*/

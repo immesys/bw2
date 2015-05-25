@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
+	"strings"
 )
 
 // We allocate buffers for objects. Lets not get too exciteable
@@ -39,6 +41,21 @@ type PayloadObject interface {
 
 func PONumDotForm(ponum int) string {
 	return fmt.Sprintf("%d.%d.%d.%d", ponum>>24, (ponum>>16)&0xFF, (ponum>>8)&0xFF, ponum&0xFF)
+}
+func PONumFromDotForm(dotform string) (int, error) {
+	parts := strings.Split(dotform, ".")
+	if len(parts) != 4 {
+		return 0, errors.New("Bad dotform")
+	}
+	rv := 0
+	for i := 0; i < 4; i++ {
+		cx, err := strconv.ParseUint(parts[i], 10, 8)
+		if err != nil {
+			return 0, err
+		}
+		rv += (int(cx)) << uint(((3 - i) * 8))
+	}
+	return rv, nil
 }
 
 // LoadBosswaveObject loads an object from a reader.

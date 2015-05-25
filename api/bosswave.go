@@ -88,11 +88,8 @@ func (c *BosswaveClient) dispatch() {
 // a message appears for them. If a queueChanged function is specified, this
 // behaviour is supressed, and the caller needs to work out how to dispatch
 // messages when the queue has changed.
-func (bw *BW) CreateClient(us *objects.Entity) *BosswaveClient {
-	rv := &BosswaveClient{bw: bw, us: us, mid: uint64(rand.Int63() << 16)}
-	if len(us.GetSK()) == 0 {
-		return nil
-	}
+func (bw *BW) CreateClient() *BosswaveClient {
+	rv := &BosswaveClient{bw: bw, mid: uint64(rand.Int63() << 16)}
 	rv.cl = bw.tm.CreateClient()
 	return rv
 }

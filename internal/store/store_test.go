@@ -70,6 +70,7 @@ func TestIcle(t *testing.T) {
 		{"*/1", 0x4 + 0x8 + 0x10},
 		{"+/*", 0x3F},
 		{"*/+", 0x3F},
+		{"tstes/*/b/c/1", 0x4 + 0x8},
 	}
 	for _, v := range datasetvector {
 		PutMessage(v.URI, []byte(v.Data))

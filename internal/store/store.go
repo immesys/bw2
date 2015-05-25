@@ -303,7 +303,18 @@ func getMatchingMessage(interlaced bool, uri []string, prefix int, frontD []stri
 		if nprefix != len(uri)-1 {
 			panic("invariant failure")
 		}
-		directUri := AdvancedUnInterlaceURI(uri[:nprefix], frontD, backD)
+		var directUri []string
+		if interlaced {
+			directUri = AdvancedUnInterlaceURI(uri[:nprefix], frontD, backD)
+		} else {
+			directUri = make([]string, len(uri)+len(backD)-1)
+			copy(directUri, uri[:nprefix])
+			idx := nprefix
+			for i := len(backD) - 1; i >= 0; i-- {
+				directUri[idx] = backD[i]
+				idx++
+			}
+		}
 		fmt.Printf("Finished base expansion uri=%v newuri=%v frontd=%v backd=%v\n", uri, directUri, frontD, backD)
 		value, err := rocks.GetObject(rocks.CFMsg, mkkey(directUri))
 		if err == nil && !IsDummy(value) {
@@ -427,8 +438,21 @@ func GetMatchingMessage(uri string, handle chan SM) {
 	pfxlen := staridx
 	sfxlen := len(parts) - staridx - 1
 	fmt.Printf("uri=%v pfxlen=%v sfxlen=%v\n", parts, pfxlen, sfxlen)
-	//I want to test interlaced, so prefer it
-	{
+	if pfxlen-sfxlen > sfxlen { //Prefix is much longer than suffix, use leftscan
+		fmt.Println("Using left find")
+		uri := parts[:pfxlen+1]
+		frontD := []string{}
+		backD := make([]string, sfxlen)
+		for i := 0; i < sfxlen; i++ {
+			backD[i] = parts[len(parts)-1-i]
+		}
+		fmt.Printf("leftscan uri=%v backd=%v\n", uri, backD)
+		wg := &sync.WaitGroup{}
+		wg.Add(1)
+		getMatchingMessage(false, uri, 0, frontD, backD, false, handle, wg)
+		wg.Wait()
+		close(handle)
+	} else {
 		partslen := pfxlen
 		if sfxlen < partslen {
 			partslen = sfxlen
@@ -440,12 +464,11 @@ func GetMatchingMessage(uri string, handle chan SM) {
 		uri[partslen] = "*"
 		frontD := make([]string, pfxlen-common)
 		backD := make([]string, sfxlen-common)
-		fmt.Printf("common=%v lfrontd=%v lbackd=%v\n", common, len(frontD), len(backD))
 		for i := 0; i < len(frontD); i++ {
 			frontD[i] = parts[common+i]
 		}
 		for i := 0; i < len(backD); i++ {
-			backD[i] = parts[staridx+1+i]
+			backD[i] = parts[len(parts)-1-i-common]
 		}
 		fmt.Printf("Generated URI uri=%v frontD=%v backD=%v\n", uri, frontD, backD)
 		wg := &sync.WaitGroup{}

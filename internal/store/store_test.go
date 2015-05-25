@@ -47,6 +47,154 @@ func TestOsterone(t *testing.T) {
 	PrintSync(rc)
 }
 
+func BenchmarkDirect(b *testing.B) {
+	datasetvector := []struct {
+		URI  string
+		Data string
+	}{
+		{"tstes/a/b/c", "1"},
+		{"tstes/a/b/d", "2"},
+		{"tstes/a/b/c/1", "4"},
+		{"tstes/x/b/c/1", "8"},
+		{"tstes/foo/c/1", "10"},
+		{"tstes/foo/c/2", "20"},
+	}
+	testvector := []struct {
+		QRY      string
+		Expected int
+	}{
+		{"tstes/a/b/c", 1},
+		// {"tstes/a/b/+", 1 + 2},
+		// {"tstes/a/b/*", 1 + 2 + 4},
+		// {"tstes/+/c/+", 0x10 + 0x20},
+		// {"*/1", 0x4 + 0x8 + 0x10},
+		// {"+/*", 0x3F},
+		// {"*/+", 0x3F},
+		// {"tstes/*/b/c/1", 0x4 + 0x8},
+	}
+	for _, v := range datasetvector {
+		PutMessage(v.URI, []byte(v.Data))
+	}
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		for _, v := range testvector {
+			rc := make(chan SM, 3)
+			go GetMatchingMessage(v.QRY, rc)
+			_ = SumSync(rc)
+		}
+	}
+}
+func BenchmarkStar1(b *testing.B) {
+	datasetvector := []struct {
+		URI  string
+		Data string
+	}{
+		{"tstes/a/b/c", "1"},
+		{"tstes/a/b/d", "2"},
+		{"tstes/a/b/c/1", "4"},
+		{"tstes/x/b/c/1", "8"},
+		{"tstes/foo/c/1", "10"},
+		{"tstes/foo/c/2", "20"},
+	}
+	testvector := []struct {
+		QRY      string
+		Expected int
+	}{
+		// {"tstes/a/b/c", 1},
+		// {"tstes/a/b/+", 1 + 2},
+		// {"tstes/a/b/*", 1 + 2 + 4},
+		// {"tstes/+/c/+", 0x10 + 0x20},
+		{"*/1", 0x4 + 0x8 + 0x10},
+		// {"+/*", 0x3F},
+		// {"*/+", 0x3F},
+		// {"tstes/*/b/c/1", 0x4 + 0x8},
+	}
+	for _, v := range datasetvector {
+		PutMessage(v.URI, []byte(v.Data))
+	}
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		for _, v := range testvector {
+			rc := make(chan SM, 3)
+			go GetMatchingMessage(v.QRY, rc)
+			_ = SumSync(rc)
+		}
+	}
+}
+func BenchmarkStar2(b *testing.B) {
+	datasetvector := []struct {
+		URI  string
+		Data string
+	}{
+		{"tstes/a/b/c", "1"},
+		{"tstes/a/b/d", "2"},
+		{"tstes/a/b/c/1", "4"},
+		{"tstes/x/b/c/1", "8"},
+		{"tstes/foo/c/1", "10"},
+		{"tstes/foo/c/2", "20"},
+	}
+	testvector := []struct {
+		QRY      string
+		Expected int
+	}{
+		// {"tstes/a/b/c", 1},
+		// {"tstes/a/b/+", 1 + 2},
+		// {"tstes/a/b/*", 1 + 2 + 4},
+		// {"tstes/+/c/+", 0x10 + 0x20},
+		// {"*/1", 0x4 + 0x8 + 0x10},
+		// {"+/*", 0x3F},
+		// {"*/+", 0x3F},
+		{"tstes/*/b/c/1", 0x4 + 0x8},
+	}
+	for _, v := range datasetvector {
+		PutMessage(v.URI, []byte(v.Data))
+	}
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		for _, v := range testvector {
+			rc := make(chan SM, 3)
+			go GetMatchingMessage(v.QRY, rc)
+			_ = SumSync(rc)
+		}
+	}
+}
+func BenchmarkStar3(b *testing.B) {
+	datasetvector := []struct {
+		URI  string
+		Data string
+	}{
+		{"tstes/a/b/c", "1"},
+		{"tstes/a/b/d", "2"},
+		{"tstes/a/b/c/1", "4"},
+		{"tstes/x/b/c/1", "8"},
+		{"tstes/foo/c/1", "10"},
+		{"tstes/foo/c/2", "20"},
+	}
+	testvector := []struct {
+		QRY      string
+		Expected int
+	}{
+		// {"tstes/a/b/c", 1},
+		// {"tstes/a/b/+", 1 + 2},
+		{"tstes/a/b/*", 1 + 2 + 4},
+		// {"tstes/+/c/+", 0x10 + 0x20},
+		// {"*/1", 0x4 + 0x8 + 0x10},
+		// {"+/*", 0x3F},
+		// {"*/+", 0x3F},
+		// {"tstes/*/b/c/1", 0x4 + 0x8},
+	}
+	for _, v := range datasetvector {
+		PutMessage(v.URI, []byte(v.Data))
+	}
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		for _, v := range testvector {
+			rc := make(chan SM, 3)
+			go GetMatchingMessage(v.QRY, rc)
+			_ = SumSync(rc)
+		}
+	}
+}
 func TestIcle(t *testing.T) {
 	datasetvector := []struct {
 		URI  string

@@ -8,7 +8,6 @@ import (
 )
 
 func TestAll(t *testing.T) {
-	InitDatabase()
 	k1 := make([]byte, 64)
 	rand.Read(k1)
 	k2 := make([]byte, 64)
@@ -34,6 +33,23 @@ func TestAll(t *testing.T) {
 	}
 }
 
+func TestIterator(t *testing.T) {
+	k1 := []byte("a/b/c")
+	k2 := []byte("a/b/d")
+	k3 := []byte("a/b/e")
+	ki := []byte("a/b")
+	v := []byte("foobar")
+	PutObject(CFDot, k1, v)
+	PutObject(CFDot, k2, v)
+	PutObject(CFDot, k3, v)
+	i := CreateIterator(CFDot, ki)
+	for i.OK() {
+		k := i.Key()
+		v := i.Value()
+		fmt.Println("KV: ", string(k), string(v))
+		i.Next()
+	}
+}
 func BenchmarkPutObject(b *testing.B) {
 	keys := make([][]byte, b.N)
 	vals := make([][]byte, b.N)

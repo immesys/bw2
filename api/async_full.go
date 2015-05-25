@@ -10,6 +10,7 @@ import (
 
 	log "github.com/cihub/seelog"
 	"github.com/immesys/bw2/internal/core"
+	"github.com/immesys/bw2/internal/store"
 	"github.com/immesys/bw2/internal/util"
 	"github.com/immesys/bw2/objects"
 )
@@ -207,6 +208,7 @@ func (c *BosswaveClient) CreateDOT(p *CreateDotParams) *objects.DOT {
 		}
 	}
 	d.Encode(c.us.GetSK())
+	store.PutDOT(d)
 	return d
 }
 
@@ -221,10 +223,35 @@ func (c *BosswaveClient) CreateDotChain(p *CreateDotChainParams) *objects.DChain
 	if err != nil || rv == nil {
 		return nil
 	}
+	store.PutDChain(rv)
 	if p.UnElaborate {
 		rv.UnElaborate()
 	}
 	return rv
+}
+
+type CreateEntityParams struct {
+	Expiry           *time.Time
+	ExpiryDelta      *time.Duration
+	Contact          string
+	Comment          string
+	Revokers         [][]byte
+	OmitCreationDate bool
+}
+
+func (c *BosswaveClient) CreateEntity(p *CreateEntityParams) *objects.Entity {
+	e := objects.CreateNewEntity(p.Contact, p.Comment, p.Revokers)
+	if p.ExpiryDelta != nil {
+		e.SetExpiry(time.Now().Add(*p.ExpiryDelta))
+	} else if p.Expiry != nil {
+		e.SetExpiry(*p.Expiry)
+	}
+	if !p.OmitCreationDate {
+		e.SetCreationToNow()
+	}
+	e.Encode()
+	store.PutEntity(e)
+	return e
 }
 
 func (c *BosswaveClient) doPAC(m *core.Message, elaboratePAC int) int {

@@ -3,7 +3,6 @@ package api
 import (
 	"errors"
 	"os"
-	"time"
 
 	"github.com/immesys/bw2/internal/crypto"
 	"github.com/immesys/bw2/objects"
@@ -78,6 +77,7 @@ func LoadSKFromFile(filename string) (*objects.Entity, error) {
 	return entity, nil
 }
 
+/*
 // CreateNewSigningKeyFile is a wrapper around objects.CreateNewEntity that also writes out
 // the keyfile
 func CreateNewSigningKeyFile(destfile, contact, comment string, revokers [][]byte,
@@ -102,3 +102,4 @@ func CreateNewSigningKeyFile(destfile, contact, comment string, revokers [][]byt
 	}
 	return e, nil
 }
+*/

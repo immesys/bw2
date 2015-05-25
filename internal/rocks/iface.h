@@ -17,3 +17,8 @@ char *get_object(int cf, const char *key, size_t keylen, size_t *valuelen);
 void delete_object(int cf, const char *key, size_t keylen);
 void init();
 int exists(int cf, const char* key, size_t keylen);
+
+void iterator_create(int cf, const char* key, size_t keylen, void** state,
+    char** okey, size_t* okeylen, char** value, size_t* valuelen);
+void iterator_delete(void* state);
+void iterator_next(void* state, char** key, size_t* keylen, char** value, size_t* valuelen);

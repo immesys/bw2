@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"time"
 )
 
 // We allocate buffers for objects. Lets not get too exciteable
@@ -29,15 +28,6 @@ func NewObjectError(oid int, msg string) error {
 
 func (oe ObjectError) Error() string {
 	return oe.Message
-}
-
-//RoundTime removes the micro/nano part of the time, to
-//match up with how it is serialised
-func RoundTime(t time.Time) time.Time {
-	nanos := t.UnixNano()
-	nanos /= 1000000
-	nanos *= 1000000
-	return time.Unix(0, nanos)
 }
 
 //PayloadObject is the interface that is common among all objects that

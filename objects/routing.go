@@ -407,7 +407,7 @@ func NewDOT(ronum int, content []byte) (rv RoutingObject, err error) {
 				return nil, NewObjectError(ronum, "Invalid creation date in DoT")
 			}
 			idx += 2
-			t := time.Unix(0, int64(binary.LittleEndian.Uint64(content[idx:])*1000000))
+			t := time.Unix(0, int64(binary.LittleEndian.Uint64(content[idx:])))
 			ro.created = &t
 			idx += 8
 		case 0x03: //Expiry date
@@ -415,7 +415,7 @@ func NewDOT(ronum int, content []byte) (rv RoutingObject, err error) {
 				return nil, NewObjectError(ronum, "Invalid expiry date in DoT")
 			}
 			idx += 2
-			t := time.Unix(0, int64(binary.LittleEndian.Uint64(content[idx:])*1000000))
+			t := time.Unix(0, int64(binary.LittleEndian.Uint64(content[idx:])))
 			ro.expires = &t
 			idx += 8
 		case 0x04: //Delegated revoker
@@ -628,8 +628,6 @@ func (ro *DOT) SetCreation(time time.Time) {
 //SetCreationToNow sets the creation timestamp to the current time
 func (ro *DOT) SetCreationToNow() {
 	t := time.Now().UnixNano()
-	t /= 1000000
-	t *= 1000000
 	to := time.Unix(0, t)
 	ro.created = &to
 }
@@ -893,13 +891,13 @@ func (ro *DOT) Encode(sk []byte) {
 	if ro.created != nil {
 		buf = append(buf, 0x02, 8)
 		tmp := make([]byte, 8)
-		binary.LittleEndian.PutUint64(tmp, uint64(ro.created.UnixNano()/1000000))
+		binary.LittleEndian.PutUint64(tmp, uint64(ro.created.UnixNano()))
 		buf = append(buf, tmp...)
 	}
 	if ro.expires != nil {
 		buf = append(buf, 0x03, 8)
 		tmp := make([]byte, 8)
-		binary.LittleEndian.PutUint64(tmp, uint64(ro.expires.UnixNano()/1000000))
+		binary.LittleEndian.PutUint64(tmp, uint64(ro.expires.UnixNano()))
 		buf = append(buf, tmp...)
 	}
 	for _, dr := range ro.revokers {
@@ -997,10 +995,11 @@ type Entity struct {
 	sigok     sigState
 }
 
-func CreateNewEntity(contact, comment string, revokers [][]byte, expiry time.Duration) *Entity {
-	c := RoundTime(time.Now())
-	e := RoundTime(time.Now().Add(expiry))
-	rv := &Entity{contact: contact, comment: comment, created: &c, expires: &e, revokers: revokers}
+func CreateNewEntity(contact, comment string, revokers [][]byte) *Entity {
+	if revokers == nil {
+		revokers = make([][]byte, 0)
+	}
+	rv := &Entity{contact: contact, comment: comment, revokers: revokers}
 	rv.sk, rv.vk = crypto.GenerateKeypair()
 	return rv
 }
@@ -1012,12 +1011,27 @@ func (ro *Entity) AddRevoker(rvk []byte) {
 	ro.revokers = append(ro.revokers, rvk)
 }
 
+func (ro *Entity) SetCreationToNow() {
+	t := time.Now()
+	ro.created = &t
+}
 func (ro *Entity) GetContact() string {
 	return ro.contact
 }
 
 func (ro *Entity) GetComment() string {
 	return ro.comment
+}
+
+//GetSigningBlob returns the full entity, including the private key
+func (ro *Entity) GetSigningBlob() []byte {
+	if len(ro.GetSK()) == 0 || len(ro.content) == 0 {
+		return nil
+	}
+	rv := make([]byte, len(ro.contact)+32)
+	copy(rv, ro.GetSK())
+	copy(rv[32:], ro.content)
+	return rv
 }
 
 func (ro *Entity) SetSK(sk []byte) {
@@ -1038,6 +1052,10 @@ func (ro *Entity) GetVK() []byte {
 
 func (ro *Entity) StringKey() string {
 	return crypto.FmtKey(ro.vk)
+}
+
+func (ro *Entity) SetExpiry(t time.Time) {
+	ro.expires = &t
 }
 
 //SigValid returns if the Entity's signature is valid. This only checks
@@ -1070,13 +1088,13 @@ func (ro *Entity) Encode() {
 	if ro.created != nil {
 		buf = append(buf, 0x02, 8)
 		tmp := make([]byte, 8)
-		binary.LittleEndian.PutUint64(tmp, uint64(ro.created.UnixNano()/1000000))
+		binary.LittleEndian.PutUint64(tmp, uint64(ro.created.UnixNano()))
 		buf = append(buf, tmp...)
 	}
 	if ro.expires != nil {
 		buf = append(buf, 0x03, 8)
 		tmp := make([]byte, 8)
-		binary.LittleEndian.PutUint64(tmp, uint64(ro.expires.UnixNano()/1000000))
+		binary.LittleEndian.PutUint64(tmp, uint64(ro.expires.UnixNano()))
 		buf = append(buf, tmp...)
 	}
 	for _, k := range ro.revokers {
@@ -1122,7 +1140,7 @@ func NewEntity(ronum int, content []byte) (RoutingObject, error) {
 				return nil, NewObjectError(ROEntity, "Invalid creation date in Entity")
 			}
 			idx += 2
-			t := time.Unix(0, int64(binary.LittleEndian.Uint64(content[idx:])*1000000))
+			t := time.Unix(0, int64(binary.LittleEndian.Uint64(content[idx:])))
 			e.created = &t
 			idx += 8
 		case 0x03: //Expiry date
@@ -1130,7 +1148,7 @@ func NewEntity(ronum int, content []byte) (RoutingObject, error) {
 				return nil, NewObjectError(ROEntity, "Invalid expiry date in Entity")
 			}
 			idx += 2
-			t := time.Unix(0, int64(binary.LittleEndian.Uint64(content[idx:])*1000000))
+			t := time.Unix(0, int64(binary.LittleEndian.Uint64(content[idx:])))
 			e.expires = &t
 			idx += 8
 		case 0x04: //Delegated revoker
@@ -1234,12 +1252,12 @@ type Expiry struct {
 func CreateNewExpiryFromNow(expiry time.Duration) *Expiry {
 	edate := time.Now().Add(expiry)
 	rv := Expiry{time: edate, content: make([]byte, 8)}
-	binary.LittleEndian.PutUint64(rv.content, uint64(edate.UnixNano()/1000000))
+	binary.LittleEndian.PutUint64(rv.content, uint64(edate.UnixNano()))
 	return &rv
 }
 func CreateNewExpiry(expiry time.Time) *Expiry {
 	rv := Expiry{time: expiry, content: make([]byte, 8)}
-	binary.LittleEndian.PutUint64(rv.content, uint64(expiry.UnixNano()/1000000))
+	binary.LittleEndian.PutUint64(rv.content, uint64(expiry.UnixNano()))
 	return &rv
 }
 func NewExpiry(ronum int, content []byte) (RoutingObject, error) {
@@ -1249,7 +1267,7 @@ func NewExpiry(ronum int, content []byte) (RoutingObject, error) {
 	if len(content) != 8 {
 		return nil, NewObjectError(ronum, "Content is the wrong size")
 	}
-	t := time.Unix(0, int64(binary.LittleEndian.Uint64(content[:8])*1000000))
+	t := time.Unix(0, int64(binary.LittleEndian.Uint64(content[:8])))
 	rv := Expiry{time: t, content: content}
 	return &rv, nil
 }

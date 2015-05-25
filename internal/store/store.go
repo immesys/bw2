@@ -7,7 +7,6 @@ package store
 //otherwise we will panic when extracting them from the DB
 
 import (
-	"fmt"
 	"strings"
 	"sync"
 
@@ -155,7 +154,6 @@ func AdvancedUnInterlaceURI(rv []string, frontD []string, backD []string) []stri
 		uri[bidx] = v
 		bidx--
 	}
-	fmt.Printf("Advanced UIURI fidx=%d bidx=%d uri=%v\n", fidx, bidx, uri)
 	return uri
 }
 
@@ -169,7 +167,6 @@ func PutMessage(topic string, payload []byte) {
 	copy(tb[1:], []byte(topic))
 	tb[0] = byte(len(ts))
 	mrg := InterlaceURI(ts)
-	fmt.Printf("The merge: %v\n", mrg)
 	smrgs := strings.Join(mrg, "/")
 	smrg := make([]byte, len(smrgs)+1)
 	copy(smrg[1:], []byte(smrgs))
@@ -263,7 +260,6 @@ func IsDummy(value []byte) bool {
 //frontD is in left to right order, backD is in right to left order
 func getMatchingMessage(interlaced bool, uri []string, prefix int, frontD []string, backD []string,
 	skipbase bool, handle chan SM, wg *sync.WaitGroup) {
-	fmt.Printf("GMM in=%v uri=%v pfx=%v frontd=%v backd=%v \n", interlaced, uri, prefix, frontD, backD)
 	//Make CF
 	cf := rocks.CFMsg
 	if interlaced {
@@ -285,8 +281,6 @@ func getMatchingMessage(interlaced bool, uri []string, prefix int, frontD []stri
 				newUri = UnInterlaceURI(uri)
 			}
 			handle <- MakeSMFromParts(newUri, value)
-		} else {
-			fmt.Printf("missing object @ %v\n", uri)
 		}
 		wg.Done()
 		return
@@ -296,9 +290,6 @@ func getMatchingMessage(interlaced bool, uri []string, prefix int, frontD []stri
 	//store here. If the parent call populated a level from a *D then the
 	//resulting base case has already been evaluated
 
-	if skipbase {
-		fmt.Printf("Skipping base for uri=%v\n", uri)
-	}
 	if uri[nprefix] == "*" && !skipbase {
 		if nprefix != len(uri)-1 {
 			panic("invariant failure")
@@ -315,20 +306,14 @@ func getMatchingMessage(interlaced bool, uri []string, prefix int, frontD []stri
 				idx++
 			}
 		}
-		fmt.Printf("Finished base expansion uri=%v newuri=%v frontd=%v backd=%v\n", uri, directUri, frontD, backD)
 		value, err := rocks.GetObject(rocks.CFMsg, mkkey(directUri))
 		if err == nil && !IsDummy(value) {
-			fmt.Println("Found base case on *", directUri)
-			fmt.Println("Value:", value)
 			handle <- MakeSMFromParts(directUri, value)
-		} else {
-			fmt.Printf("missing object @ uri=%v err=%v value=%v\n", directUri, err, value)
 		}
 	}
 
 	//if the next wildcard is a star, we also need to scan, expanding *D
 	if uri[nprefix] == "*" {
-		fmt.Println("%> star splitting at ", uri[:nprefix])
 		if !interlaced {
 			//No reason to have a frontD if there is no interlacing
 			if len(frontD) != 0 {
@@ -341,7 +326,6 @@ func getMatchingMessage(interlaced bool, uri []string, prefix int, frontD []stri
 			copy(newUri, uri[:nprefix])
 			newUri[nprefix] = frontD[0]
 			newUri[nprefix+1] = "*"
-			fmt.Printf("Using frontD to populate next level\n")
 			//Don't increment nprefix because frontD[0] may have been a +
 			getMatchingMessage(interlaced, newUri, nprefix, frontD[1:], backD, true, handle, wg)
 			return //Don't need to wg because we invoke a function that will decrement
@@ -351,7 +335,6 @@ func getMatchingMessage(interlaced bool, uri []string, prefix int, frontD []stri
 			copy(newUri, uri[:nprefix])
 			newUri[nprefix] = backD[0] //backD is in reverse order so this is correct
 			newUri[nprefix+1] = "*"
-			fmt.Printf("Using backD to populate next level\n")
 			//Don't increment nprefix because frontD[0] may have been a +
 			getMatchingMessage(interlaced, newUri, nprefix, frontD, backD[1:], true, handle, wg)
 			return
@@ -359,31 +342,11 @@ func getMatchingMessage(interlaced bool, uri []string, prefix int, frontD []stri
 	}
 	//If we got here, we could not skip the scan by using *D
 	if uri[nprefix] == "+" || uri[nprefix] == "*" {
-		fmt.Println("%> splitting at ", uri[:nprefix], "in total uri", uri)
 		pfx := mkchildkey(uri[:nprefix])
 		it := rocks.CreateIterator(cf, pfx)
 		for it.OK() {
 			k := it.Key()
-			fmt.Println("%> iterator gave us ", string(k[1:]))
 			actualkey := unmakekey(k)
-			//base case
-			//prefix is fully expanded, *D's are empty
-			//opted not to do this because in interlaced mode
-			//sometimes frontD will appear in the back portion of
-			//the path and this won't cater for that
-			/*
-				if nprefix == len(uri)-1 && len(frontD) == 0 && len(backD) == 0 {
-					v := it.Value()
-					if !IsDummy(v) {
-						fmt.Printf("found base? uri=%v value=%v\n", actualkey, v)
-						realuri := actualkey
-						if interlaced {
-							realuri = UnInterlaceURI(realuri)
-						}
-						handle <- MakeSMFromParts(realuri, v)
-					}
-				}
-			*/
 			var newUri []string
 			if uri[nprefix] == "+" {
 				newUri = make([]string, len(uri))
@@ -437,16 +400,13 @@ func GetMatchingMessage(uri string, handle chan SM) {
 
 	pfxlen := staridx
 	sfxlen := len(parts) - staridx - 1
-	fmt.Printf("uri=%v pfxlen=%v sfxlen=%v\n", parts, pfxlen, sfxlen)
 	if pfxlen-sfxlen > sfxlen { //Prefix is much longer than suffix, use leftscan
-		fmt.Println("Using left find")
 		uri := parts[:pfxlen+1]
 		frontD := []string{}
 		backD := make([]string, sfxlen)
 		for i := 0; i < sfxlen; i++ {
 			backD[i] = parts[len(parts)-1-i]
 		}
-		fmt.Printf("leftscan uri=%v backd=%v\n", uri, backD)
 		wg := &sync.WaitGroup{}
 		wg.Add(1)
 		getMatchingMessage(false, uri, 0, frontD, backD, false, handle, wg)
@@ -459,7 +419,6 @@ func GetMatchingMessage(uri string, handle chan SM) {
 		}
 		common := partslen
 		partslen *= 2
-		fmt.Println("Using interlaced find")
 		uri := InterlaceURI(parts)[:partslen+1]
 		uri[partslen] = "*"
 		frontD := make([]string, pfxlen-common)
@@ -470,45 +429,10 @@ func GetMatchingMessage(uri string, handle chan SM) {
 		for i := 0; i < len(backD); i++ {
 			backD[i] = parts[len(parts)-1-i-common]
 		}
-		fmt.Printf("Generated URI uri=%v frontD=%v backD=%v\n", uri, frontD, backD)
 		wg := &sync.WaitGroup{}
 		wg.Add(1)
 		getMatchingMessage(true, uri, 0, frontD, backD, false, handle, wg)
-
-		//Test: this should make it hang
-		//wg.Add(1)
 		wg.Wait()
 		close(handle)
 	}
-	//aight so first determine what kind of uri we are
-	// -no wildcard: defer to get exact
-	// -better for normal-find
-	// -better for interlaced-find
-	//for now the heuristic is if the length disparity is > suffix length
-	//use normal find, else use interlaced find
-	/*
-		delta := len(parts)/2 - staridx
-		if delta < 0 {
-			delta = -delta
-		}
-		if delta > len(parts)-staridx {
-			//Rather just do straight up
-			fmt.Println("Using left side find")
-			wg := &sync.WaitGroup{}
-			wg.Add(1)
-			getMatchingMessage(false, parts, 0, handle, wg)
-			wg.Wait()
-			close(handle)
-			return
-		} else {
-			//Interlace
-			fmt.Println("Using interlaced find")
-			wg := &sync.WaitGroup{}
-			wg.Add(1)
-			getMatchingMessage(true, InterlaceURI(parts), 0, handle, wg)
-			wg.Wait()
-			close(handle)
-			return
-		}
-	*/
 }

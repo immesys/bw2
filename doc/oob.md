@@ -66,14 +66,14 @@ sequence number, so it can be used to demultiplex on the client side.
 
 ### sete - SetEntity
 Fields:
-* REQ po(1.0.1.2) - the signing entity to use
+* REQUIRED po(1.0.1.2) - the signing entity to use
 
 This sets the entity that is represented by the connected client. All DOTs are
 generated from this entity, and messages are signed using its key.
 
 ### publ - Publish
 Fields:
-* REQ kv(uri) - the URI to publish to. Can be given split as kv(mvk) and kv(uri_suffix)
+* REQUIRED kv(uri) - the URI to publish to. Can be given split as kv(mvk) and kv(uri_suffix)
 * kv(primary_access_chain) - the hash of the primary access DOT chain to use
 * kv(expiry) - the date in RFC3339 format for the message to expire
 * kv(expirydelta) - the duration after now for the message to expire. Allowable suffixes include ms,s,m,h
@@ -87,7 +87,7 @@ publish operation
 
 ### subs - Subscribe
 Fields:
-* REQ kv(uri) - the URI to subscribe to. Can be given split as kv(mvk) and kv(uri_suffix)
+* REQUIRED kv(uri) - the URI to subscribe to. Can be given split as kv(mvk) and kv(uri_suffix)
 * kv(primary_access_chain) - the hash of the primary access DOT chain to use
 * kv(expiry) - the date in RFC3339 format for the subscribe request to expire
 * kv(expirydelta) - the duration after now for the subscribe request to expire. Allowable suffixes include ms,s,m,h
@@ -106,7 +106,7 @@ A persist frame is exactly the same as a publish frame.
 
 ### list - List
 Fields:
-* REQ kv(uri) - the URI to list. Can be given split as kv(mvk) and kv(uri_suffix)
+* REQUIRED kv(uri) - the URI to list. Can be given split as kv(mvk) and kv(uri_suffix)
 * kv(primary_access_chain) - the hash of the primary access DOT chain to use
 * kv(expiry) - the date in RFC3339 format for the list request to expire
 * kv(expirydelta) - the duration after now for the list request to expire. Allowable suffixes include ms,s,m,h
@@ -122,7 +122,7 @@ containing the full URI of the child.
 
 ### quer - Query
 Fields:
-* REQ kv(uri) - the URI to query. Can be given split as kv(mvk) and kv(uri_suffix)
+* REQUIRED kv(uri) - the URI to query. Can be given split as kv(mvk) and kv(uri_suffix)
 * kv(primary_access_chain) - the hash of the primary access DOT chain to use
 * kv(expiry) - the date in RFC3339 format for the query request to expire
 * kv(expirydelta) - the duration after now for the query request to expire. Allowable suffixes include ms,s,m,h
@@ -141,3 +141,44 @@ A tap subscribe frame is the same as a subscribe frame. It is not currently impl
 
 ### tque - Tap Query
 A tap query frame is the same as a query frame. It is not currently implemented
+
+### make - MakeEntity
+Fields:
+* kv(contact) - the contact information for this entity
+* kv(comment) - the comment information for this entity
+* kv(expiry) - the date in RFC3339 format for the entity to expire
+* kv(expirydelta) - the duration after now for the entity to expire. Allowable suffixes include ms,s,m,h
+* MULTIPLE kv(revoker) - the verifying key of an entity authorized to revoke this entity
+* kv(omitcreationdate) - bool: if true, do not include the creation date in this entity
+
+This creates a new entity, generating the keypair. It returns a `resp` frame with an error
+if something went wrong, otherwise it returns a `rslt` frame with kv(vk) and po(1.0.1.2) for
+the created entity.
+
+### makd - MakeDOT
+Fields:
+* REQUIRED kv(to) - the VK to issue the DOT to
+* kv(ttl) - the time to live for the DOT (allowed transfers)
+* kv(ispermission) - bool: defaults to false. If true, this is an application level permission DOT
+* kv(expiry) - the date in RFC3339 format for the DOT to expire
+* kv(expirydelta) - the duration after now for the DOT to expire. Allowable suffixes include ms,s,m,h
+* kv(contact) - the contact information for this DOT
+* kv(comment) - the comment information for this DOT
+* MULTIPLE kv(revoker) - the verifying key of an entity authorized to revoke this DOT
+* kv(omitcreationdate) - bool: if true, do not include the creation date in this DOT
+* kv(accesspermissions) - if this is an access DOT, these are the access permissions
+* kv(uri) - if this is an access DOT this is the URI. Can be given split as kv(mvk) and kv(uri_suffix)
+
+This creates a new DOT, from the connection's entity to the given entity.
+It returns a `resp` frame with an error if something went wrong, otherwise it
+returns a `rslt` frame with kv(hash) and a po for the created DOT.
+
+### makc - MakeChain
+Fields:
+* kv(ispermission) - bool: if true, this is an application level permission chain. Defaults to false
+* kv(unelaborate) - bool: if true, return the RO of the unelaborated chain. Defaults to false
+* MULTIPLE kv(dot) - the hash of a DOT to include in the chain, must appear in order
+
+This creates a new DOT chain made of the given dots. It returns a `resp` frame with an error
+if something went wrong, otherwise it returns a `rslt` frame with kv(hash) and a po for the
+created DChain.

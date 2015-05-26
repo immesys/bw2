@@ -459,28 +459,6 @@ func dispatchFrame(bwcl *api.BosswaveClient, f *objects.Frame, send func(f *obje
 		send(r)
 
 	case objects.CmdMakeDot:
-
-		/*
-			type CreateDotParams struct {
-				IsPermission     bool
-				To               []byte
-				TTL              uint8
-				Expiry           *time.Time
-				ExpiryDelta      *time.Duration
-				Contact          string
-				Comment          string
-				Revokers         [][]byte
-				OmitCreationDate bool
-
-				//For Access
-				URISuffix         string
-				MVK               []byte
-				AccessPermissions string
-
-				//For Permissions
-				Permissions map[string]string
-			}
-		*/
 		sttl, ok := f.GetFirstHeader("ttl")
 		ttl := 0
 		if ok {

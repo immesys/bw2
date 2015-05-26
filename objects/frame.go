@@ -29,8 +29,9 @@ const (
 	CmdDelPrefDot   = "dlpd"
 	CmdDelPrefChain = "dlpc"
 	CmdSetEntity    = "sete"
-	CmdResponse     = "resp"
-	CmdResult       = "rslt"
+
+	CmdResponse = "resp"
+	CmdResult   = "rslt"
 )
 
 type Header struct {

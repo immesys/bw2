@@ -68,9 +68,76 @@ sequence number, so it can be used to demultiplex on the client side.
 Fields:
 * REQ po(1.0.1.2) - the signing entity to use
 
-This sets the entity that is represented by the connected client. All DOTs are generated from this entity, and messages are signed using its key.
+This sets the entity that is represented by the connected client. All DOTs are
+generated from this entity, and messages are signed using its key.
 
 ### publ - Publish
 Fields:
-* REQ kv(uri) - the URI to publish to
-* kv(primary_access_chain)
+* REQ kv(uri) - the URI to publish to. Can be given split as kv(mvk) and kv(uri_suffix)
+* kv(primary_access_chain) - the hash of the primary access DOT chain to use
+* kv(expiry) - the date in RFC3339 format for the message to expire
+* kv(expirydelta) - the duration after now for the message to expire. Allowable suffixes include ms,s,m,h
+* kv(elaborate_pac) - the elaboration level for the PAC. Allowable values are "partial" or "full". Omitting results in no elaboration.
+* ro(*) - will be included
+* po(*) - will be included
+
+This publishes a message to the given uri. A single `resp` frame will be
+delivered with the same sequence number to convey the success or failure of the
+publish operation
+
+### subs - Subscribe
+Fields:
+* REQ kv(uri) - the URI to subscribe to. Can be given split as kv(mvk) and kv(uri_suffix)
+* kv(primary_access_chain) - the hash of the primary access DOT chain to use
+* kv(expiry) - the date in RFC3339 format for the subscribe request to expire
+* kv(expirydelta) - the duration after now for the subscribe request to expire. Allowable suffixes include ms,s,m,h
+* kv(elaborate_pac) - the elaboration level for the PAC. Allowable values are "partial" or "full". Omitting results in no elaboration.
+* kv(unpack) - boolean: should the matching messages be unpacked
+* ro(*) - will be included
+
+This subscribes to the given URI. A single `resp` frame will be delivered
+with the same sequence number to convey the success or failure of the subscribe
+operation. A `rslt` frame will be delivered for every message matching the
+subscription, if the `resp` frame indicated success. If `unpack` was specified,
+then the messages will be unpacked into their constituent ROs and POs.
+
+### pers - Persist
+A persist frame is exactly the same as a publish frame.
+
+### list - List
+Fields:
+* REQ kv(uri) - the URI to list. Can be given split as kv(mvk) and kv(uri_suffix)
+* kv(primary_access_chain) - the hash of the primary access DOT chain to use
+* kv(expiry) - the date in RFC3339 format for the list request to expire
+* kv(expirydelta) - the duration after now for the list request to expire. Allowable suffixes include ms,s,m,h
+* kv(elaborate_pac) - the elaboration level for the PAC. Allowable values are "partial" or "full". Omitting results in no elaboration.
+* ro(*) - will be included
+
+This lists the children of the given URI. A single `resp` frame will be delivered
+with the same sequence number to convey the success or failure of the operation.
+A `rslt` frame will be delivered for every child. The result frame will contain
+two fields: kv(finished) which will be "true" if there are no more results, or
+"false" if there are more results. If "false", there will also be kv("child")
+containing the full URI of the child.
+
+### quer - Query
+Fields:
+* REQ kv(uri) - the URI to query. Can be given split as kv(mvk) and kv(uri_suffix)
+* kv(primary_access_chain) - the hash of the primary access DOT chain to use
+* kv(expiry) - the date in RFC3339 format for the query request to expire
+* kv(expirydelta) - the duration after now for the query request to expire. Allowable suffixes include ms,s,m,h
+* kv(elaborate_pac) - the elaboration level for the PAC. Allowable values are "partial" or "full". Omitting results in no elaboration.
+* kv(unpack) - boolean: should the matching messages be unpacked
+* ro(*) - will be included
+
+This queries the given URI. A single `resp` frame will be delivered
+with the same sequence number to convey the success or failure of the operation.
+If `resp` indicated success, a `rslt` frame will be delivered for every message
+matching the query. If `unpack` was specified, then the matching messages will
+be unpacked into their constituent ROs and POs.
+
+### tsub - Tap Subscribe
+A tap subscribe frame is the same as a subscribe frame. It is not currently implemented
+
+### tque - Tap Query
+A tap query frame is the same as a query frame. It is not currently implemented

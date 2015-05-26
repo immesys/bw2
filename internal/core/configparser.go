@@ -12,7 +12,7 @@ type BWConfig struct {
 	Native struct {
 		ListenOn string
 	}
-	Plaintext struct {
+	OOB struct {
 		ListenOn string
 	}
 }

@@ -118,6 +118,8 @@ type SubscribeParams struct {
 	URISuffix          string
 	PrimaryAccessChain *objects.DChain
 	RoutingObjects     []objects.RoutingObject
+	Expiry             *time.Time
+	ExpiryDelta        *time.Duration
 	ElaboratePAC       int
 	DoVerify           bool
 }
@@ -139,6 +141,13 @@ func (c *BosswaveClient) Subscribe(params *SubscribeParams,
 		actionCB(s, false, core.UniqueMessageID{})
 		return
 	}
+	//Add expiry
+	if params.ExpiryDelta != nil {
+		m.RoutingObjects = append(m.RoutingObjects, objects.CreateNewExpiryFromNow(*params.ExpiryDelta))
+	} else if params.Expiry != nil {
+		m.RoutingObjects = append(m.RoutingObjects, objects.CreateNewExpiry(*params.Expiry))
+	}
+
 	//Check if we need to add an origin VK header
 	if m.PrimaryAccessChain == nil ||
 		m.PrimaryAccessChain.GetReceiverVK() == nil ||
@@ -187,6 +196,8 @@ type ListParams struct {
 	URISuffix          string
 	PrimaryAccessChain *objects.DChain
 	RoutingObjects     []objects.RoutingObject
+	Expiry             *time.Time
+	ExpiryDelta        *time.Duration
 	ElaboratePAC       int
 	DoVerify           bool
 }
@@ -207,6 +218,13 @@ func (c *BosswaveClient) List(params *ListParams,
 		actionCB(s)
 		return
 	}
+	//Add expiry
+	if params.ExpiryDelta != nil {
+		m.RoutingObjects = append(m.RoutingObjects, objects.CreateNewExpiryFromNow(*params.ExpiryDelta))
+	} else if params.Expiry != nil {
+		m.RoutingObjects = append(m.RoutingObjects, objects.CreateNewExpiry(*params.Expiry))
+	}
+
 	//Check if we need to add an origin VK header
 	if m.PrimaryAccessChain == nil ||
 		m.PrimaryAccessChain.GetReceiverVK() == nil ||
@@ -233,6 +251,8 @@ type QueryParams struct {
 	URISuffix          string
 	PrimaryAccessChain *objects.DChain
 	RoutingObjects     []objects.RoutingObject
+	Expiry             *time.Time
+	ExpiryDelta        *time.Duration
 	ElaboratePAC       int
 	DoVerify           bool
 }
@@ -252,6 +272,12 @@ func (c *BosswaveClient) Query(params *QueryParams,
 	if s := c.doPAC(m, params.ElaboratePAC); s != core.BWStatusOkay {
 		actionCB(s)
 		return
+	}
+	//Add expiry
+	if params.ExpiryDelta != nil {
+		m.RoutingObjects = append(m.RoutingObjects, objects.CreateNewExpiryFromNow(*params.ExpiryDelta))
+	} else if params.Expiry != nil {
+		m.RoutingObjects = append(m.RoutingObjects, objects.CreateNewExpiry(*params.Expiry))
 	}
 	//Check if we need to add an origin VK header
 	if m.PrimaryAccessChain == nil ||
@@ -274,7 +300,7 @@ func (c *BosswaveClient) Query(params *QueryParams,
 	c.cl.Query(m, resultCB)
 }
 
-type CreateDotParams struct {
+type CreateDOTParams struct {
 	IsPermission     bool
 	To               []byte
 	TTL              uint8
@@ -294,7 +320,7 @@ type CreateDotParams struct {
 	Permissions map[string]string
 }
 
-func (c *BosswaveClient) CreateDOT(p *CreateDotParams) *objects.DOT {
+func (c *BosswaveClient) CreateDOT(p *CreateDOTParams) *objects.DOT {
 	if len(p.To) != 32 {
 		log.Info("To VK bad")
 		return nil
@@ -340,7 +366,7 @@ type CreateDotChainParams struct {
 	UnElaborate  bool
 }
 
-func (c *BosswaveClient) CreateDotChain(p *CreateDotChainParams) *objects.DChain {
+func (c *BosswaveClient) CreateDOTChain(p *CreateDotChainParams) *objects.DChain {
 	rv, err := objects.CreateDChain(!p.IsPermission, p.DOTs...)
 	if err != nil || rv == nil {
 		return nil

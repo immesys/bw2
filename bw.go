@@ -3,11 +3,10 @@ package main
 import (
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/codegangsta/cli"
+	"github.com/immesys/bw2/adapter/oob"
 	"github.com/immesys/bw2/api"
-	"github.com/immesys/bw2/internal/crypto"
 )
 
 func main() {
@@ -17,57 +16,64 @@ func main() {
 	app.Version = api.BW2Version
 	app.Commands = []cli.Command{
 		{
-			Name:  "router",
-			Usage: "start a router as configured in the bw2.ini file",
-			Action: func(c *cli.Context) {
-				println("This hasn't been implemented yet")
-			},
+			Name:   "router",
+			Usage:  "start a router as configured in the bw2.ini file",
+			Action: actionRouter,
 		},
-		{
-			Name:    "import",
-			Aliases: []string{"i"},
-			Usage:   "import DoTs, DChains or Entities from a bw2 keyring",
-			Action: func(c *cli.Context) {
-				println("This hasn't been implemented yet")
-			},
-		},
-		{
-			Name:    "mkentity",
-			Aliases: []string{"mke"},
-			Usage:   "create a new entity and save it to a file",
-			Flags: []cli.Flag{
-				cli.StringFlag{
-					Name:  "contact, c",
-					Value: "",
-					Usage: "contact attribute e.g. 'Oski Bear <oski@berkeley.edu>'",
-				},
-				cli.StringFlag{
-					Name:  "comment, m",
-					Value: "",
-					Usage: "comment attribute e.g. 'Development Key'",
-				},
-				cli.StringSliceFlag{
-					Name:  "revoker, r",
-					Value: &cli.StringSlice{},
-					Usage: "add a delegated revoker to this entity",
-				},
-				cli.DurationFlag{
-					Name:  "expiry, e",
-					Value: 30 * 24 * time.Hour,
-					Usage: "set the expiry measured from now e.g. 300h",
-				},
-				cli.StringFlag{
-					Name:  "output, o",
-					Value: "",
-					Usage: "output file to write to",
+		/*
+			{
+				Name:    "import",
+				Aliases: []string{"i"},
+				Usage:   "import DoTs, DChains or Entities from a bw2 keyring",
+				Action: func(c *cli.Context) {
+					println("This hasn't been implemented yet")
 				},
 			},
-			Action: actionMkEntity,
-		},
+			{
+				Name:    "mkentity",
+				Aliases: []string{"mke"},
+				Usage:   "create a new entity and save it to a file",
+				Flags: []cli.Flag{
+					cli.StringFlag{
+						Name:  "contact, c",
+						Value: "",
+						Usage: "contact attribute e.g. 'Oski Bear <oski@berkeley.edu>'",
+					},
+					cli.StringFlag{
+						Name:  "comment, m",
+						Value: "",
+						Usage: "comment attribute e.g. 'Development Key'",
+					},
+					cli.StringSliceFlag{
+						Name:  "revoker, r",
+						Value: &cli.StringSlice{},
+						Usage: "add a delegated revoker to this entity",
+					},
+					cli.DurationFlag{
+						Name:  "expiry, e",
+						Value: 30 * 24 * time.Hour,
+						Usage: "set the expiry measured from now e.g. 300h",
+					},
+					cli.StringFlag{
+						Name:  "output, o",
+						Value: "",
+						Usage: "output file to write to",
+					},
+				},
+				Action: actionMkEntity,
+			},*/
 	}
 	app.Run(os.Args)
 }
 
+func actionRouter(c *cli.Context) {
+	bw := api.OpenBWContext(nil)
+	oob := new(oob.Adapter)
+	fmt.Println("router starting")
+	oob.Start(bw)
+}
+
+/*
 func actionMkEntity(c *cli.Context) {
 	if !c.IsSet("output") {
 		fmt.Println("you need to specify the output file")
@@ -97,3 +103,4 @@ func actionMkEntity(c *cli.Context) {
 	fmt.Println("Created:")
 	fmt.Println(entity.FullString())
 }
+*/

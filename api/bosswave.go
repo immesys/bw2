@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/base64"
 	"math/rand"
 
 	log "github.com/cihub/seelog"
@@ -30,6 +31,14 @@ func OpenBWContext(config *core.BWConfig) *BW {
 	}
 	rv := &BW{Config: config, tm: core.CreateTerminus()}
 	return rv
+}
+
+func SplitURI(uri string) (mvk []byte, urisuffix string, ok bool) {
+	rv, err := base64.URLEncoding.DecodeString(uri[:44])
+	if err != nil {
+		return nil, "", false
+	}
+	return rv, uri[45:], true
 }
 
 // BosswaveClient represents an individual client. It contains the

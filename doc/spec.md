@@ -270,7 +270,6 @@ NextOption: 1 byte
 OptionSize: 1 byte
 </repeat>
 0x00 : 1 byte
-	<numkv pairs:>
 	KEYLEN: 1 byte
 	KEY: key bytes
 	VALUELEN: 2 bytes

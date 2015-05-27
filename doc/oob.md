@@ -171,7 +171,7 @@ Fields:
 
 This creates a new DOT, from the connection's entity to the given entity.
 It returns a `resp` frame with an error if something went wrong, otherwise it
-returns a `rslt` frame with kv(hash) and a po for the created DOT.
+returns a `rslt` frame with kv(hash) and a ro for the created DOT.
 
 ### makc - MakeChain
 Fields:

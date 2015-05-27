@@ -178,7 +178,11 @@ func loadCommonXOs(f *objects.Frame) ([]objects.RoutingObject, []objects.Payload
 	return ros, pos
 }
 func commonUnpackMsg(m *core.Message, r *objects.Frame) {
-	//Todo add a bunch of nice headers for other message info here
+	if m.OriginVK == nil {
+		panic("Why no origin VK")
+	}
+	r.AddHeader("from", crypto.FmtKey(*m.OriginVK))
+	r.AddHeader("uri", crypto.FmtKey(m.MVK)+"/"+m.TopicSuffix)
 	for _, ro := range m.RoutingObjects {
 		r.AddRoutingObject(ro)
 	}
@@ -198,7 +202,7 @@ func mkGenericActionCB(replyto int, send func(f *objects.Frame)) func(status int
 		} else {
 			r := objects.CreateFrame(objects.CmdResponse, replyto)
 			r.AddHeader("status", "error")
-			r.AddHeader("reason", "see code")
+			r.AddHeader("reason", "see code("+strconv.Itoa(status)+")")
 			r.AddHeader("code", strconv.Itoa(status))
 			send(r)
 		}
@@ -234,6 +238,16 @@ func dispatchFrame(bwcl *api.BosswaveClient, f *objects.Frame, send func(f *obje
 			err("malformed PAC elaboration directive")
 			return
 		}
+		sverify, ok := f.GetFirstHeader("doverify")
+		verify := false
+		if ok {
+			cx, e := strconv.ParseBool(sverify)
+			if e != nil {
+				err("malformed doverify")
+				return
+			}
+			verify = cx
+		}
 		ros, pos := loadCommonXOs(f)
 		p := &api.PublishParams{
 			MVK:                mvk,
@@ -245,6 +259,7 @@ func dispatchFrame(bwcl *api.BosswaveClient, f *objects.Frame, send func(f *obje
 			RoutingObjects:     ros,
 			PayloadObjects:     pos,
 			Persist:            f.Cmd == objects.CmdPersist,
+			DoVerify:           verify,
 		}
 		bwcl.Publish(p, mkGenericActionCB(replyto, send))
 		return
@@ -567,7 +582,7 @@ func dispatchFrame(bwcl *api.BosswaveClient, f *objects.Frame, send func(f *obje
 			err("expected one PO: the key")
 			return
 		}
-		po := f.POs[1].PO
+		po := f.POs[0].PO
 		//TODO don't hardcode shit
 		if po.GetPONum() != 16777474 {
 			err("expected PO type 1.0.1.2")
@@ -581,7 +596,7 @@ func dispatchFrame(bwcl *api.BosswaveClient, f *objects.Frame, send func(f *obje
 		} else {
 			r := objects.CreateFrame(objects.CmdResponse, replyto)
 			r.AddHeader("status", "error")
-			r.AddHeader("reason", "see code")
+			r.AddHeader("reason", "see code("+strconv.Itoa(status)+")")
 			r.AddHeader("code", strconv.Itoa(status))
 			send(r)
 		}

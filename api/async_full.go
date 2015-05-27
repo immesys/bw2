@@ -98,10 +98,14 @@ func (c *BosswaveClient) Publish(params *PublishParams,
 	c.finishMessage(m)
 
 	if params.DoVerify {
+		log.Info("verifying")
 		s := m.Verify()
 		if s.Code != core.BWStatusOkay {
+			log.Info("verification failed")
 			cb(s.Code)
 			return
+		} else {
+			log.Info("Message verified ok")
 		}
 	}
 	//Probably wanna do shit like determine if this is for remote delivery or local
@@ -176,6 +180,9 @@ type SetEntityParams struct {
 }
 
 func (c *BosswaveClient) SetEntity(p *SetEntityParams) int {
+	if len(p.Keyfile) < 33 {
+		return core.BWStatusBadOperation
+	}
 	e, err := objects.NewEntity(objects.ROEntity, p.Keyfile[32:])
 	if err != nil {
 		return core.BWStatusBadOperation

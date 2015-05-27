@@ -78,6 +78,20 @@ func (f *Frame) AddHeaderB(k string, v []byte) {
 func (f *Frame) AddHeader(k string, v string) {
 	f.AddHeaderB(k, []byte(v))
 }
+func (f *Frame) GetAllPOs() []PayloadObject {
+	rv := make([]PayloadObject, len(f.POs))
+	for i, v := range f.POs {
+		rv[i] = v.PO
+	}
+	return rv
+}
+func (f *Frame) GetAllROs() []RoutingObject {
+	rv := make([]RoutingObject, len(f.ROs))
+	for i, v := range f.ROs {
+		rv[i] = v.RO
+	}
+	return rv
+}
 func (f *Frame) GetFirstHeaderB(k string) ([]byte, bool) {
 	for _, h := range f.Headers {
 		if h.Key == k {
@@ -145,7 +159,7 @@ func (f *Frame) WriteToStream(s *bufio.Writer) {
 	}
 	for _, pe := range f.POs {
 		s.WriteString(fmt.Sprintf("po %s:%s %s\n",
-			pe.IntNum, pe.DotNum, pe.Length))
+			pe.DotNum, pe.IntNum, pe.Length))
 		s.Write(pe.PO.GetContent())
 		s.WriteRune('\n')
 	}

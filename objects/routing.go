@@ -1028,7 +1028,7 @@ func (ro *Entity) GetSigningBlob() []byte {
 	if len(ro.GetSK()) == 0 || len(ro.content) == 0 {
 		return nil
 	}
-	rv := make([]byte, len(ro.contact)+32)
+	rv := make([]byte, len(ro.content)+32)
 	copy(rv, ro.GetSK())
 	copy(rv[32:], ro.content)
 	return rv

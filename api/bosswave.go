@@ -2,10 +2,14 @@ package api
 
 import (
 	"encoding/base64"
+	"fmt"
 	"math/rand"
+	"os"
+	"sync"
 
 	log "github.com/cihub/seelog"
 	"github.com/immesys/bw2/internal/core"
+	"github.com/immesys/bw2/internal/crypto"
 	"github.com/immesys/bw2/objects"
 )
 
@@ -20,6 +24,9 @@ var BW2Version = "2.0.0 - 'Anarchy'"
 type BW struct {
 	Config *core.BWConfig
 	tm     *core.Terminus
+	VK     []byte
+	SK     []byte
+	MVKs   [][]byte
 }
 
 // OpenBWContext will create a new Bosswave context and initialise the
@@ -30,6 +37,26 @@ func OpenBWContext(config *core.BWConfig) *BW {
 		config = core.LoadConfig("")
 	}
 	rv := &BW{Config: config, tm: core.CreateTerminus()}
+	var err error
+	rv.SK, err = crypto.UnFmtKey(config.Router.SK)
+	if err != nil {
+		fmt.Println("Could not load router's signing key from config")
+		os.Exit(1)
+	}
+	rv.VK, err = crypto.UnFmtKey(config.Router.VK)
+	if err != nil {
+		fmt.Println("Could not load router's verifying key from config")
+		os.Exit(1)
+	}
+	rv.MVKs = make([][]byte, len(config.Affinity.MVK))
+	for i, smvk := range config.Affinity.MVK {
+		mvk, err := crypto.UnFmtKey(smvk)
+		if err != nil {
+			fmt.Println("Could not parse affinity mvk '" + smvk + "'")
+			os.Exit(1)
+		}
+		rv.MVKs[i] = mvk
+	}
 	return rv
 }
 
@@ -50,6 +77,9 @@ type BosswaveClient struct {
 	//MessageFactory stuff
 	mid uint64
 	us  *objects.Entity
+
+	peerlock sync.Mutex
+	peers    map[string]*PeerClient
 }
 
 // MatchTopic will check if t matches the pattern.
@@ -98,9 +128,31 @@ func (c *BosswaveClient) dispatch() {
 // behaviour is supressed, and the caller needs to work out how to dispatch
 // messages when the queue has changed.
 func (bw *BW) CreateClient() *BosswaveClient {
-	rv := &BosswaveClient{bw: bw, mid: uint64(rand.Int63() << 16)}
+	rv := &BosswaveClient{bw: bw,
+		mid:   uint64(rand.Int63() << 16),
+		peers: make(map[string]*PeerClient),
+	}
 	rv.cl = bw.tm.CreateClient()
 	return rv
+}
+
+func (c *BosswaveClient) GetPeer(vk []byte) (*PeerClient, error) {
+	key := crypto.FmtKey(vk)
+	c.peerlock.Lock()
+	peer, ok := c.peers[key]
+	if !ok {
+		peer, err := ConnectToPeer(vk)
+		if err != nil {
+			c.peerlock.Unlock()
+			return nil, err
+		}
+		c.peers[key] = peer
+		c.peerlock.Unlock()
+		return peer, nil
+	}
+	c.peerlock.Unlock()
+	return peer, nil
+
 }
 
 /*

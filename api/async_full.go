@@ -1,8 +1,10 @@
 package api
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"os"
 	"sync/atomic"
@@ -59,40 +61,47 @@ type PublishParams struct {
 	DoVerify           bool
 	Persist            bool
 }
-type PublishCallback func(status int)
+type PublishCallback func(status int, msg string)
 
+func (c *BosswaveClient) checkAddOriginVK(m *core.Message) {
+
+	if m.PrimaryAccessChain == nil ||
+		m.PrimaryAccessChain.GetReceiverVK() == nil ||
+		objects.IsEveryoneVK(m.PrimaryAccessChain.GetReceiverVK()) {
+		fmt.Println("Adding an origin VK header")
+		ovk := objects.CreateOriginVK(c.us.GetVK())
+		m.RoutingObjects = append(m.RoutingObjects, ovk)
+		vk := c.us.GetVK()
+		m.OriginVK = &vk
+	}
+}
 func (c *BosswaveClient) Publish(params *PublishParams,
 	cb PublishCallback) {
 	t := core.TypePublish
 	if params.Persist {
 		t = core.TypePersist
 	}
-	m, code := c.newMessage(t, params.MVK, params.URISuffix)
+	m, code, msg := c.newMessage(t, params.MVK, params.URISuffix)
 	if m == nil {
-		cb(code)
+		cb(code, msg)
 		return
 	}
 	m.PrimaryAccessChain = params.PrimaryAccessChain
 	m.RoutingObjects = params.RoutingObjects
 	m.PayloadObjects = params.PayloadObjects
-	if s := c.doPAC(m, params.ElaboratePAC); s != core.BWStatusOkay {
-		cb(s)
+	if s, msg := c.doPAC(m, params.ElaboratePAC); s != core.BWStatusOkay {
+		cb(s, msg)
 		return
 	}
+
+	//Check if we need to add an origin VK header
+	c.checkAddOriginVK(m)
 
 	//Add expiry
 	if params.ExpiryDelta != nil {
 		m.RoutingObjects = append(m.RoutingObjects, objects.CreateNewExpiryFromNow(*params.ExpiryDelta))
 	} else if params.Expiry != nil {
 		m.RoutingObjects = append(m.RoutingObjects, objects.CreateNewExpiry(*params.Expiry))
-	}
-
-	//Check if we need to add an origin VK header
-	if m.PrimaryAccessChain == nil ||
-		m.PrimaryAccessChain.GetReceiverVK() == nil ||
-		objects.IsEveryoneVK(m.PrimaryAccessChain.GetReceiverVK()) {
-		fmt.Println("Adding an origin VK header")
-		m.RoutingObjects = append(m.RoutingObjects, objects.CreateOriginVK(c.us.GetVK()))
 	}
 
 	c.finishMessage(m)
@@ -102,19 +111,42 @@ func (c *BosswaveClient) Publish(params *PublishParams,
 		s := m.Verify()
 		if s.Code != core.BWStatusOkay {
 			log.Info("verification failed")
-			cb(s.Code)
+			cb(s.Code, "message verification failed")
 			return
 		} else {
 			log.Info("Message verified ok")
 		}
 	}
 	//Probably wanna do shit like determine if this is for remote delivery or local
-	if params.Persist {
-		c.cl.Persist(m)
-	} else {
-		c.cl.Publish(m)
+
+	err := c.VerifyAffinity(m)
+	if err == nil { //Local delivery
+		if params.Persist {
+			c.cl.Persist(m)
+		} else {
+			c.cl.Publish(m)
+		}
+		cb(core.BWStatusOkay, "")
+	} else { //Remote delivery
+		peer, err := c.GetPeer(m.MVK)
+		if err != nil {
+			log.Info("Could not deliver to peer: ", err)
+			cb(core.BWStatusPeerError, "could not peer")
+			return
+		}
+		peer.PublishPersist(m, cb)
 	}
-	cb(core.BWStatusOkay)
+
+}
+
+func (c *BosswaveClient) VerifyAffinity(m *core.Message) error {
+	mvk := m.MVK
+	for _, ourMVK := range c.bw.MVKs {
+		if bytes.Equal(mvk, ourMVK) {
+			return nil
+		}
+	}
+	return errors.New("we are not the designated router for this MVK")
 }
 
 type SubscribeParams struct {
@@ -127,22 +159,22 @@ type SubscribeParams struct {
 	ElaboratePAC       int
 	DoVerify           bool
 }
-type SubscribeInitialCallback func(status int, isNew bool, id core.UniqueMessageID)
+type SubscribeInitialCallback func(status int, isNew bool, id core.UniqueMessageID, msg string)
 type SubscribeMessageCallback func(m *core.Message)
 
 func (c *BosswaveClient) Subscribe(params *SubscribeParams,
 	actionCB SubscribeInitialCallback,
 	messageCB SubscribeMessageCallback) {
 
-	m, code := c.newMessage(core.TypeSubscribe, params.MVK, params.URISuffix)
+	m, code, msg := c.newMessage(core.TypeSubscribe, params.MVK, params.URISuffix)
 	if m == nil {
-		actionCB(code, false, core.UniqueMessageID{})
+		actionCB(code, false, core.UniqueMessageID{}, msg)
 		return
 	}
 	m.PrimaryAccessChain = params.PrimaryAccessChain
 	m.RoutingObjects = params.RoutingObjects
-	if s := c.doPAC(m, params.ElaboratePAC); s != core.BWStatusOkay {
-		actionCB(s, false, core.UniqueMessageID{})
+	if s, msg := c.doPAC(m, params.ElaboratePAC); s != core.BWStatusOkay {
+		actionCB(s, false, core.UniqueMessageID{}, msg)
 		return
 	}
 	//Add expiry
@@ -153,26 +185,34 @@ func (c *BosswaveClient) Subscribe(params *SubscribeParams,
 	}
 
 	//Check if we need to add an origin VK header
-	if m.PrimaryAccessChain == nil ||
-		m.PrimaryAccessChain.GetReceiverVK() == nil ||
-		objects.IsEveryoneVK(m.PrimaryAccessChain.GetReceiverVK()) {
-		m.RoutingObjects = append(m.RoutingObjects, objects.CreateOriginVK(c.us.GetVK()))
-	}
+	c.checkAddOriginVK(m)
 
 	c.finishMessage(m)
 
 	if params.DoVerify {
 		s := m.Verify()
 		if s.Code != core.BWStatusOkay {
-			actionCB(s.Code, false, core.UniqueMessageID{})
+			actionCB(s.Code, false, core.UniqueMessageID{}, "see code")
 			return
 		}
 	}
-	subid := c.cl.Subscribe(m, func(m *core.Message, subid core.UniqueMessageID) {
-		messageCB(m)
-	})
-	isNew := subid == m.UMid
-	actionCB(core.BWStatusOkay, isNew, subid)
+
+	err := c.VerifyAffinity(m)
+	if err == nil { //Local delivery
+		subid := c.cl.Subscribe(m, func(m *core.Message, subid core.UniqueMessageID) {
+			messageCB(m)
+		})
+		isNew := subid == m.UMid
+		actionCB(core.BWStatusOkay, isNew, subid, "")
+	} else { //Remote delivery
+		peer, err := c.GetPeer(m.MVK)
+		if err != nil {
+			log.Info("Could not deliver to peer: ", err)
+			actionCB(core.BWStatusPeerError, false, core.UniqueMessageID{}, "could not peer")
+			return
+		}
+		peer.Subscribe(m, actionCB, messageCB)
+	}
 }
 
 type SetEntityParams struct {
@@ -208,21 +248,21 @@ type ListParams struct {
 	ElaboratePAC       int
 	DoVerify           bool
 }
-type ListInitialCallback func(status int)
+type ListInitialCallback func(status int, msg string)
 type ListResultCallback func(s string, ok bool)
 
 func (c *BosswaveClient) List(params *ListParams,
 	actionCB ListInitialCallback,
 	resultCB ListResultCallback) {
-	m, code := c.newMessage(core.TypeLS, params.MVK, params.URISuffix)
+	m, code, msg := c.newMessage(core.TypeLS, params.MVK, params.URISuffix)
 	if m == nil {
-		actionCB(code)
+		actionCB(code, msg)
 		return
 	}
 	m.PrimaryAccessChain = params.PrimaryAccessChain
 	m.RoutingObjects = params.RoutingObjects
-	if s := c.doPAC(m, params.ElaboratePAC); s != core.BWStatusOkay {
-		actionCB(s)
+	if s, msg := c.doPAC(m, params.ElaboratePAC); s != core.BWStatusOkay {
+		actionCB(s, msg)
 		return
 	}
 	//Add expiry
@@ -233,24 +273,30 @@ func (c *BosswaveClient) List(params *ListParams,
 	}
 
 	//Check if we need to add an origin VK header
-	if m.PrimaryAccessChain == nil ||
-		m.PrimaryAccessChain.GetReceiverVK() == nil ||
-		objects.IsEveryoneVK(m.PrimaryAccessChain.GetReceiverVK()) {
-		m.RoutingObjects = append(m.RoutingObjects, objects.CreateOriginVK(c.us.GetVK()))
-	}
+	c.checkAddOriginVK(m)
 
 	c.finishMessage(m)
 
 	if params.DoVerify {
 		s := m.Verify()
 		if s.Code != core.BWStatusOkay {
-			actionCB(s.Code)
+			actionCB(s.Code, "see code")
 			return
 		}
 	}
-	//Would do remote dispatch?
-	actionCB(core.BWStatusOkay)
-	c.cl.List(m, resultCB)
+	err := c.VerifyAffinity(m)
+	if err == nil { //Local delivery
+		actionCB(core.BWStatusOkay, "")
+		c.cl.List(m, resultCB)
+	} else { //Remote delivery
+		peer, err := c.GetPeer(m.MVK)
+		if err != nil {
+			log.Info("Could not deliver to peer: ", err)
+			actionCB(core.BWStatusPeerError, "could not peer")
+			return
+		}
+		peer.List(m, actionCB, resultCB)
+	}
 }
 
 type QueryParams struct {
@@ -263,21 +309,21 @@ type QueryParams struct {
 	ElaboratePAC       int
 	DoVerify           bool
 }
-type QueryInitialCallback func(status int)
+type QueryInitialCallback func(status int, msg string)
 type QueryResultCallback func(m *core.Message)
 
 func (c *BosswaveClient) Query(params *QueryParams,
 	actionCB QueryInitialCallback,
 	resultCB QueryResultCallback) {
-	m, code := c.newMessage(core.TypeQuery, params.MVK, params.URISuffix)
+	m, code, msg := c.newMessage(core.TypeQuery, params.MVK, params.URISuffix)
 	if m == nil {
-		actionCB(code)
+		actionCB(code, msg)
 		return
 	}
 	m.PrimaryAccessChain = params.PrimaryAccessChain
 	m.RoutingObjects = params.RoutingObjects
-	if s := c.doPAC(m, params.ElaboratePAC); s != core.BWStatusOkay {
-		actionCB(s)
+	if s, msg := c.doPAC(m, params.ElaboratePAC); s != core.BWStatusOkay {
+		actionCB(s, msg)
 		return
 	}
 	//Add expiry
@@ -287,24 +333,31 @@ func (c *BosswaveClient) Query(params *QueryParams,
 		m.RoutingObjects = append(m.RoutingObjects, objects.CreateNewExpiry(*params.Expiry))
 	}
 	//Check if we need to add an origin VK header
-	if m.PrimaryAccessChain == nil ||
-		m.PrimaryAccessChain.GetReceiverVK() == nil ||
-		objects.IsEveryoneVK(m.PrimaryAccessChain.GetReceiverVK()) {
-		m.RoutingObjects = append(m.RoutingObjects, objects.CreateOriginVK(c.us.GetVK()))
-	}
+	c.checkAddOriginVK(m)
 
 	c.finishMessage(m)
 
 	if params.DoVerify {
 		s := m.Verify()
 		if s.Code != core.BWStatusOkay {
-			actionCB(s.Code)
+			actionCB(s.Code, "see code")
 			return
 		}
 	}
-	//Would do remote dispatch?
-	actionCB(core.BWStatusOkay)
-	c.cl.Query(m, resultCB)
+
+	err := c.VerifyAffinity(m)
+	if err == nil { //Local delivery
+		actionCB(core.BWStatusOkay, "")
+		c.cl.Query(m, resultCB)
+	} else { //Remote delivery
+		peer, err := c.GetPeer(m.MVK)
+		if err != nil {
+			log.Info("Could not deliver to peer: ", err)
+			actionCB(core.BWStatusPeerError, "could not peer")
+			return
+		}
+		peer.Query(m, actionCB, resultCB)
+	}
 }
 
 type CreateDOTParams struct {
@@ -409,7 +462,7 @@ func (c *BosswaveClient) CreateEntity(p *CreateEntityParams) *objects.Entity {
 	return e
 }
 
-func (c *BosswaveClient) doPAC(m *core.Message, elaboratePAC int) int {
+func (c *BosswaveClient) doPAC(m *core.Message, elaboratePAC int) (int, string) {
 
 	//If there is no explicit PAC, use the first access chain in the ROs
 	if m.PrimaryAccessChain == nil {
@@ -424,19 +477,19 @@ func (c *BosswaveClient) doPAC(m *core.Message, elaboratePAC int) int {
 	//Elaborate PAC
 	if elaboratePAC > NoElaboration {
 		if m.PrimaryAccessChain == nil {
-			return core.BWStatusUnresolvable
+			return core.BWStatusUnresolvable, "No PAC with elaboration"
 		}
 		if !m.PrimaryAccessChain.IsElaborated() {
 			dc := core.ElaborateDChain(m.PrimaryAccessChain)
 			if dc == nil {
-				return core.BWStatusUnresolvable
+				return core.BWStatusUnresolvable, "Could not resolve PAC"
 			}
 			m.RoutingObjects = append(m.RoutingObjects, dc)
 		}
 		if elaboratePAC > PartialElaboration {
 			ok := core.ResolveDotsInDChain(m.PrimaryAccessChain, m.RoutingObjects)
 			if !ok {
-				return core.BWStatusUnresolvable
+				return core.BWStatusUnresolvable, "dot in PAC unresolvable"
 			}
 			for i := 0; i < m.PrimaryAccessChain.NumHashes(); i++ {
 				d := m.PrimaryAccessChain.GetDOT(i)
@@ -453,7 +506,7 @@ func (c *BosswaveClient) doPAC(m *core.Message, elaboratePAC int) int {
 		m.RoutingObjects = append(m.RoutingObjects, m.PrimaryAccessChain)
 	}
 	//TODO remove duplicates in the routing objects, but preserve order.
-	return core.BWStatusOkay
+	return core.BWStatusOkay, ""
 }
 
 func (c *BosswaveClient) getMid() uint64 {
@@ -461,7 +514,7 @@ func (c *BosswaveClient) getMid() uint64 {
 	return mid
 }
 
-func (c *BosswaveClient) newMessage(mtype int, mvk []byte, urisuffix string) (*core.Message, int) {
+func (c *BosswaveClient) newMessage(mtype int, mvk []byte, urisuffix string) (*core.Message, int, string) {
 	m := core.Message{Type: uint8(mtype),
 		TopicSuffix:    urisuffix,
 		MVK:            mvk,
@@ -470,13 +523,13 @@ func (c *BosswaveClient) newMessage(mtype int, mvk []byte, urisuffix string) (*c
 		MessageID:      c.getMid()}
 	valid, star, plus, _, _ := util.AnalyzeSuffix(urisuffix)
 	if !valid {
-		return nil, core.BWStatusBadURI
+		return nil, core.BWStatusBadURI, "invalid URI"
 	} else if len(mvk) != 32 {
-		return nil, core.BWStatusBadURI
+		return nil, core.BWStatusBadURI, "bad MVK"
 	} else if (star || plus) && (mtype == core.TypePublish || mtype == core.TypePersist) {
-		return nil, core.BWStatusBadOperation
+		return nil, core.BWStatusBadOperation, "bad OP with wildcard"
 	}
-	return &m, core.BWStatusOkay
+	return &m, core.BWStatusOkay, ""
 }
 
 func (c *BosswaveClient) finishMessage(m *core.Message) {

@@ -403,27 +403,37 @@ func (m *Message) Verify() *StatusMessage {
 		return &m.status
 	}
 
+	fromMVK := false
+	//If message is from MVK it can do whatever it wants
+	if m.OriginVK != nil && bytes.Equal(*m.OriginVK, m.MVK) {
+		fromMVK = true
+		m.status.Code = BWStatusOkay
+		goto endperm
+	} else {
+		log.Info("Failed origin MVK check", m.OriginVK, m.MVK)
+	}
+
 	//These will be populated by the permissions search process
-	//only use them if you don't jump to badperm
+	//only use them if you don't jump to endperm
 
 	//Can't get permissions if there is no access chain
 	if pac == nil {
 		log.Infof("V: BadPermissions (no PAC)")
 		m.status.Code = BWStatusBadPermissions
-		goto badperm
+		goto endperm
 	} else {
 		pac = ElaborateDChain(pac)
 		if pac == nil {
 			m.status.Code = BWStatusUnresolvable
 			log.Infof("V: Unresolvable (elaborating chain)")
-			goto badperm
+			goto endperm
 		}
 
 		ok := ResolveDotsInDChain(pac, m.RoutingObjects)
 		if !ok {
 			m.status.Code = BWStatusUnresolvable
 			log.Infof("V: Unresolvable (dots in chain)")
-			goto badperm
+			goto endperm
 		}
 
 		//Check the signature of all the dots. This also checks that their topics are
@@ -431,7 +441,7 @@ func (m *Message) Verify() *StatusMessage {
 		if !pac.CheckAllSigs() {
 			m.status.Code = BWStatusInvalidDOT
 			log.Infof("V: InvalidDOT (dot signature)")
-			goto badperm
+			goto endperm
 		}
 
 		//Next check the chain is connected end to end, check the TTL and construct
@@ -440,7 +450,7 @@ func (m *Message) Verify() *StatusMessage {
 		fmt.Println("AZDC says OVK is ", crypto.FmtKey(azOVK))
 		m.status.Code = azCode
 		if azCode != BWStatusOkay {
-			goto badperm
+			goto endperm
 		}
 		m.MergedTopic = azURI
 
@@ -449,7 +459,7 @@ func (m *Message) Verify() *StatusMessage {
 			if m.OriginVK == nil {
 				m.status.Code = BWStatusNoOrigin
 				log.Infof("V: NoOrigin (allgrant, no OVK ro)")
-				goto badperm
+				goto endperm
 			}
 		} else {
 			if m.OriginVK == nil {
@@ -460,14 +470,14 @@ func (m *Message) Verify() *StatusMessage {
 		if !bytes.Equal(m.MVK, azMVK) {
 			m.status.Code = BWStatusMVKMismatch
 			log.Infof("V: MVKMismatch %v != %v", crypto.FmtKey(m.MVK), crypto.FmtKey(azMVK))
-			goto badperm
+			goto endperm
 		}
 	}
 
 	//We could be here with failed permissions
 	//we still must continue because we might have dollar
 	//status
-badperm:
+endperm:
 
 	//No dollar, and we hit an error, bail
 	if !uridollar && m.status.Code != BWStatusOkay {
@@ -482,6 +492,11 @@ badperm:
 		m.status.Code = BWStatusInvalidSig
 		log.Infof("V: InvalidSig (whole sig)")
 		//Not even a dollar can save you
+		return &m.status
+	}
+
+	if fromMVK {
+		m.status.Code = BWStatusOkay
 		return &m.status
 	}
 

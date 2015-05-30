@@ -21,7 +21,9 @@ import (
 )
 
 type Adapter struct {
-	bw *api.BW
+	bw        *api.BW
+	cachelock sync.RWMutex
+	DNSCache  map[string]string
 }
 
 func (a *Adapter) Start(bw *api.BW) {
@@ -34,6 +36,7 @@ func (a *Adapter) Start(bw *api.BW) {
 	if err != nil {
 		log.Errorf("Could not listen on '%s' for OOBAdapter: %v\n",
 			bw.Config.OOB.ListenOn, err)
+		log.Flush()
 		os.Exit(1)
 	}
 	log.Infof("OOB listening on %s", bw.Config.OOB.ListenOn)
@@ -193,8 +196,8 @@ func commonUnpackMsg(m *core.Message, r *objects.Frame) {
 func commonUnpackEntity(e *objects.Entity, r *objects.Frame) {
 	//TODO
 }
-func mkGenericActionCB(replyto int, send func(f *objects.Frame)) func(status int) {
-	return func(status int) {
+func mkGenericActionCB(replyto int, send func(f *objects.Frame)) func(status int, msg string) {
+	return func(status int, msg string) {
 		if status == core.BWStatusOkay {
 			r := objects.CreateFrame(objects.CmdResponse, replyto)
 			r.AddHeader("status", "okay")
@@ -202,7 +205,7 @@ func mkGenericActionCB(replyto int, send func(f *objects.Frame)) func(status int
 		} else {
 			r := objects.CreateFrame(objects.CmdResponse, replyto)
 			r.AddHeader("status", "error")
-			r.AddHeader("reason", "see code("+strconv.Itoa(status)+")")
+			r.AddHeader("reason", msg)
 			r.AddHeader("code", strconv.Itoa(status))
 			send(r)
 		}
@@ -405,11 +408,20 @@ func dispatchFrame(bwcl *api.BosswaveClient, f *objects.Frame, send func(f *obje
 			RoutingObjects:     ros,
 		}
 		bwcl.Subscribe(p,
-			func(status int, isNew bool, id core.UniqueMessageID) {
-				r := objects.CreateFrame(objects.CmdResponse, replyto)
-				r.AddHeader("duplicate", strconv.FormatBool(!isNew))
-				r.AddHeader("handle", id.ToString())
-				send(r)
+			func(status int, isNew bool, id core.UniqueMessageID, msg string) {
+				if status == core.BWStatusOkay {
+					r := objects.CreateFrame(objects.CmdResponse, replyto)
+					r.AddHeader("status", "okay")
+					r.AddHeader("duplicate", strconv.FormatBool(!isNew))
+					r.AddHeader("handle", id.ToString())
+					send(r)
+				} else {
+					r := objects.CreateFrame(objects.CmdResponse, replyto)
+					r.AddHeader("status", "error")
+					r.AddHeader("reason", msg)
+					r.AddHeader("code", strconv.Itoa(status))
+					send(r)
+				}
 			},
 			func(m *core.Message) {
 				r := objects.CreateFrame(objects.CmdResult, replyto)

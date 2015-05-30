@@ -32,8 +32,11 @@ const (
 	BWStatusNoOrigin = 407
 	BWStatusBadURI   = 408
 	//Returned if you try to publish to a wildcard
-	BWStatusBadOperation = 409
-	BWStatusMVKMismatch  = 410
+	BWStatusBadOperation     = 409
+	BWStatusMVKMismatch      = 410
+	BWStatusMalformedMessage = 411
+	BWStatusAffinityMismatch = 412
+	BWStatusPeerError        = 413
 )
 
 type UniqueMessageID struct {

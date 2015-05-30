@@ -20,6 +20,11 @@ func main() {
 			Usage:  "start a router as configured in the bw2.ini file",
 			Action: actionRouter,
 		},
+		{
+			Name:   "makeconf",
+			Usage:  "create a new bw2.ini file",
+			Action: makeConf,
+		},
 		/*
 			{
 				Name:    "import",
@@ -70,6 +75,7 @@ func actionRouter(c *cli.Context) {
 	bw := api.OpenBWContext(nil)
 	oob := new(oob.Adapter)
 	fmt.Println("router starting")
+	go api.Start(bw)
 	oob.Start(bw)
 }
 

@@ -9,6 +9,13 @@ import (
 
 // BWConfig is the configuration for a router
 type BWConfig struct {
+	Router struct {
+		VK string
+		SK string
+	}
+	Affinity struct {
+		MVK []string
+	}
 	Native struct {
 		ListenOn string
 	}

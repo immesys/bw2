@@ -15,7 +15,7 @@ void put_object(int cf, const char *key, size_t keylen, const char *value, size_
 
 char *get_object(int cf, const char *key, size_t keylen, size_t *valuelen);
 void delete_object(int cf, const char *key, size_t keylen);
-void init();
+void init(const char* name, size_t namelen);
 int exists(int cf, const char* key, size_t keylen);
 
 void iterator_create(int cf, const char* key, size_t keylen, void** state,

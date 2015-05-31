@@ -67,7 +67,7 @@ func genCert(vk string) (tls.Certificate, *x509.Certificate) {
 
 func Start(bw *BW) {
 	//Generate TLS certificate
-	vk := crypto.FmtKey(bw.VK)
+	vk := crypto.FmtKey(bw.Entity.GetVK())
 	cert, cert2 := genCert(vk)
 	tlsConfig := tls.Config{Certificates: []tls.Certificate{cert}}
 	ln, err := tls.Listen("tcp", bw.Config.Native.ListenOn, &tlsConfig)
@@ -77,13 +77,13 @@ func Start(bw *BW) {
 		os.Exit(1)
 	}
 	proof := make([]byte, 32+64)
-	copy(proof, bw.VK)
+	copy(proof, bw.Entity.GetVK())
 	if err != nil {
 		log.Criticalf("Could not parse certificate")
 		log.Flush()
 		os.Exit(1)
 	}
-	crypto.SignBlob(bw.SK, bw.VK, proof[32:], cert2.Signature)
+	crypto.SignBlob(bw.Entity.GetSK(), bw.Entity.GetVK(), proof[32:], cert2.Signature)
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
@@ -122,6 +122,7 @@ func handleSession(cl *BosswaveClient, conn net.Conn) {
 	rmutex := sync.Mutex{}
 
 	reply := func(f *nativeFrame) {
+		log.Infof("Sending reply of length %v to seqno %v", len(f.body), f.seqno)
 		tmphdr := make([]byte, 17)
 		binary.LittleEndian.PutUint64(tmphdr, uint64(len(f.body)))
 		binary.LittleEndian.PutUint64(tmphdr[8:], f.seqno)
@@ -172,17 +173,28 @@ func handleSession(cl *BosswaveClient, conn net.Conn) {
 			switch nf.cmd {
 			case nCmdMessage:
 				msg, err := core.LoadMessage(nf.body)
+				log.Info("Load message returned")
 				if err != nil {
+					log.Info("Load message error: ", err.Error())
 					errframe(nf.seqno, core.BWStatusMalformedMessage, err.Error())
+					return
+				}
+				log.Info("Received message ok")
+				for _, ro := range msg.RoutingObjects {
+					core.DistributeRO(cl.BW().Entity, ro, cl.cl)
 				}
 				err = cl.VerifyAffinity(msg)
 				if err != nil {
 					errframe(nf.seqno, core.BWStatusAffinityMismatch, err.Error())
+					return
 				}
 				s := msg.Verify()
 				if s.Code != core.BWStatusOkay {
+					log.Info("message failed verification")
 					errframe(nf.seqno, s.Code, "see code("+strconv.Itoa(s.Code)+")")
+					return
 				}
+				log.Info("message verified ok")
 
 				switch msg.Type {
 				case core.TypePublish:
@@ -241,9 +253,11 @@ func handleSession(cl *BosswaveClient, conn net.Conn) {
 					})
 				default:
 					errframe(nf.seqno, core.BWStatusBadOperation, "type mismatch")
+					return
 				}
 			default: //nCmd
 				errframe(nf.seqno, core.BWStatusBadOperation, "what command is this?")
+				return
 			}
 		}()
 	}

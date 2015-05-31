@@ -13,7 +13,6 @@ import (
 	log "github.com/cihub/seelog"
 	"github.com/immesys/bw2/internal/core"
 	"github.com/immesys/bw2/internal/crypto"
-	"github.com/immesys/bw2/internal/store"
 	"github.com/immesys/bw2/internal/util"
 	"github.com/immesys/bw2/objects"
 )
@@ -25,7 +24,6 @@ const (
 )
 
 func init() {
-	fmt.Println("init called")
 	cfg := `
 	<seelog>
     <outputs>
@@ -42,7 +40,6 @@ func init() {
 	nlogger, err := log.LoggerFromConfigAsString(cfg)
 	if err == nil {
 		log.ReplaceLogger(nlogger)
-		log.Infof("Logger loaded")
 	} else {
 		fmt.Printf("Bad log config: %v\n", err)
 		os.Exit(1)
@@ -235,6 +232,7 @@ func (c *BosswaveClient) SetEntity(p *SetEntityParams) int {
 		return core.BWStatusInvalidSig
 	}
 	c.us = entity
+	core.DistributeRO(c.BW().Entity, entity, c.cl)
 	return core.BWStatusOkay
 }
 
@@ -416,7 +414,7 @@ func (c *BosswaveClient) CreateDOT(p *CreateDOTParams) *objects.DOT {
 		}
 	}
 	d.Encode(c.us.GetSK())
-	store.PutDOT(d)
+	core.DistributeRO(c.BW().Entity, d, c.cl)
 	return d
 }
 
@@ -431,7 +429,7 @@ func (c *BosswaveClient) CreateDOTChain(p *CreateDotChainParams) *objects.DChain
 	if err != nil || rv == nil {
 		return nil
 	}
-	store.PutDChain(rv)
+	core.DistributeRO(c.BW().Entity, rv, c.cl)
 	if p.UnElaborate {
 		rv.UnElaborate()
 	}
@@ -458,7 +456,7 @@ func (c *BosswaveClient) CreateEntity(p *CreateEntityParams) *objects.Entity {
 		e.SetCreationToNow()
 	}
 	e.Encode()
-	store.PutEntity(e)
+	core.DistributeRO(c.BW().Entity, e, c.cl)
 	return e
 }
 
@@ -537,4 +535,7 @@ func (c *BosswaveClient) finishMessage(m *core.Message) {
 	m.Topic = base64.URLEncoding.EncodeToString(m.MVK) + "/" + m.TopicSuffix
 	m.UMid.Mid = m.MessageID
 	m.UMid.Sig = binary.LittleEndian.Uint64(m.Signature)
+	for _, ro := range m.RoutingObjects {
+		core.DistributeRO(c.BW().Entity, ro, c.cl)
+	}
 }

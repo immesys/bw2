@@ -28,6 +28,7 @@ func makeConf(c *cli.Context) {
 		("[router]\n"),
 		("VK=" + tvk + "\n"),
 		("SK=" + tsk + "\n"),
+		("DB=.bw.db\n"),
 		("[native]\n"),
 		("ListenOn=:4514\n"),
 		("[oob]\n"),

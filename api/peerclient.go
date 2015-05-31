@@ -23,23 +23,7 @@ type PeerClient struct {
 	seqno   uint64
 }
 
-func magicallyDetermineIPAddress(vk []byte) (string, error) {
-	rawEnc := crypto.FmtKey(vk)
-	rawEnc = "_" + rawEnc[:43] //Strip the last equals, we know its there and its invalid
-	_, addrs, err := net.LookupSRV("", "", rawEnc+".bw2.io")
-	if err != nil {
-		return "", err
-	}
-	if len(addrs) < 1 {
-		return "", errors.New("Unable to resolve VK to router")
-	}
-	return addrs[0].Target, nil
-}
-func ConnectToPeer(vk []byte) (*PeerClient, error) {
-	target, err := magicallyDetermineIPAddress(vk)
-	if err != nil {
-		return nil, err
-	}
+func ConnectToPeer(vk []byte, target string) (*PeerClient, error) {
 	roots := x509.NewCertPool()
 	conn, err := tls.Dial("tcp", target, &tls.Config{
 		InsecureSkipVerify: true,
@@ -70,9 +54,31 @@ func ConnectToPeer(vk []byte) (*PeerClient, error) {
 		conn:    conn,
 		replyCB: make(map[uint64]func(*nativeFrame)),
 	}
+	go rv.rxloop()
 	return &rv, nil
 }
 
+func (pc *PeerClient) rxloop() {
+	hdr := make([]byte, 17)
+	for {
+		io.ReadFull(pc.conn, hdr)
+		ln := binary.LittleEndian.Uint64(hdr)
+		seqno := binary.LittleEndian.Uint64(hdr[8:])
+		cmd := hdr[16]
+		body := make([]byte, ln)
+		io.ReadFull(pc.conn, body)
+		fr := nativeFrame{
+			length: ln,
+			seqno:  seqno,
+			cmd:    cmd,
+			body:   body,
+		}
+		pc.txmtx.Lock()
+		cb := pc.replyCB[seqno]
+		pc.txmtx.Unlock()
+		cb(&fr)
+	}
+}
 func (pc *PeerClient) getSeqno() uint64 {
 	return atomic.AddUint64(&pc.seqno, 1)
 }
@@ -87,6 +93,7 @@ func (pc *PeerClient) transact(f *nativeFrame, onRX func(f *nativeFrame)) {
 	binary.LittleEndian.PutUint64(tmphdr[8:], f.seqno)
 	tmphdr[16] = byte(f.cmd)
 	pc.txmtx.Lock()
+	log.Info("Putting RX into seqno", f.seqno)
 	pc.replyCB[f.seqno] = onRX
 	defer pc.txmtx.Unlock()
 	_, err := pc.conn.Write(tmphdr)
@@ -108,6 +115,7 @@ func (pc *PeerClient) PublishPersist(m *core.Message, actionCB func(code int, ms
 		seqno: pc.getSeqno(),
 	}
 	pc.transact(&nf, func(f *nativeFrame) {
+		log.Info("Got RX frame")
 		defer pc.removeCB(nf.seqno)
 		if len(f.body) < 2 {
 			actionCB(core.BWStatusPeerError, "short response frame")

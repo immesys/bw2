@@ -81,6 +81,18 @@ func GetDChain(hash []byte) (*objects.DChain, bool) {
 	return dchain, true
 }
 
+func ExistsDChain(hash []byte) bool {
+	return rocks.Exists(rocks.CFDChain, hash)
+}
+
+func ExistsDOT(hash []byte) bool {
+	return rocks.Exists(rocks.CFDot, hash)
+}
+
+func ExistsEntity(vk []byte) bool {
+	return rocks.Exists(rocks.CFEntity, vk)
+}
+
 func PutEntity(v *objects.Entity) {
 	//We assume all Entities in the DB are valid, so we should make sure it has
 	//been checked. This is practically a noop if it has already been checked

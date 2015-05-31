@@ -2,14 +2,18 @@ package api
 
 import (
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"math/rand"
+	"net"
 	"os"
+	"strings"
 	"sync"
 
 	log "github.com/cihub/seelog"
 	"github.com/immesys/bw2/internal/core"
 	"github.com/immesys/bw2/internal/crypto"
+	"github.com/immesys/bw2/internal/rocks"
 	"github.com/immesys/bw2/objects"
 )
 
@@ -20,13 +24,26 @@ var BW2Version = "2.0.0 - 'Anarchy'"
 // use this interface, and it is the main interface for creating GO based BW2
 // applications
 
+type VKPair struct {
+	DRVK []byte
+	MVK  []byte
+}
+
 // BW is the primary handle for bosswave consumers
 type BW struct {
 	Config *core.BWConfig
 	tm     *core.Terminus
-	VK     []byte
-	SK     []byte
-	MVKs   [][]byte
+	//VK        []byte
+	//SK        []byte
+	Entity    *objects.Entity
+	MVKs      [][]byte
+	cachelock sync.Mutex
+	//This maps a DRVK onto a target
+	Targetcache map[string]string
+	//This maps an MVK onto a DRVK
+	DRVKcache map[string][]byte
+	//This maps a name onto an MVK
+	Namecache map[string][]byte
 }
 
 // OpenBWContext will create a new Bosswave context and initialise the
@@ -36,18 +53,23 @@ func OpenBWContext(config *core.BWConfig) *BW {
 	if config == nil {
 		config = core.LoadConfig("")
 	}
-	rv := &BW{Config: config, tm: core.CreateTerminus()}
-	var err error
-	rv.SK, err = crypto.UnFmtKey(config.Router.SK)
+	rv := &BW{Config: config,
+		tm:          core.CreateTerminus(),
+		DRVKcache:   config.GetDRVKcache(),
+		Namecache:   config.GetNamecache(),
+		Targetcache: config.GetTargetcache(),
+	}
+	rSK, err := crypto.UnFmtKey(config.Router.SK)
 	if err != nil {
 		fmt.Println("Could not load router's signing key from config")
 		os.Exit(1)
 	}
-	rv.VK, err = crypto.UnFmtKey(config.Router.VK)
+	rVK, err := crypto.UnFmtKey(config.Router.VK)
 	if err != nil {
 		fmt.Println("Could not load router's verifying key from config")
 		os.Exit(1)
 	}
+	rv.Entity = objects.CreateLightEntity(rVK, rSK)
 	rv.MVKs = make([][]byte, len(config.Affinity.MVK))
 	for i, smvk := range config.Affinity.MVK {
 		mvk, err := crypto.UnFmtKey(smvk)
@@ -57,6 +79,7 @@ func OpenBWContext(config *core.BWConfig) *BW {
 		}
 		rv.MVKs[i] = mvk
 	}
+	rocks.Initialize(config.Router.DB)
 	return rv
 }
 
@@ -66,6 +89,10 @@ func SplitURI(uri string) (mvk []byte, urisuffix string, ok bool) {
 		return nil, "", false
 	}
 	return rv, uri[45:], true
+}
+
+func (cl *BosswaveClient) BW() *BW {
+	return cl.bw
 }
 
 // BosswaveClient represents an individual client. It contains the
@@ -136,66 +163,114 @@ func (bw *BW) CreateClient() *BosswaveClient {
 	return rv
 }
 
-func (c *BosswaveClient) GetPeer(vk []byte) (*PeerClient, error) {
+func (bw *BW) ResolveURI(uri string) (string, error) {
+	parts := strings.SplitN(uri, "/", 2)
+	mvk, err := bw.ResolveName(parts[0])
+	if err != nil {
+		return "", err
+	}
+	return crypto.FmtKey(mvk) + "/" + parts[1], nil
+}
+
+func (bw *BW) GetTarget(drvk string) (string, error) {
+	bw.cachelock.Lock()
+	defer bw.cachelock.Unlock()
+	target, ok := bw.Targetcache[drvk]
+	if ok {
+		return target, nil
+	}
+	rawEnc := "_" + drvk[:43] //Strip the last equals, we know its there and its invalid
+	_, addrs, err := net.LookupSRV("", "", rawEnc+".bw2.io")
+	if err != nil {
+		return "", err
+	}
+	if len(addrs) < 1 {
+		return "", errors.New("Unable to resolve VK to router")
+	}
+	bw.Targetcache[drvk] = addrs[0].Target
+	return addrs[0].Target, nil
+}
+func (bw *BW) GetDRVK(mvk string) ([]byte, error) {
+	bw.cachelock.Lock()
+	defer bw.cachelock.Unlock()
+	drvk, ok := bw.DRVKcache[mvk]
+	if ok {
+		return drvk, nil
+	}
+	rv, err := net.LookupTXT("_dr." + mvk[:43] + ".bw2.io")
+	if err != nil {
+		return nil, err
+	}
+	if len(rv) < 1 {
+		return nil, errors.New("could not resolve _dr for '" + mvk[:43] + "'")
+	}
+	sdrvk := rv[0]
+	drvk, err = crypto.UnFmtKey(sdrvk)
+	if err != nil {
+		return nil, errors.New("TXT record malformed")
+	}
+	bw.DRVKcache[mvk] = drvk
+	return drvk, nil
+}
+
+//ResolveName resolves a DNS name into an MVK
+//TODO add caching for this shit
+func (bw *BW) ResolveName(name string) ([]byte, error) {
+	bw.cachelock.Lock()
+	defer bw.cachelock.Unlock()
+	mvk, ok := bw.Namecache[name]
+	if ok {
+		return mvk, nil
+	}
+	if !strings.Contains(name, ".") && len(name) == 44 {
+		var err error
+		mvk, err = crypto.UnFmtKey(name)
+		if err != nil {
+			return nil, errors.New("Could not parse MVK")
+		}
+		bw.Namecache[name] = mvk
+		return mvk, nil
+	} else {
+		//name is probably a DNS record
+		rv, err := net.LookupTXT("_mvk." + name)
+		if err != nil {
+			return nil, err
+		}
+		if len(rv) < 1 {
+			return nil, errors.New("could not resolve _mvk for '" + name + "'")
+		}
+		smvk := rv[0]
+		mvk, err = crypto.UnFmtKey(smvk)
+		if err != nil {
+			return nil, errors.New("TXT record malformed")
+		}
+		bw.Namecache[name] = mvk
+		return mvk, nil
+	}
+}
+
+//GetPeer gets the peer for the given MVK, NOT THE PEER VK
+func (c *BosswaveClient) GetPeer(mvk []byte) (*PeerClient, error) {
+	vk, err := c.bw.GetDRVK(crypto.FmtKey(mvk))
+	if err != nil {
+		return nil, err
+	}
 	key := crypto.FmtKey(vk)
 	c.peerlock.Lock()
+	defer c.peerlock.Unlock()
 	peer, ok := c.peers[key]
 	if !ok {
-		peer, err := ConnectToPeer(vk)
+		tgt, err := c.bw.GetTarget(key)
 		if err != nil {
-			c.peerlock.Unlock()
+			return nil, err
+		}
+		peer, err := ConnectToPeer(vk, tgt)
+		if err != nil {
 			return nil, err
 		}
 		c.peers[key] = peer
-		c.peerlock.Unlock()
 		return peer, nil
 	}
-	c.peerlock.Unlock()
 	return peer, nil
 
 }
-
-/*
-func (c *BosswaveClient) DispatchMessage(m *core.Message) *core.StatusMessage {
-	//Not clear we would do this for messages arriving from OOB
-	s := m.Verify()
-	if !s.Ok() {
-		fmt.Printf("Failed verification: %d\n", s.Code)
-		return s
-	}
-	//Probably check for remote vs local delivery. Assume local for now
-	switch m.Type {
-	case core.TypePublish:
-		c.cl.Publish(m)
-	default:
-		//Subscribes need their own channel or something.
-		panic("ARGH WTF EVEN FUCK!")
-	}
-	return s
-}
-*/
-
-/*
-// Publish the given message using the permissions contained in the message
-func (c *BosswaveClient) Publish(m *core.Message) *core.StatusMessage {
-
-	//In real life we would now check if this message was destined for local
-	//delivery or remote delivery. If remote, we would create the client for that
-	//for now lets assume its local. Furthermore, lets pretend it needs its
-	//security checked (maybe we decide to do that in future anyway)
-	s := m.Verify()
-	if s.Code != core.BWStatusOkay {
-		return s
-	}
-	c.cl.Publish(m)
-	return nil
-}
-*/
-// Subscribe with the given subscription request
-/*
-func (c *BosswaveClient) Subscribe(m *core.Message) bool {
-	n := c.cl.Subscribe(m)
-	fmt.Printf("Subid: %v\n", n)
-	return true
-}
-*/

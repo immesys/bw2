@@ -995,6 +995,9 @@ type Entity struct {
 	sigok     sigState
 }
 
+func CreateLightEntity(vk, sk []byte) *Entity {
+	return &Entity{vk: vk, sk: sk}
+}
 func CreateNewEntity(contact, comment string, revokers [][]byte) *Entity {
 	if revokers == nil {
 		revokers = make([][]byte, 0)

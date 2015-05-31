@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/binary"
-	"errors"
 	"fmt"
+	"runtime"
 	"time"
 
 	log "github.com/cihub/seelog"
@@ -108,21 +108,24 @@ func (m *Message) Encode(sk []byte, vk []byte) {
 func LoadMessage(b []byte) (m *Message, err error) {
 	defer func() {
 		if r := recover(); r != nil {
+			fbuf := make([]byte, 8000)
+			nm := runtime.Stack(fbuf, false)
 			fmt.Println("Bad message: ", r)
+			fmt.Println(string(fbuf[:nm]))
 			m.Valid = false
 			err = r.(error)
 		}
 	}()
 	m = &Message{Encoded: b}
-
 	//Common header
 	idx := 0
 	m.Type = b[idx]
 	m.MessageID = binary.LittleEndian.Uint64(b[idx+1:])
-	idx += 8
+	idx += 9
 	m.MVK = b[idx : idx+32]
 	idx += 32
 	suffixlen := binary.LittleEndian.Uint16(b[idx:])
+	fmt.Println("The suffixlen: ", suffixlen)
 	m.TopicSuffix = string(b[idx+2 : idx+2+int(suffixlen)])
 	idx += int(suffixlen) + 2
 	m.Topic = base64.URLEncoding.EncodeToString(m.MVK) + "/" + m.TopicSuffix
@@ -137,23 +140,24 @@ func LoadMessage(b []byte) (m *Message, err error) {
 
 	//We (for Anarchy) persist all RO's we ever see (LOLWUT??!?)
 	//Do it marginally in parallel
-	rochan := make(chan objects.RoutingObject, 20)
-	go func() {
-		for ro := range rochan {
-			switch ro.GetRONum() {
-			case objects.ROAccessDChain, objects.ROPermissionDChain:
-				dc := ro.(*objects.DChain)
-				store.PutDChain(dc)
-			case objects.ROAccessDOT, objects.ROPermissionDOT:
-				dot := ro.(*objects.DOT)
-				store.PutDOT(dot)
+	/*
+		rochan := make(chan objects.RoutingObject, 20)
+		go func() {
+			for ro := range rochan {
+				switch ro.GetRONum() {
+				case objects.ROAccessDChain, objects.ROPermissionDChain:
+					dc := ro.(*objects.DChain)
+					store.PutDChain(dc)
+				case objects.ROAccessDOT, objects.ROPermissionDOT:
+					dot := ro.(*objects.DOT)
+					store.PutDOT(dot)
 
-			case objects.ROEntity:
-				e := ro.(*objects.Entity)
-				store.PutEntity(e)
+				case objects.ROEntity:
+					e := ro.(*objects.Entity)
+					store.PutEntity(e)
+				}
 			}
-		}
-	}()
+		}()*/
 
 	foundprimary := false
 	foundorigin := false
@@ -185,7 +189,7 @@ func LoadMessage(b []byte) (m *Message, err error) {
 			m.ExpireTime = exp.GetExpiry()
 			foundexpiry = true
 		}
-		rochan <- ro
+		//rochan <- ro
 		idx += ln
 	}
 	if !foundexpiry {
@@ -193,10 +197,13 @@ func LoadMessage(b []byte) (m *Message, err error) {
 		m.ExpireTime = time.Date(2999, time.January, 1, 0, 0, 0, 0, time.UTC)
 	}
 	idx++ //Skip final zero
-	close(rochan)
-	if m.PrimaryAccessChain == nil {
-		return nil, errors.New("Missing primary access dchain")
-	}
+	//close(rochan)
+
+	/*
+		if m.PrimaryAccessChain == nil {
+			return nil, errors.New("Missing primary access dchain")
+		}
+	*/
 	//Read payload objects
 	for {
 		PONum := int(binary.LittleEndian.Uint32(b[idx:]))

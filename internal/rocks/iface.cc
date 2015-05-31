@@ -9,14 +9,13 @@
 
 using namespace rocksdb;
 
-std::string DBPath = ".bw.db";
 static DB* db;
 std::vector<ColumnFamilyHandle*> handles;
 
 extern "C"
 {
   #include "iface.h"
-Status openDB()
+Status openDB(std::string name)
 {
   Options options;
   // Optimize RocksDB. This is the easiest way to get RocksDB to perform well
@@ -37,16 +36,16 @@ Status openDB()
   cfz.push_back(ColumnFamilyDescriptor("CF_MSG_I", ColumnFamilyOptions()));
   // open the entity column family
   cfz.push_back(ColumnFamilyDescriptor("CF_ENTITY", ColumnFamilyOptions()));
-  Status s = DB::Open(options, DBPath, cfz, &handles, &db);
+  Status s = DB::Open(options, name, cfz, &handles, &db);
   return s;
 }
-void createDB()
+void createDB(std::string name)
 {
   Options options;
   //Need to create a DB
   // create the DB if it's not already present
   options.create_if_missing = true;
-  Status s = DB::Open(options, DBPath, &db);
+  Status s = DB::Open(options, name, &db);
   assert(s.ok());
   // create column family
   ColumnFamilyHandle* cf1;
@@ -75,19 +74,17 @@ void createDB()
   delete cf5;
   delete db;
 }
-void init()
+void init(const char* name, size_t namelen)
 {
-  Status s = openDB();
+  std::string dbname = std::string(name, namelen);
+  Status s = openDB(dbname);
   if (!s.ok())
   {
     printf("Had to create DB\n");
-    createDB();
-    s = openDB();
+    createDB(dbname);
+    s = openDB(dbname);
     printf("Status: %s\n", s.ToString().c_str());
-  } else {
-    printf("FSTATL: %s\n", s.ToString().c_str());
   }
-  printf("DB STATUS: %s\n", s.ToString().c_str());
   assert(s.ok());
 }
 

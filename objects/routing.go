@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"runtime/debug"
+	"strconv"
 	"time"
 
 	log "github.com/cihub/seelog"
@@ -542,6 +543,26 @@ func (ro *DOT) SetComment(v string) {
 	ro.comment = v
 }
 
+func (ro *DOT) GetComment() string {
+	return ro.comment
+}
+
+func (ro *DOT) GetContact() string {
+	return ro.contact
+}
+
+func (ro *DOT) GetRevokers() [][]byte {
+	return ro.revokers
+}
+
+func (ro *DOT) GetExpiry() *time.Time {
+	return ro.expires
+}
+
+func (ro *DOT) GetCreated() *time.Time {
+	return ro.created
+}
+
 func (ro *DOT) SetContact(v string) {
 	ro.contact = v
 }
@@ -696,6 +717,10 @@ func (ro *DOT) GetRONum() int {
 		return ROAccessDOT
 	}
 	return ROPermissionDOT
+}
+
+func (ro *DOT) IsAccess() bool {
+	return ro.isAccess
 }
 
 //GetContent returns the binary representation of the DOT if Encode has been called
@@ -1060,6 +1085,15 @@ func (ro *Entity) StringKey() string {
 func (ro *Entity) SetExpiry(t time.Time) {
 	ro.expires = &t
 }
+func (ro *Entity) GetExpiry() *time.Time {
+	return ro.expires
+}
+func (ro *Entity) GetCreated() *time.Time {
+	return ro.created
+}
+func (ro *Entity) GetRevokers() [][]byte {
+	return ro.revokers
+}
 
 //SigValid returns if the Entity's signature is valid. This only checks
 //the signature on the first call, so the content must not change
@@ -1128,7 +1162,7 @@ func (ro *Entity) Encode() {
 
 func NewEntity(ronum int, content []byte) (RoutingObject, error) {
 	if ronum != ROEntity {
-		panic("Bad RONUM")
+		panic("Bad RONUM: " + strconv.Itoa(ronum))
 	}
 	e := &Entity{
 		content:  content,

@@ -213,6 +213,10 @@ func (bw *BW) GetDRVK(mvk string) ([]byte, error) {
 	return drvk, nil
 }
 
+func (c *BosswaveClient) CL() *core.Client {
+	return c.cl
+}
+
 //ResolveName resolves a DNS name into an MVK
 //TODO add caching for this shit
 func (bw *BW) ResolveName(name string) ([]byte, error) {

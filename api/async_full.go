@@ -236,6 +236,17 @@ func (c *BosswaveClient) SetEntity(p *SetEntityParams) int {
 	return core.BWStatusOkay
 }
 
+func (c *BosswaveClient) SetEntityObj(e *objects.Entity) int {
+	keysOk := crypto.CheckKeypair(e.GetSK(), e.GetVK())
+	sigOk := e.SigValid()
+	if !keysOk || !sigOk {
+		return core.BWStatusInvalidSig
+	}
+	c.us = e
+	core.DistributeRO(c.BW().Entity, e, c.cl)
+	return core.BWStatusOkay
+}
+
 type ListParams struct {
 	MVK                []byte
 	URISuffix          string

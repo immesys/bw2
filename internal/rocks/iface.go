@@ -1,13 +1,12 @@
 package rocks
 
 // #cgo CXXFLAGS: -I./include/ -std=gnu++11
-// #cgo LDFLAGS: -L/home/michael/go/src/github.com/immesys/bw2/lib -lrocksdb -lz -lbz2
+// #cgo LDFLAGS: -L/home/immesys/w/go/src/github.com/immesys/bw2/lib -lrocksdb -lz -lbz2
 // #include "iface.h"
 import "C"
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"runtime"
 	"unsafe"
 )
@@ -18,7 +17,6 @@ func Initialize(dbname string) {
 	if doneInit {
 		return
 	}
-	fmt.Println("DBname is: ", dbname)
 	name := []byte(dbname)
 	C.init((*C.char)(unsafe.Pointer(&name[0])),
 		(C.size_t)(len(name)))

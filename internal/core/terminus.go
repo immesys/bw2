@@ -82,13 +82,11 @@ func (s *snode) rmatchSubs(parts []string, visitor func(s subscription)) {
 		s.lock.RUnlock()
 		return
 	}
-	fmt.Printf("Checking part: %v\n", parts[0])
 	s.lock.RLock()
 	v1, ok1 := s.children[parts[0]]
 	v2, ok2 := s.children["+"]
 	v3, ok3 := s.children["*"]
 	s.lock.RUnlock()
-	fmt.Printf("Got: %v %v %v\n", ok1, ok2, ok3)
 	if ok1 {
 		v1.rmatchSubs(parts[1:], visitor)
 	}
@@ -172,7 +170,6 @@ func (tm *Terminus) CreateClient() *Client {
 }
 
 func (cl *Client) Publish(m *Message) {
-	fmt.Printf("Publishing in terminus\n")
 	var clientlist []subscription
 	cl.tm.RMatchSubs(m.Topic, func(s subscription) {
 		fmt.Printf("sub match")

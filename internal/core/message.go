@@ -95,11 +95,11 @@ func (m *Message) Encode(sk []byte, vk []byte) {
 	b = append(b, 0, 0, 0, 0)
 	sig := make([]byte, 64)
 	m.Signature = sig
-	fmt.Printf("\nSigning message blob len %d\n", len(b))
-	fmt.Println("SK: ", crypto.FmtKey(sk))
-	fmt.Println("VK: ", crypto.FmtKey(vk))
+	//fmt.Printf("\nSigning message blob len %d\n", len(b))
+	//fmt.Println("SK: ", crypto.FmtKey(sk))
+	//fmt.Println("VK: ", crypto.FmtKey(vk))
 	crypto.SignBlob(sk, vk, sig, b)
-	fmt.Println("Signature: ", crypto.FmtSig(m.Signature))
+	//fmt.Println("Signature: ", crypto.FmtSig(m.Signature))
 	m.SigCoverEnd = len(b)
 	b = append(b, sig...)
 	m.Encoded = b

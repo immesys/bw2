@@ -62,10 +62,21 @@ type PublishCallback func(status int, msg string)
 
 func (c *BosswaveClient) checkAddOriginVK(m *core.Message) {
 
-	if m.PrimaryAccessChain == nil ||
-		m.PrimaryAccessChain.GetReceiverVK() == nil ||
-		objects.IsEveryoneVK(m.PrimaryAccessChain.GetReceiverVK()) {
-		fmt.Println("Adding an origin VK header")
+	//Although the PAC may not be elaborated, we might be able to
+	//elaborate it some more here for our decision support
+	pac := m.PrimaryAccessChain
+	if pac != nil {
+		if !pac.IsElaborated() {
+			dc := core.ElaborateDChain(m.PrimaryAccessChain)
+			if dc != nil {
+				pac = dc
+			}
+		}
+		core.ResolveDotsInDChain(pac, nil)
+	}
+	if pac == nil || !pac.IsElaborated() ||
+		pac.GetReceiverVK() == nil ||
+		objects.IsEveryoneVK(pac.GetReceiverVK()) {
 		ovk := objects.CreateOriginVK(c.us.GetVK())
 		m.RoutingObjects = append(m.RoutingObjects, ovk)
 		vk := c.us.GetVK()
@@ -474,15 +485,18 @@ func (c *BosswaveClient) CreateEntity(p *CreateEntityParams) *objects.Entity {
 func (c *BosswaveClient) doPAC(m *core.Message, elaboratePAC int) (int, string) {
 
 	//If there is no explicit PAC, use the first access chain in the ROs
-	if m.PrimaryAccessChain == nil {
-		for _, ro := range m.RoutingObjects {
-			if ro.GetRONum() == objects.ROAccessDChain ||
-				ro.GetRONum() == objects.ROAccessDChainHash {
-				m.PrimaryAccessChain = ro.(*objects.DChain)
-				break
+	//NOPE because sometimes you want to send access chains but not treat
+	//it as the PAC
+	/*
+		if m.PrimaryAccessChain == nil {
+			for _, ro := range m.RoutingObjects {
+				if ro.GetRONum() == objects.ROAccessDChain ||
+					ro.GetRONum() == objects.ROAccessDChainHash {
+					m.PrimaryAccessChain = ro.(*objects.DChain)
+					break
+				}
 			}
-		}
-	}
+		}*/
 	//Elaborate PAC
 	if elaboratePAC > NoElaboration {
 		if m.PrimaryAccessChain == nil {

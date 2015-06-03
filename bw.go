@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/codegangsta/cli"
@@ -16,6 +19,7 @@ import (
 	"github.com/immesys/bw2/internal/util"
 	"github.com/immesys/bw2/objects"
 	"github.com/mgutz/ansi"
+	homedir "github.com/mitchellh/go-homedir"
 )
 
 func main() {
@@ -175,6 +179,38 @@ func main() {
 				pflag,
 			},
 		},
+		{
+			Name:    "buildchain",
+			Aliases: []string{"bc"},
+			Usage:   "build a DOT Chain",
+			Action:  actionBuildChain,
+			Flags: []cli.Flag{
+				cli.StringSliceFlag{
+					Name:  "router, r",
+					Usage: "a router to query for DOTs (given as an MVK / DNS alias)",
+					Value: &cli.StringSlice{},
+				},
+				cli.StringFlag{
+					Name:  "uri, u",
+					Usage: "the URI to build a chain for",
+					Value: "",
+				},
+				cli.StringFlag{
+					Name:  "permissions, x",
+					Usage: "the permissions to try build",
+					Value: "PCL",
+				},
+				cli.StringFlag{
+					Name:  "to, t",
+					Usage: "the VK to build a chain to",
+					Value: "",
+				},
+				cli.BoolFlag{
+					Name:  "verbose, v",
+					Usage: "dump the verbose details of all chains",
+				},
+			},
+		},
 		/*
 			{
 				Name:    "import",
@@ -240,12 +276,12 @@ func getTempBW(c *cli.Context) *api.BW {
 	if len(scfg) != 0 {
 		cfg = core.LoadConfig(scfg)
 	} else {
-		dbpath, err := ioutil.TempDir("", "bw2cli")
+		hm, err := homedir.Dir()
 		if err != nil {
-			fmt.Println("ERROR: could not create CLI temporary database: ", err.Error())
-			os.Exit(1)
+			panic(err)
 		}
-		cfg := &core.BWConfig{}
+		dbpath := path.Join(hm, ".bw.cli.db")
+		cfg = &core.BWConfig{}
 		cfg.Router.DB = dbpath
 		//router keys are irrelevant, save generation entropy by hardcoding
 		cfg.Router.SK = "NmSf-XwX0rtbaIVUhnxMoL_pBkRdUWyfX6nf4zpR8Rk="
@@ -320,7 +356,7 @@ func actionMkEntity(c *cli.Context) {
 
 	fname := c.String("outfile")
 	if len(fname) == 0 {
-		fname = "bw2." + crypto.FmtKey(ent.GetVK()) + ".key"
+		fname = "." + crypto.FmtKey(ent.GetVK()) + ".key"
 	}
 	wrapped := make([]byte, len(ent.GetSigningBlob())+1)
 	copy(wrapped[1:], ent.GetSigningBlob())
@@ -378,9 +414,8 @@ func actionMkDOT(c *cli.Context) {
 	if err != nil {
 		possibleMVK, err := bw.ResolveName(parts[0])
 		if err == nil {
-			fmt.Println("You cannot use a DNS alias for the MVK in a DOT URI for security reasons")
-			fmt.Printf("check this URI is correct and then specify it explicitly:\n%s\n", crypto.FmtKey(possibleMVK)+"/"+parts[1])
-			doExit(bw, 1, "")
+			fmt.Printf("NOTE, resolved DNS aliased URI to :%s\n", crypto.FmtKey(possibleMVK)+"/"+parts[1])
+			mvk = possibleMVK
 		} else {
 			fmt.Println("could not parse the MVK in the URI")
 		}
@@ -413,12 +448,12 @@ func actionMkDOT(c *cli.Context) {
 
 	fname := c.String("outfile")
 	if len(fname) == 0 {
-		fname = "bw2." + crypto.FmtKey(dot.GetHash()) + ".dot"
+		fname = "." + crypto.FmtKey(dot.GetHash()) + ".dot"
 	}
 	wrapped := make([]byte, len(dot.GetContent())+1)
 	copy(wrapped[1:], dot.GetContent())
 	wrapped[0] = objects.ROAccessDOT
-	err = ioutil.WriteFile(fname, wrapped, 0600)
+	err = ioutil.WriteFile(fname, wrapped, 0666)
 	if err != nil {
 		doExit(bw, 1, "could not write dot to: "+fname)
 	}
@@ -453,109 +488,170 @@ func ifstring(level int) string {
 	for i := 0; i < level-2; i++ {
 		rv += codes[i] + "\u2503"
 	}
-	return rv + codes[level-2] + "\u2523" + codes[level-1] + "\u2533"
-}
-func actionInspect(c *cli.Context) {
-	bw := getTempBW(c)
-	cl := bw.CreateClient()
+	if level >= 2 {
+		return rv + codes[level-2] + "\u2523" + codes[level-1] + "\u2533"
+	} else {
+		return codes[level-1] + "\u2533"
+	}
 
-	doentity := func(e *objects.Entity, indent int) {
-		fmt.Println(ifstring(indent) + " Entity " + crypto.FmtKey(e.GetVK()))
-		if e.SigValid() {
-			fmt.Println(istring(indent) + " Signature valid")
+}
+func doentity(e *objects.Entity, indent int) {
+	fmt.Println(ifstring(indent) + " Entity " + crypto.FmtKey(e.GetVK()))
+	if e.SigValid() {
+		fmt.Println(istring(indent) + " Signature valid")
+	} else {
+		fmt.Println(istring(indent) + " Signature INVALID")
+	}
+	if len(e.GetSK()) != 0 {
+		fmt.Println(istring(indent)+" SK: ", crypto.FmtKey(e.GetSK()))
+		keysOk := crypto.CheckKeypair(e.GetSK(), e.GetVK())
+		if keysOk {
+			fmt.Println(istring(indent) + " Keypair: ok")
 		} else {
-			fmt.Println(istring(indent) + " Signature INVALID")
+			fmt.Println(istring(indent) + " Keypair: INCONSISTENT")
 		}
-		if len(e.GetSK()) != 0 {
-			fmt.Println(istring(indent)+" SK: ", crypto.FmtKey(e.GetSK()))
-			keysOk := crypto.CheckKeypair(e.GetSK(), e.GetVK())
-			if keysOk {
-				fmt.Println(istring(indent) + " Keypair: ok")
-			} else {
-				fmt.Println(istring(indent) + " Keypair: INCONSISTENT")
+	}
+	if len(e.GetContact()) != 0 {
+		fmt.Println(istring(indent) + " Contact: " + e.GetContact())
+	}
+	if len(e.GetComment()) != 0 {
+		fmt.Println(istring(indent) + " Comment: " + e.GetComment())
+	}
+	if e.GetCreated() != nil {
+		fmt.Println(istring(indent) + " Created: " + e.GetCreated().Format(time.RFC3339))
+	}
+	if e.GetExpiry() != nil {
+		fmt.Println(istring(indent) + " Expires: " + e.GetExpiry().Format(time.RFC3339))
+	}
+	for _, rvk := range e.GetRevokers() {
+		fmt.Println(istring(indent) + " Revoker:" + crypto.FmtKey(rvk))
+	}
+}
+func dodot(d *objects.DOT, indent int) {
+	fmt.Println(ifstring(indent) + " DOT " + crypto.FmtHash(d.GetHash()))
+	if d.SigValid() {
+		fmt.Println(istring(indent) + " Signature valid")
+	} else {
+		fmt.Println(istring(indent) + " Signature INVALID")
+	}
+	fmt.Println(istring(indent) + " From: " + crypto.FmtKey(d.GetGiverVK()))
+	fe, ok := store.GetEntity(d.GetGiverVK())
+	if ok {
+		doentity(fe, indent+1)
+	} else {
+		fmt.Println(ifstring(indent+1) + " Unknown Entity")
+	}
+	fmt.Println(istring(indent) + " To: " + crypto.FmtKey(d.GetReceiverVK()))
+	fe, ok = store.GetEntity(d.GetReceiverVK())
+	if ok {
+		doentity(fe, indent+1)
+	} else {
+		fmt.Println(ifstring(indent+1) + " Unknown Entity")
+	}
+	if d.IsAccess() {
+		fmt.Println(istring(indent) + " URI: " + crypto.FmtKey(d.GetAccessURIMVK()) + "/" + d.GetAccessURISuffix())
+		fmt.Println(istring(indent) + " Permissions: " + d.GetPermString())
+	}
+	if len(d.GetContact()) != 0 {
+		fmt.Println(istring(indent) + " Contact: " + d.GetContact())
+	}
+	if len(d.GetComment()) != 0 {
+		fmt.Println(istring(indent) + " Comment: " + d.GetComment())
+	}
+	if d.GetCreated() != nil {
+		fmt.Println(istring(indent) + " Created: " + d.GetCreated().Format(time.RFC3339))
+	}
+	if d.GetExpiry() != nil {
+		fmt.Println(istring(indent) + " Expires: " + d.GetExpiry().Format(time.RFC3339))
+	}
+	for _, rvk := range d.GetRevokers() {
+		fmt.Println(istring(indent) + " Revoker:" + crypto.FmtKey(rvk))
+	}
+}
+func dochain(dc *objects.DChain, indent int, verbose bool) {
+	fmt.Println(ifstring(indent)+" DChain ", crypto.FmtHash(dc.GetChainHash()))
+	if !dc.IsElaborated() {
+		fmt.Println(istring(indent) + " Elaborated: False")
+	} else {
+		fmt.Println(istring(indent) + " Elaborated: True")
+		haveall := true
+		for i := 0; i < dc.NumHashes(); i++ {
+			dh := dc.GetDotHash(i)
+			fmt.Printf(istring(indent)+" DOT[%d] = %s\n", i, crypto.FmtHash(dh))
+			var dt *objects.DOT
+			dt = dc.GetDOT(i)
+			if dt == nil {
+				dt, _ = store.GetDOT(dh)
 			}
-		}
-		if len(e.GetContact()) != 0 {
-			fmt.Println(istring(indent) + " Contact: " + e.GetContact())
-		}
-		if len(e.GetComment()) != 0 {
-			fmt.Println(istring(indent) + " Comment: " + e.GetComment())
-		}
-		if e.GetCreated() != nil {
-			fmt.Println(istring(indent) + " Created: " + e.GetCreated().Format(time.RFC3339))
-		}
-		if e.GetExpiry() != nil {
-			fmt.Println(istring(indent) + " Expires: " + e.GetExpiry().Format(time.RFC3339))
-		}
-		for _, rvk := range e.GetRevokers() {
-			fmt.Println(istring(indent) + " Revoker:" + crypto.FmtKey(rvk))
-		}
-	}
-	dodot := func(d *objects.DOT, indent int) {
-		fmt.Println(ifstring(indent) + " DOT " + crypto.FmtHash(d.GetHash()))
-		if d.SigValid() {
-			fmt.Println(istring(indent) + " Signature valid")
-		} else {
-			fmt.Println(istring(indent) + " Signature INVALID")
-		}
-		fmt.Println(istring(indent) + " From: " + crypto.FmtKey(d.GetGiverVK()))
-		fe, ok := store.GetEntity(d.GetGiverVK())
-		if ok {
-			doentity(fe, indent+1)
-		} else {
-			fmt.Println(ifstring(indent+1) + " Unknown Entity")
-		}
-		fmt.Println(istring(indent) + " To: " + crypto.FmtKey(d.GetGiverVK()))
-		fe, ok = store.GetEntity(d.GetReceiverVK())
-		if ok {
-			doentity(fe, indent+1)
-		} else {
-			fmt.Println(ifstring(indent+1) + " Unknown Entity")
-		}
-		if d.IsAccess() {
-			fmt.Println(istring(indent) + " URI: " + crypto.FmtKey(d.GetAccessURIMVK()) + "/" + d.GetAccessURISuffix())
-			fmt.Println(istring(indent) + " Permissions: " + d.GetPermString())
-		}
-		if len(d.GetContact()) != 0 {
-			fmt.Println(istring(indent) + " Contact: " + d.GetContact())
-		}
-		if len(d.GetComment()) != 0 {
-			fmt.Println(istring(indent) + " Comment: " + d.GetComment())
-		}
-		if d.GetCreated() != nil {
-			fmt.Println(istring(indent) + " Created: " + d.GetCreated().Format(time.RFC3339))
-		}
-		if d.GetExpiry() != nil {
-			fmt.Println(istring(indent) + " Expires: " + d.GetExpiry().Format(time.RFC3339))
-		}
-		for _, rvk := range d.GetRevokers() {
-			fmt.Println(istring(indent) + " Revoker:" + crypto.FmtKey(rvk))
-		}
-	}
-	dochain := func(contents []byte, indent int) {
-		ro, err := objects.LoadRoutingObject(int(contents[0]), contents[1:])
-		if err != nil {
-			fmt.Println("ERR: could not parse")
-			return
-		}
-		dc := ro.(*objects.DChain)
-		fmt.Println(ifstring(indent)+" DChain ", crypto.FmtHash(dc.GetChainHash()))
-		if !dc.IsElaborated() {
-			fmt.Println(istring(indent) + " Elaborated: False")
-		} else {
-			fmt.Println(istring(indent) + " Elaborated: True")
-			for i := 0; i < dc.NumHashes(); i++ {
-				dh := dc.GetDotHash(i)
-				fmt.Printf(istring(indent)+" DOT[%d] = %s\n", i, crypto.FmtHash(dh))
-				dt, ok := store.GetDOT(dh)
-				if ok {
+			if dt != nil {
+				dc.SetDOT(i, dt)
+				if verbose {
 					dodot(dt, indent+1)
-				} else {
+				}
+
+			} else {
+				haveall = false
+				if verbose {
 					fmt.Println(ifstring(indent+1) + " DOT is not resolvable")
 				}
 			}
 		}
+		if haveall {
+			fmt.Println(istring(indent) + " Grants: " + dc.GetAccessURIPermString())
+			suffix, err := dc.GetAccessURISuffix()
+			if err != nil {
+				fmt.Println(istring(indent) + " On: <NOTHING!>")
+			} else {
+				fmt.Println(istring(indent) + " On: " + crypto.FmtKey(dc.GetMVK()) + "/" + suffix)
+			}
+			fmt.Println(istring(indent) + " End TTL: " + strconv.Itoa(dc.GetTTL()))
+		} else {
+			fmt.Println(istring(indent) + " TTL/Grant/URI unknown (missing DOTs)")
+		}
 	}
+}
+func distEntity(e *objects.Entity, cl *api.BosswaveClient, to []string) {
+	core.DistributeRO(cl.BW().Entity, e, cl.CL())
+	for _, tgt := range to {
+		publishROs(cl, tgt, []objects.RoutingObject{e})
+	}
+}
+func distDOT(d *objects.DOT, cl *api.BosswaveClient, to []string) {
+	core.DistributeRO(cl.BW().Entity, d, cl.CL())
+	for _, tgt := range to {
+		publishROs(cl, tgt, []objects.RoutingObject{d})
+	}
+	fe, ok := store.GetEntity(d.GetGiverVK())
+	if ok {
+		distEntity(fe, cl, to)
+	}
+	fe, ok = store.GetEntity(d.GetReceiverVK())
+	if ok {
+		distEntity(fe, cl, to)
+	}
+}
+func distChain(c *objects.DChain, cl *api.BosswaveClient, to []string) {
+	if !c.IsElaborated() {
+		fmt.Printf("Chain is not elaborated?")
+		return
+	}
+	core.DistributeRO(cl.BW().Entity, c, cl.CL())
+	for _, tgt := range to {
+		publishROs(cl, tgt, []objects.RoutingObject{c})
+	}
+	for i := 0; i < c.NumHashes(); i++ {
+		dt, ok := store.GetDOT(c.GetDotHash(i))
+		if ok {
+			distDOT(dt, cl, to)
+		}
+	}
+}
+func actionInspect(c *cli.Context) {
+	bw := getTempBW(c)
+	cl := bw.CreateClient()
+	rent := getRandomEntity(cl)
+	cl.SetEntityObj(rent)
+
 	for _, fl := range c.Args() {
 		fmt.Println("Inspecting: ", fl, ansi.ColorCode("reset"))
 		contents, err := ioutil.ReadFile(fl)
@@ -570,8 +666,8 @@ func actionInspect(c *cli.Context) {
 				fmt.Println("ERR: could not parse: " + err.Error())
 				return
 			}
-			core.DistributeRO(bw.Entity, ro, cl.CL())
-			doentity(ro.(*objects.Entity), 1)
+			distEntity(ro.(*objects.Entity), cl, c.StringSlice("publishto"))
+			doentity(ro.(*objects.Entity), 2)
 		case objects.ROEntityWKey:
 			fmt.Println("\u2533 Type: Entity key file")
 			ro, err := objects.LoadRoutingObject(objects.ROEntity, contents[33:])
@@ -579,10 +675,10 @@ func actionInspect(c *cli.Context) {
 				fmt.Println("ERR: could not parse: " + err.Error())
 				return
 			}
-			core.DistributeRO(bw.Entity, ro, cl.CL())
 			ent := ro.(*objects.Entity)
+			distEntity(ent, cl, c.StringSlice("publishto"))
 			ent.SetSK(contents[1:33])
-			doentity(ro.(*objects.Entity), 1)
+			doentity(ro.(*objects.Entity), 2)
 		case objects.ROAccessDOT:
 			fmt.Println("\u2533 Type: Access DOT")
 			ro, err := objects.LoadRoutingObject(int(contents[0]), contents[1:])
@@ -590,8 +686,8 @@ func actionInspect(c *cli.Context) {
 				fmt.Println("ERR: could not parse: " + err.Error())
 				return
 			}
-			core.DistributeRO(bw.Entity, ro, cl.CL())
 			dot := ro.(*objects.DOT)
+			distDOT(dot, cl, c.StringSlice("publishto"))
 			dodot(dot, 2)
 		case objects.ROPermissionDOT:
 			fmt.Println("\u2533 Type: Application permission DOT")
@@ -600,26 +696,108 @@ func actionInspect(c *cli.Context) {
 				fmt.Println("ERR: could not parse: " + err.Error())
 				return
 			}
-			core.DistributeRO(bw.Entity, ro, cl.CL())
 			dot := ro.(*objects.DOT)
-			dodot(dot, 1)
+			distDOT(dot, cl, c.StringSlice("publishto"))
+			dodot(dot, 2)
 		case objects.ROPermissionDChain:
 			fmt.Println("\u2533 Type: Permission DCHain")
-			dochain(contents, 1)
+			ro, err := objects.LoadRoutingObject(int(contents[0]), contents[1:])
+			if err != nil {
+				fmt.Println("ERR: could not parse")
+				return
+			}
+			dc := ro.(*objects.DChain)
+			distChain(dc, cl, c.StringSlice("publishto"))
+			dochain(dc, 2, true)
 		case objects.ROPermissionDChainHash:
 			fmt.Println("\u2533 Type: Permission DChain hash")
-			dochain(contents, 1)
+			ro, err := objects.LoadRoutingObject(int(contents[0]), contents[1:])
+			if err != nil {
+				fmt.Println("ERR: could not parse")
+				return
+			}
+			dc := ro.(*objects.DChain)
+			distChain(dc, cl, c.StringSlice("publishto"))
+			dochain(dc, 2, true)
 		case objects.ROAccessDChain:
 			fmt.Println("\u250f Type: Access DChain")
-			dochain(contents, 1)
+			ro, err := objects.LoadRoutingObject(int(contents[0]), contents[1:])
+			if err != nil {
+				fmt.Println("ERR: could not parse")
+				return
+			}
+			dc := ro.(*objects.DChain)
+			distChain(dc, cl, c.StringSlice("publishto"))
+			dochain(dc, 2, true)
 		case objects.ROAccessDChainHash:
 			fmt.Println("\u2533 Type: Access DChain hash")
-			dochain(contents, 1)
+			ro, err := objects.LoadRoutingObject(int(contents[0]), contents[1:])
+			if err != nil {
+				fmt.Println("ERR: could not parse")
+				return
+			}
+			dc := ro.(*objects.DChain)
+			distChain(dc, cl, c.StringSlice("publishto"))
+			dochain(dc, 2, true)
 		default:
 			fmt.Println("ERR: not a Routing Object file")
 		}
 	}
 	fmt.Print(ansi.ColorCode("reset"))
+}
+func actionBuildChain(c *cli.Context) {
+	bw := getTempBW(c)
+	cl := bw.CreateClient()
+	rent := getRandomEntity(cl)
+	cl.SetEntityObj(rent)
+	uri := c.String("uri")
+	perms := c.String("permissions")
+	target, err := crypto.UnFmtKey(c.String("to"))
+	if err != nil {
+		doExit(bw, 1, "Invalid 'to' key")
+	}
+	status := make(chan string, 10)
+	outwg := sync.WaitGroup{}
+	outwg.Add(1)
+	go func() {
+		for s := range status {
+			fmt.Println("CB: ", s)
+		}
+		outwg.Done()
+	}()
+	cb := api.NewChainBuilder(cl, uri, perms, target, status)
+	//Add the CLI router as a peer so we use its database
+	cb.AddPeerMVK(bw.Entity.GetVK())
+	for _, sp := range c.StringSlice("router") {
+		mvk, err := bw.ResolveName(sp)
+		if err != nil {
+			doExit(bw, 1, "Could not resolve router: "+err.Error())
+		}
+		cb.AddPeerMVK(mvk)
+	}
+	chains, err := cb.Build()
+	if err != nil {
+		doExit(bw, 1, "Builder error: "+err.Error())
+	}
+	fmt.Println("Complete")
+	for _, dc := range chains {
+		fmt.Print(ansi.ColorCode("reset"))
+		fmt.Println("found chain: ", crypto.FmtHash(dc.GetChainHash()))
+		dochain(dc, 2, c.Bool("verbose"))
+		fmt.Print(ansi.ColorCode("reset"))
+	}
+	for _, dc := range chains {
+		wrapped := make([]byte, len(dc.GetContent())+1)
+		copy(wrapped[1:], dc.GetContent())
+		wrapped[0] = byte(dc.GetRONum())
+		fname := fmt.Sprintf(".%s.chain", crypto.FmtHash(dc.GetChainHash()))
+		err = ioutil.WriteFile(fname, wrapped, 0666)
+		if err != nil {
+			doExit(bw, 1, "could not write dchain to: "+fname)
+		}
+		fmt.Println("Wrote chain to file: ", fname)
+	}
+	outwg.Wait()
 }
 
 /*

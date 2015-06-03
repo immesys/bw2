@@ -245,7 +245,7 @@ func ElaborateDChain(dc *objects.DChain) *objects.DChain {
 
 func ResolveDotsInDChain(dc *objects.DChain, cache []objects.RoutingObject) bool {
 	if !dc.IsElaborated() {
-		panic("Can only augment elaborated chain")
+		return false
 	}
 	//Augment the primary dchain by the ro's we got given
 	for _, ro := range cache {
@@ -416,8 +416,6 @@ func (m *Message) Verify() *StatusMessage {
 		fromMVK = true
 		m.status.Code = BWStatusOkay
 		goto endperm
-	} else {
-		log.Info("Failed origin MVK check", m.OriginVK, m.MVK)
 	}
 
 	//These will be populated by the permissions search process
@@ -491,10 +489,16 @@ endperm:
 		return &m.status
 	}
 
+	if m.OriginVK == nil {
+		log.Criticalf("V: no origin VK on message")
+		m.status.Code = BWStatusNoOrigin
+		return &m.status
+	}
+
 	//Now check if the signature is correct
-	fmt.Printf("\nenclen %v, sce %v, siglen %v\n", len(m.Encoded), m.SigCoverEnd, len(m.Signature))
-	fmt.Println("Signature: ", crypto.FmtSig(m.Signature))
-	fmt.Println("VK: ", crypto.FmtKey(*m.OriginVK))
+	//fmt.Printf("\nenclen %v, sce %v, siglen %v\n", len(m.Encoded), m.SigCoverEnd, len(m.Signature))
+	//fmt.Println("Signature: ", crypto.FmtSig(m.Signature))
+	//fmt.Println("VK: ", crypto.FmtKey(*m.OriginVK))
 	if !crypto.VerifyBlob(*m.OriginVK, m.Signature, m.Encoded[:m.SigCoverEnd]) {
 		m.status.Code = BWStatusInvalidSig
 		log.Infof("V: InvalidSig (whole sig)")

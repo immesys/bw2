@@ -1,8 +1,10 @@
 package api
 
 import (
+	"bytes"
 	"container/list"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 
@@ -17,44 +19,70 @@ type ChainBuilder struct {
 	status chan string
 	uri    string
 	perms  string
+	target []byte
 	peers  [][]byte
 }
 
 type scenario struct {
-	chain []*objects.DOT
+	chain  []*objects.DOT
+	suffix string
 }
 
+func (s *scenario) TTL() int {
+	ttl := 256
+	for _, d := range s.chain {
+		ttl = ttl - 1
+		if d.GetTTL() < ttl {
+			ttl = d.GetTTL()
+		}
+	}
+	return ttl
+}
 func (s *scenario) Clone() *scenario {
 	cc := make([]*objects.DOT, len(s.chain))
 	copy(cc, s.chain)
 	return &scenario{chain: cc}
 }
-
-func (s *scenario) AddAndClone(d *objects.DOT) *scenario {
+func (s *scenario) String() string {
+	rv := "["
+	for _, d := range s.chain {
+		rv += crypto.FmtKey(d.GetHash()) + ","
+	}
+	return rv + "]"
+}
+func NewScenario(d *objects.DOT) *scenario {
+	return &scenario{chain: []*objects.DOT{d}, suffix: d.GetAccessURISuffix()}
+}
+func (s *scenario) AddAndClone(d *objects.DOT) (*scenario, bool) {
 	cc := make([]*objects.DOT, len(s.chain)+1)
 	copy(cc, s.chain)
 	cc[len(s.chain)] = d
-	return &scenario{chain: cc}
+	nuri, okay := util.RestrictBy(s.suffix, d.GetAccessURISuffix())
+	if !okay {
+		return nil, false
+	}
+	return &scenario{chain: cc, suffix: nuri}, true
 }
 
-/*
-func (s *scenario) GetTerminalVK() string {
-	return crypto.FmtKey(s.chain[len(s.chain)-1].GetReceiverVK())
-}*/
+func (s *scenario) GetTerminalVK() []byte {
+	return s.chain[len(s.chain)-1].GetReceiverVK()
+}
 
-func NewChainBuilder(cl *BosswaveClient, uri, perms string, status chan string) *ChainBuilder {
-	return &ChainBuilder{cl: cl, uri: uri, perms: perms, peers: make([][]byte, 0), status: status}
+func (s *scenario) ToChain() *objects.DChain {
+	rv, err := objects.CreateDChain(true, s.chain...)
+	if err != nil {
+		panic(err)
+	}
+	return rv
+}
+func NewChainBuilder(cl *BosswaveClient, uri, perms string, target []byte, status chan string) *ChainBuilder {
+	return &ChainBuilder{cl: cl, uri: uri, target: target, perms: perms, peers: make([][]byte, 0), status: status}
 }
 
 func (b *ChainBuilder) AddPeerMVK(mvk []byte) {
 	b.peers = append(b.peers, mvk)
 }
 
-//genTier takes an entity and finds every DOT that grants on
-//the MVK with the required permissions
-func (b *ChainBuilder) genTier(used map[string]bool, from []byte) {
-
-}
 func (b *ChainBuilder) dotUseful(d *objects.DOT) bool {
 	return true
 }
@@ -64,10 +92,16 @@ func (b *ChainBuilder) getOptions(from []byte) []*objects.DOT {
 	wg := sync.WaitGroup{}
 	go func() {
 		for _, peerMVK := range b.peers {
+			drVK, err := b.cl.BW().GetDRVK(crypto.FmtKey(peerMVK))
+			if err != nil {
+				b.status <- "could not get DRVK for peer " + crypto.FmtKey(peerMVK)
+				continue
+			}
 			wg.Add(1)
+			//The peer might be an MVK, but its the DR itself that we need to query
 			go b.cl.Query(&QueryParams{
-				MVK:       peerMVK,
-				URISuffix: "$/fromto/" + crypto.FmtKey(from)[:43] + "/+",
+				MVK:       drVK,
+				URISuffix: "$/dot/fromto/" + crypto.FmtKey(from)[:43] + "/+",
 			},
 				func(status int, msg string) {
 					if status != core.BWStatusOkay {
@@ -77,13 +111,18 @@ func (b *ChainBuilder) getOptions(from []byte) []*objects.DOT {
 				},
 				func(m *core.Message) {
 					if m == nil {
+						b.status <- "finished options query"
 						wg.Done()
 						return
 					}
+					b.status <- "got options query rv"
 					for _, ro := range m.RoutingObjects {
 						dot, ok := ro.(*objects.DOT)
-						if ok && b.dotUseful(dot) {
-							rc <- dot
+						if ok {
+							core.DistributeRO(b.cl.BW().Entity, dot, b.cl.CL())
+							if b.dotUseful(dot) {
+								rc <- dot
+							}
 						}
 					}
 				})
@@ -91,37 +130,79 @@ func (b *ChainBuilder) getOptions(from []byte) []*objects.DOT {
 		wg.Wait()
 		close(rc)
 	}()
+	seen := make(map[string]bool)
 	for res := range rc {
-		rv = append(rv, res)
+		k := crypto.FmtHash(res.GetHash())
+		_, ok := seen[k]
+		if !ok {
+			rv = append(rv, res)
+			seen[k] = true
+		}
 	}
+	b.status <- fmt.Sprintf("options len %d", len(rv))
 	return rv
 }
-func (b *ChainBuilder) Build() (*objects.DChain, error) {
+func (b *ChainBuilder) Build() ([]*objects.DChain, error) {
 	parts := strings.SplitN(b.uri, "/", 2)
 	if len(parts) != 2 {
 		return nil, errors.New("Invalid URI")
 	}
-	valid, hasStar, hasPlus, hasDollar, hasBang := util.AnalyzeSuffix(parts[1])
+	valid, _, _, _, _ := util.AnalyzeSuffix(parts[1])
 	if !valid {
 		return nil, errors.New("Invalid URI")
 	}
-	mvk, err := crypto.UnFmtKey(parts[0])
+	mvk, err := b.cl.BW().ResolveName(parts[0])
 	if err != nil {
 		return nil, err
 	}
-  //The VK's we have visited (and the TTL). Do not add scenarios that have seen this VK
-  //unless the TTL is higher because it's a 
-  seen := map[string]bool
 	validscenarios := list.New()
 	evals := list.New()
+	b.status <- "populating initial options"
+	b.status <- "looking for DOTs from " + crypto.FmtKey(mvk)
 	initial := b.getOptions(mvk)
 	for _, dt := range initial {
-		s := scenario{chain: []*objects.DOT{dt}}
-		evals.PushBack(&s)
+		s := NewScenario(dt)
+		if bytes.Equal(s.GetTerminalVK(), b.target) {
+			b.status <- "found valid scenario"
+			validscenarios.PushBack(s)
+		} else {
+			b.status <- "adding scenario: " + s.String()
+			evals.PushBack(s)
+		}
 	}
 	for evals.Front() != nil {
-		s := evals.Front()
-    evals.Remove(s)
+		le := evals.Front()
+		s := le.Value.(*scenario)
+		endsat := s.GetTerminalVK()
+		opts := b.getOptions(endsat)
+		for _, dt := range opts {
+			newscenario, okay := s.AddAndClone(dt)
+			if !okay {
+				continue
+			}
+			if bytes.Equal(newscenario.GetTerminalVK(), b.target) {
+				b.status <- "found valid scenario"
+				validscenarios.PushBack(newscenario)
+			} else {
+				evals.PushBack(newscenario)
+			}
+		}
+		evals.Remove(le)
 	}
+	fmt.Println("uh")
+	seen := make(map[string]bool)
+	rv := make([]*objects.DChain, 0, validscenarios.Len())
+	e := validscenarios.Front()
+	for e != nil {
+		chn := e.Value.(*scenario).ToChain()
+		k := crypto.FmtHash(chn.GetChainHash())
+		_, ok := seen[k]
+		if !ok {
+			rv = append(rv, chn)
+		}
+		e = e.Next()
+	}
+	close(b.status)
 
+	return rv, nil
 }

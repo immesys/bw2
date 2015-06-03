@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -70,7 +71,7 @@ func OpenBWContext(config *core.BWConfig) *BW {
 		os.Exit(1)
 	}
 	rv.Entity = objects.CreateLightEntity(rVK, rSK)
-	rv.MVKs = make([][]byte, len(config.Affinity.MVK))
+	rv.MVKs = make([][]byte, len(config.Affinity.MVK)+1)
 	for i, smvk := range config.Affinity.MVK {
 		mvk, err := crypto.UnFmtKey(smvk)
 		if err != nil {
@@ -79,6 +80,7 @@ func OpenBWContext(config *core.BWConfig) *BW {
 		}
 		rv.MVKs[i] = mvk
 	}
+	rv.MVKs[len(config.Affinity.MVK)] = rv.Entity.GetVK()
 	rocks.Initialize(config.Router.DB)
 	return rv
 }
@@ -187,8 +189,9 @@ func (bw *BW) GetTarget(drvk string) (string, error) {
 	if len(addrs) < 1 {
 		return "", errors.New("Unable to resolve VK to router")
 	}
-	bw.Targetcache[drvk] = addrs[0].Target
-	return addrs[0].Target, nil
+	tgt := addrs[0].Target[:len(addrs[0].Target)-1] + ":" + strconv.Itoa(int(addrs[0].Port))
+	bw.Targetcache[drvk] = tgt
+	return tgt, nil
 }
 func (bw *BW) GetDRVK(mvk string) ([]byte, error) {
 	bw.cachelock.Lock()

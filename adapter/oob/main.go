@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -84,17 +85,23 @@ func (a *Adapter) handleClient(conn net.Conn) {
 	}
 }
 
-func loadCommonURI(f *objects.Frame) ([]byte, string, bool) {
+func loadCommonURI(f *objects.Frame, bw *api.BW) ([]byte, string, bool) {
 	mvk, mvkOk := f.GetFirstHeader("mvk")
 	var rmvk []byte
 	uri, uriOk := f.GetFirstHeader("uri")
 	suffix, suffixOk := f.GetFirstHeader("uri_suffix")
 	if uriOk {
-		var ok bool
-		rmvk, suffix, ok = api.SplitURI(uri)
-		if !ok {
+		var err error
+		parts := strings.SplitN(uri, "/", 2)
+		if len(parts) != 2 {
 			return nil, "", false
 		}
+		rmvk, err = bw.ResolveName(parts[0])
+		if err != nil {
+			log.Info("Could not resolve uri: " + parts[0] + ":" + err.Error())
+			return nil, "", false
+		}
+		suffix = parts[1]
 	} else if !(mvkOk && suffixOk) {
 		return nil, "", false
 	} else {
@@ -221,7 +228,7 @@ func dispatchFrame(bwcl *api.BosswaveClient, f *objects.Frame, send func(f *obje
 	}
 	switch f.Cmd {
 	case objects.CmdPublish, objects.CmdPersist:
-		mvk, suffix, ok := loadCommonURI(f)
+		mvk, suffix, ok := loadCommonURI(f, bwcl.BW())
 		if !ok {
 			err("malformed URI components")
 			return
@@ -267,7 +274,7 @@ func dispatchFrame(bwcl *api.BosswaveClient, f *objects.Frame, send func(f *obje
 		bwcl.Publish(p, mkGenericActionCB(replyto, send))
 		return
 	case objects.CmdList:
-		mvk, suffix, ok := loadCommonURI(f)
+		mvk, suffix, ok := loadCommonURI(f, bwcl.BW())
 		if !ok {
 			err("malformed URI components")
 			return
@@ -318,7 +325,7 @@ func dispatchFrame(bwcl *api.BosswaveClient, f *objects.Frame, send func(f *obje
 			}
 			unpack = cx
 		}
-		mvk, suffix, ok := loadCommonURI(f)
+		mvk, suffix, ok := loadCommonURI(f, bwcl.BW())
 		if !ok {
 			err("malformed URI components")
 			return
@@ -377,7 +384,7 @@ func dispatchFrame(bwcl *api.BosswaveClient, f *objects.Frame, send func(f *obje
 			}
 			unpack = cx
 		}
-		mvk, suffix, ok := loadCommonURI(f)
+		mvk, suffix, ok := loadCommonURI(f, bwcl.BW())
 		if !ok {
 			err("malformed URI components")
 			return
@@ -409,6 +416,7 @@ func dispatchFrame(bwcl *api.BosswaveClient, f *objects.Frame, send func(f *obje
 		}
 		bwcl.Subscribe(p,
 			func(status int, isNew bool, id core.UniqueMessageID, msg string) {
+				log.Infof("Got action CB for sub: %v %v %v", status, isNew, msg)
 				if status == core.BWStatusOkay {
 					r := objects.CreateFrame(objects.CmdResponse, replyto)
 					r.AddHeader("status", "okay")
@@ -556,7 +564,7 @@ func dispatchFrame(bwcl *api.BosswaveClient, f *objects.Frame, send func(f *obje
 		}
 
 		if !ispermission {
-			mvk, suffix, ok := loadCommonURI(f)
+			mvk, suffix, ok := loadCommonURI(f, bwcl.BW())
 			if !ok {
 				err("access DOTs require URI")
 				return

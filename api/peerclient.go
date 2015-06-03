@@ -137,8 +137,10 @@ func (pc *PeerClient) Subscribe(m *core.Message,
 		seqno: pc.getSeqno(),
 	}
 	pc.transact(&nf, func(f *nativeFrame) {
+		log.Infof("got sub response cmd: %d", f.cmd)
 		switch f.cmd {
-		case nCmdRStatus:
+		case nCmdRSub:
+			log.Infof("Got subscribe status response")
 			if len(f.body) < 2 {
 				actionCB(core.BWStatusPeerError, false, core.UniqueMessageID{}, "short response frame")
 				return
@@ -162,7 +164,7 @@ func (pc *PeerClient) Subscribe(m *core.Message,
 			}
 			s := nm.Verify()
 			if s.Code != core.BWStatusOkay {
-				log.Infof("dropping incoming subscription result on uri=%s (failed local validation)", m.Topic)
+				log.Infof("dropping incoming subscription result on uri=%s (failed local validation)", nm.Topic)
 				return
 			}
 			messageCB(nm)

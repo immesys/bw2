@@ -6,7 +6,7 @@ Commands sent from the client to the server or the server to the client follow
 the same frame format:
 
 ```
-  frame = header, {field}, "end".
+  frame = header, {field}, "end\n".
   header = command, " ", framelength, " ", seqno, "\n".
   framelength = tendigit.
   seqno = tendigit.

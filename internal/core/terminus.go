@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/immesys/bw2/internal/store"
 )
@@ -29,8 +30,9 @@ type SubscriptionHandler interface {
 //A handle to a queue that gets messages dispatched to it
 type Client struct {
 	//MVK etc
-	cid clientid
-	tm  *Terminus
+	cid  clientid
+	subs []UniqueMessageID
+	tm   *Terminus
 }
 
 type clientid uint32
@@ -74,9 +76,12 @@ type Terminus struct {
 //For a node in the tree, match the given subscription string and call visitor
 //for every subscription found
 func (s *snode) rmatchSubs(parts []string, visitor func(s subscription)) {
+	fmt.Println("rms ", parts)
 	if len(parts) == 0 {
+		fmt.Println("checking zero case")
 		s.lock.RLock()
 		for _, sub := range s.subs {
+			fmt.Println("dispatching to sub")
 			visitor(sub)
 		}
 		s.lock.RUnlock()
@@ -87,6 +92,7 @@ func (s *snode) rmatchSubs(parts []string, visitor func(s subscription)) {
 	v2, ok2 := s.children["+"]
 	v3, ok3 := s.children["*"]
 	s.lock.RUnlock()
+	fmt.Println("matches", ok1, ok2, ok3)
 	if ok1 {
 		v1.rmatchSubs(parts[1:], visitor)
 	}
@@ -94,7 +100,7 @@ func (s *snode) rmatchSubs(parts []string, visitor func(s subscription)) {
 		v2.rmatchSubs(parts[1:], visitor)
 	}
 	if ok3 {
-		for i := 0; i < len(parts); i++ {
+		for i := 0; i <= len(parts); i++ {
 			v3.rmatchSubs(parts[i:], visitor)
 		}
 	}
@@ -139,6 +145,7 @@ func (s *snode) addSub(parts []string, sub subscription) (UniqueMessageID, *snod
 //messages. i.e subscriptions must be unique within a client
 func (tm *Terminus) AddSub(topic string, s subscription) UniqueMessageID {
 	parts := strings.Split(topic, "/")
+	fmt.Println("Add subscription: ", parts)
 	subid, node := tm.stree.addSub(parts, s)
 	if subid == s.subid { //This was a new subscription
 		tm.rstree_lock.Lock()
@@ -157,6 +164,19 @@ func CreateTerminus() *Terminus {
 	rv.cmap = make(map[clientid]*Client)
 	rv.stree = NewSnode()
 	rv.rstree = make(map[UniqueMessageID]*snode)
+	go func() {
+		for {
+			time.Sleep(5 * time.Second)
+			fmt.Println("terminus map:")
+			for k := range rv.cmap {
+				fmt.Printf("[%v]\n", k)
+			}
+			fmt.Println("rsmap:")
+			for k := range rv.rstree {
+				fmt.Printf("[%v]\n", k)
+			}
+		}
+	}()
 	return rv
 }
 
@@ -172,7 +192,7 @@ func (tm *Terminus) CreateClient() *Client {
 func (cl *Client) Publish(m *Message) {
 	var clientlist []subscription
 	cl.tm.RMatchSubs(m.Topic, func(s subscription) {
-		fmt.Printf("sub match")
+		fmt.Printf("sub match\n")
 		clientlist = append(clientlist, s)
 	})
 	//Note that the semantics of consumers here is a little odd, its subscriptions,
@@ -204,11 +224,12 @@ func (cl *Client) Subscribe(m *Message, cb func(m *Message, id UniqueMessageID))
 		client:  cl,
 		handler: cb}
 
-	if len(m.Topic) < 39 {
-		panic("Bad topic: " + m.Topic)
-	}
 	//Add to the sub tree
 	subid := cl.tm.AddSub(m.Topic, newsub)
+	//Record it for destroy
+	if subid == m.UMid { //this sub was new
+		cl.subs = append(cl.subs, subid)
+	}
 	//the subid might not be the one we specified, if it was already in the tree
 	return subid
 }
@@ -254,44 +275,22 @@ func (cl *Client) List(m *Message, cb func(s string, ok bool)) {
 	}
 }
 
-/*
-func (cl *Client) Query(topic string, tap bool) *Message {
-	cl.tm.persistLock.RLock()
-	m, ok := cl.tm.persist[topic]
-	cl.tm.persistLock.RUnlock()
-	if ok {
-		//Should we be monitoring delivery count
-		if !tap && m.Consumers > 0 {
-			m.Consumers--
-			//Last delivery, delete it
-			if m.Consumers == 0 {
-				cl.tm.persistLock.Lock()
-				delete(cl.tm.persist, topic)
-				cl.tm.persistLock.Unlock()
-			}
+func (cl *Client) Destroy() {
+	//delete all subscriptions
+	cl.tm.rstree_lock.Lock()
+	for _, subid := range cl.subs {
+		node, ok := cl.tm.rstree[subid]
+		if ok {
+			delete(node.subs, cl.cid)
 		}
-		return m
+		delete(cl.tm.rstree, subid)
 	}
-	return nil
+	cl.tm.rstree_lock.Unlock()
+	//Delete client
+	cl.tm.c_maplock.Lock()
+	delete(cl.tm.cmap, cl.cid)
+	cl.tm.c_maplock.Unlock()
 }
-*/
-
-/*
-//List will return a list of known immediate children for a given URI. A known
-//child can only exist if the children streams have persisted messages
-func (cl *Client) List(topic string) []string {
-	rv := make([]string, 0, 30)
-	cl.tm.persistLock.RLock()
-	tlen := len(topic)
-	for key := range cl.tm.persist {
-		if strings.HasPrefix(key, topic) {
-			rv = append(rv, key[tlen:])
-		}
-	}
-	cl.tm.persistLock.RUnlock()
-	return rv
-}
-*/
 
 //Unsubscribe does what it says. For now the topic system is crude
 //so this doesn't seem necessary to have the subid instead of topic
@@ -304,6 +303,7 @@ func (cl *Client) Unsubscribe(subid UniqueMessageID) {
 		return
 	}
 	delete(node.subs, cl.cid)
+	delete(cl.tm.rstree, subid)
 	//TODO we don't clean up the tree!
 	cl.tm.rstree_lock.Unlock()
 }

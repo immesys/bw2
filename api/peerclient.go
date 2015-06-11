@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -17,13 +18,15 @@ import (
 )
 
 type PeerClient struct {
-	conn    net.Conn
-	txmtx   sync.Mutex
-	replyCB map[uint64]func(*nativeFrame)
-	seqno   uint64
+	conn     net.Conn
+	txmtx    sync.Mutex
+	replyCB  map[uint64]func(*nativeFrame)
+	seqno    uint64
+	remoteVK []byte
+	target   string
 }
 
-func ConnectToPeer(vk []byte, target string) (*PeerClient, error) {
+func ConnectToPeer(vk []byte, target string, skipauth bool) (*PeerClient, error) {
 	roots := x509.NewCertPool()
 	conn, err := tls.Dial("tcp", target, &tls.Config{
 		InsecureSkipVerify: true,
@@ -46,33 +49,55 @@ func ConnectToPeer(vk []byte, target string) (*PeerClient, error) {
 	if !proofOK {
 		return nil, errors.New("peer verification failed")
 	}
-	if !bytes.Equal(proof[:32], vk) {
-		return nil, errors.New("peer has a different VK")
+	if !skipauth {
+		if !bytes.Equal(proof[:32], vk) {
+			return nil, errors.New("peer has a different VK")
+		}
 	}
 
 	rv := PeerClient{
-		conn:    conn,
-		replyCB: make(map[uint64]func(*nativeFrame)),
+		conn:     conn,
+		replyCB:  make(map[uint64]func(*nativeFrame)),
+		remoteVK: proof[:32],
+		target:   target,
 	}
 	go rv.rxloop()
 	return &rv, nil
 }
 
+func (pc *PeerClient) Destroy() {
+	pc.conn.Close()
+}
+func (pc *PeerClient) GetTarget() string {
+	return pc.target
+}
+func (pc *PeerClient) GetRemoteVK() []byte {
+	return pc.remoteVK
+}
 func (pc *PeerClient) rxloop() {
 	hdr := make([]byte, 17)
 	for {
-		io.ReadFull(pc.conn, hdr)
+		_, err := io.ReadFull(pc.conn, hdr)
+		if err != nil {
+			log.Info("peer client: ", err)
+			return
+		}
 		ln := binary.LittleEndian.Uint64(hdr)
 		seqno := binary.LittleEndian.Uint64(hdr[8:])
 		cmd := hdr[16]
 		body := make([]byte, ln)
-		io.ReadFull(pc.conn, body)
+		_, err = io.ReadFull(pc.conn, body)
+		if err != nil {
+			log.Info("peer client: ", err)
+			return
+		}
 		fr := nativeFrame{
 			length: ln,
 			seqno:  seqno,
 			cmd:    cmd,
 			body:   body,
 		}
+		fmt.Printf("dispatching peer frame %x to %d\n", cmd, seqno)
 		pc.txmtx.Lock()
 		cb := pc.replyCB[seqno]
 		pc.txmtx.Unlock()
@@ -93,7 +118,6 @@ func (pc *PeerClient) transact(f *nativeFrame, onRX func(f *nativeFrame)) {
 	binary.LittleEndian.PutUint64(tmphdr[8:], f.seqno)
 	tmphdr[16] = byte(f.cmd)
 	pc.txmtx.Lock()
-	log.Info("Putting RX into seqno", f.seqno)
 	pc.replyCB[f.seqno] = onRX
 	defer pc.txmtx.Unlock()
 	_, err := pc.conn.Write(tmphdr)
@@ -115,7 +139,6 @@ func (pc *PeerClient) PublishPersist(m *core.Message, actionCB func(code int, ms
 		seqno: pc.getSeqno(),
 	}
 	pc.transact(&nf, func(f *nativeFrame) {
-		log.Info("Got RX frame")
 		defer pc.removeCB(nf.seqno)
 		if len(f.body) < 2 {
 			actionCB(core.BWStatusPeerError, "short response frame")
@@ -139,6 +162,8 @@ func (pc *PeerClient) Subscribe(m *core.Message,
 	pc.transact(&nf, func(f *nativeFrame) {
 		log.Infof("got sub response cmd: %d", f.cmd)
 		switch f.cmd {
+		case nCmdRStatus:
+			fallthrough
 		case nCmdRSub:
 			log.Infof("Got subscribe status response")
 			if len(f.body) < 2 {
@@ -157,6 +182,7 @@ func (pc *PeerClient) Subscribe(m *core.Message,
 			}
 			return
 		case nCmdResult:
+			log.Infof("Got subscribe message response")
 			nm, err := core.LoadMessage(f.body)
 			if err != nil {
 				log.Info("dropping incoming subscription result (malformed message)")

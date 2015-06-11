@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -10,11 +11,13 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	log "github.com/cihub/seelog"
 	"github.com/immesys/bw2/internal/core"
 	"github.com/immesys/bw2/internal/crypto"
 	"github.com/immesys/bw2/internal/rocks"
+	"github.com/immesys/bw2/internal/store"
 	"github.com/immesys/bw2/objects"
 )
 
@@ -50,7 +53,6 @@ type BW struct {
 // OpenBWContext will create a new Bosswave context and initialise the
 // daemons specified in the configuration file
 func OpenBWContext(config *core.BWConfig) *BW {
-	log.Infof("Opening context")
 	if config == nil {
 		config = core.LoadConfig("")
 	}
@@ -81,6 +83,8 @@ func OpenBWContext(config *core.BWConfig) *BW {
 		rv.MVKs[i] = mvk
 	}
 	rv.MVKs[len(config.Affinity.MVK)] = rv.Entity.GetVK()
+	rv.DRVKcache[config.Router.VK] = rVK
+
 	rocks.Initialize(config.Router.DB)
 	return rv
 }
@@ -135,21 +139,9 @@ func MatchTopic(t []string, pattern []string) bool {
 	return false
 }
 
-/*
-func (c *BosswaveClient) dispatch() {
-	if c.irq == nil {
-		//Do dispatch to the subreq's Dispatch field
-		ms := c.cl.GetFront()
-		for ms != nil {
-			c.disch <- ms
-			ms = c.cl.GetFront()
-		}
-	} else {
-		//Delegate to client
-		c.irq()
-	}
+func (cl *BosswaveClient) GetUs() *objects.Entity {
+	return cl.us
 }
-*/
 
 // CreateClient will create a new BosswaveClient. If the queueChanged function
 // is nil, the dispatch handlers in each subscription will be invoked when
@@ -163,6 +155,13 @@ func (bw *BW) CreateClient() *BosswaveClient {
 	}
 	rv.cl = bw.tm.CreateClient()
 	return rv
+}
+
+func (cl *BosswaveClient) Destroy() {
+	cl.cl.Destroy()
+	for _, p := range cl.peers {
+		p.Destroy()
+	}
 }
 
 func (bw *BW) ResolveURI(uri string) (string, error) {
@@ -256,6 +255,144 @@ func (bw *BW) ResolveName(name string) ([]byte, error) {
 	}
 }
 
+//Resolve will ask a couple names for whatever this object is, and try find it
+//for an entity "hash" is actually the VK
+func (c *BosswaveClient) Resolve(hash string, ask []string) objects.RoutingObject {
+	thash := hash[:43] //strip off the last equals
+	bhash, err := crypto.UnFmtKey(hash)
+	if err != nil {
+		return nil
+	}
+
+	//First try short circuit resolution by querying the local DB
+	dot, ok := store.GetDOT(bhash)
+	if ok {
+		return dot
+	}
+	ent, ok := store.GetEntity(bhash)
+	if ok {
+		return ent
+	}
+	dc, ok := store.GetDChain(bhash)
+	if ok {
+		return dc
+	}
+
+	var peers []*PeerClient
+	for _, a := range ask {
+		mvk, err := c.BW().ResolveName(a)
+		if err != nil {
+			log.Warnf("unable to resolve peer name '%s'", a)
+			continue
+		}
+		peer, err := c.GetPeer(mvk)
+		if err != nil {
+			log.Warnf("unable to connect to peer mvk '%s'", crypto.FmtKey(mvk))
+			continue
+		}
+		peers = append(peers, peer)
+	}
+
+	//Try as a DOT
+	rv := make(chan objects.RoutingObject, 1)
+	wg := sync.WaitGroup{}
+	for _, p := range peers {
+		wg.Add(1)
+		go func(p *PeerClient) {
+			//This is the routerVK so is the DRVK automatically
+			drVK := p.GetRemoteVK()
+			uris := []string{"$/dot/hash/" + thash, "$/entity/vk/" + thash, "$/chain/hash/" + thash}
+			for _, uri := range uris {
+				wg.Add(1)
+				c.Query(&QueryParams{
+					MVK:       drVK,
+					URISuffix: uri,
+				},
+					func(status int, msg string) {
+						if status != core.BWStatusOkay {
+							log.Warnf("bad peer resolve query: %s", msg)
+							wg.Done()
+						}
+					},
+					func(m *core.Message) {
+						if m == nil {
+							wg.Done()
+							return
+						}
+						for _, ro := range m.RoutingObjects {
+							dot, ok := ro.(*objects.DOT)
+							if ok {
+								store.PutDOT(dot)
+							}
+							if ok && bytes.Equal(bhash, dot.GetHash()) {
+								rv <- dot
+							}
+							ent, ok := ro.(*objects.Entity)
+							if ok {
+								store.PutEntity(ent)
+							}
+							if ok && bytes.Equal(bhash, ent.GetVK()) {
+								rv <- ent
+							}
+							dc, ok := ro.(*objects.DChain)
+							if ok {
+								store.PutDChain(dc)
+							}
+							if ok && bytes.Equal(bhash, dc.GetChainHash()) {
+								rv <- dc
+							}
+						}
+					})
+			}
+			wg.Done()
+		}(p)
+	}
+
+	go func() {
+		wg.Wait()
+		close(rv)
+	}()
+	select {
+	case retval, ok := <-rv:
+		if ok {
+			go func() {
+				for _ = range rv {
+				}
+			}()
+			return retval
+		}
+		return nil
+	case _ = <-time.After(5 * time.Second):
+		go func() {
+			for _ = range rv {
+			}
+		}()
+		return nil
+	}
+}
+
+//GetPeer gets the peer for the given MVK, NOT THE PEER VK
+func (c *BosswaveClient) GetPeerByTrustedTarget(target string) (*PeerClient, error) {
+	peer, err := ConnectToPeer(nil, target, true)
+	if err != nil {
+		return nil, err
+	}
+	return peer, nil
+}
+
+//InjectPeer puts the given peer into the caches so that it will be resolved
+//it returns the name of the peer that can be used later
+func (c *BosswaveClient) InjectPeer(p *PeerClient) string {
+	bw := c.BW()
+	bw.cachelock.Lock()
+	defer bw.cachelock.Unlock()
+	vks := crypto.FmtKey(p.GetRemoteVK())
+	bw.Namecache[vks] = p.GetRemoteVK()
+	bw.DRVKcache[vks] = p.GetRemoteVK()
+	bw.Targetcache[vks] = p.GetTarget()
+	return vks
+}
+
 //GetPeer gets the peer for the given MVK, NOT THE PEER VK
 func (c *BosswaveClient) GetPeer(mvk []byte) (*PeerClient, error) {
 	vk, err := c.bw.GetDRVK(crypto.FmtKey(mvk))
@@ -271,7 +408,7 @@ func (c *BosswaveClient) GetPeer(mvk []byte) (*PeerClient, error) {
 		if err != nil {
 			return nil, err
 		}
-		peer, err := ConnectToPeer(vk, tgt)
+		peer, err := ConnectToPeer(vk, tgt, false)
 		if err != nil {
 			return nil, err
 		}

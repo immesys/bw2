@@ -125,7 +125,6 @@ func LoadMessage(b []byte) (m *Message, err error) {
 	m.MVK = b[idx : idx+32]
 	idx += 32
 	suffixlen := binary.LittleEndian.Uint16(b[idx:])
-	fmt.Println("The suffixlen: ", suffixlen)
 	m.TopicSuffix = string(b[idx+2 : idx+2+int(suffixlen)])
 	idx += int(suffixlen) + 2
 	m.Topic = base64.URLEncoding.EncodeToString(m.MVK) + "/" + m.TopicSuffix

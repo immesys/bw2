@@ -15,12 +15,14 @@ import (
 )
 
 type ChainBuilder struct {
-	cl     *BosswaveClient
-	status chan string
-	uri    string
-	perms  string
-	target []byte
-	peers  [][]byte
+	cl       *BosswaveClient
+	status   chan string
+	uri      string
+	perms    string
+	target   []byte
+	peers    [][]byte
+	urimvk   []byte
+	desperms *objects.AccessDOTPermissionSet
 }
 
 type scenario struct {
@@ -76,7 +78,20 @@ func (s *scenario) ToChain() *objects.DChain {
 	return rv
 }
 func NewChainBuilder(cl *BosswaveClient, uri, perms string, target []byte, status chan string) *ChainBuilder {
-	return &ChainBuilder{cl: cl, uri: uri, target: target, perms: perms, peers: make([][]byte, 0), status: status}
+	rv := ChainBuilder{cl: cl,
+		uri:      uri,
+		target:   target,
+		perms:    perms,
+		peers:    make([][]byte, 0),
+		status:   status,
+		desperms: objects.GetADPSFromPermString(perms)}
+	uriparts := strings.SplitN(uri, "/", 2)
+	urimvk, err := crypto.UnFmtKey(uriparts[0])
+	if err != nil {
+		panic("need to fix this")
+	}
+	rv.urimvk = urimvk
+	return &rv
 }
 
 func (b *ChainBuilder) AddPeerMVK(mvk []byte) {
@@ -84,6 +99,15 @@ func (b *ChainBuilder) AddPeerMVK(mvk []byte) {
 }
 
 func (b *ChainBuilder) dotUseful(d *objects.DOT) bool {
+	adps := d.GetPermissionSet()
+	if !b.desperms.IsSubsetOf(adps) {
+		fmt.Println("rejecting DOT: perms")
+		return false
+	}
+	if !bytes.Equal(d.GetAccessURIMVK(), b.urimvk) {
+		fmt.Println("rejecting DOT: mvk")
+		return false
+	}
 	return true
 }
 func (b *ChainBuilder) getOptions(from []byte) []*objects.DOT {
@@ -203,6 +227,6 @@ func (b *ChainBuilder) Build() ([]*objects.DChain, error) {
 		e = e.Next()
 	}
 	close(b.status)
-
+	fmt.Println("chain build complete")
 	return rv, nil
 }

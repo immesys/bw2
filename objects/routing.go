@@ -89,6 +89,7 @@ func NewDChain(ronum int, content []byte) (rv RoutingObject, err error) {
 	switch ronum {
 	case ROAccessDChain, ROPermissionDChain:
 		if len(content)%32 != 0 || len(content) == 0 {
+			log.Warnf("case 1 cl was %v", len(content))
 			return nil, NewObjectError(ronum, "Wrong content length")
 		}
 		ro.dothashes = content
@@ -100,7 +101,8 @@ func NewDChain(ronum int, content []byte) (rv RoutingObject, err error) {
 		return &ro, nil
 	case ROAccessDChainHash, ROPermissionDChainHash:
 		if len(content) != 32 {
-			return nil, NewObjectError(ronum, "Wrong content length")
+			log.Warnf("case 2 cl was %v", len(content))
+			return nil, NewObjectError(ronum, "Wrong content length: ")
 		}
 		ro.chainhash = content
 		ro.isAccess = ronum == 0x01
@@ -236,7 +238,17 @@ func (ro *DChain) IsElaborated() bool {
 
 //GetRONum returns the RONum for this object
 func (ro *DChain) GetRONum() int {
-	return ro.ronum
+	fmt.Printf("ronum %x : %v %v\n", ro.ronum, ro.elaborated, ro.isAccess)
+	if ro.elaborated {
+		if ro.isAccess {
+			return ROAccessDChain
+		}
+		return ROPermissionDChain
+	}
+	if ro.isAccess {
+		return ROAccessDChainHash
+	}
+	return ROPermissionDChainHash
 }
 
 func (ro *DChain) GetGiverVK() []byte {
@@ -256,6 +268,7 @@ func (ro *DChain) GetReceiverVK() []byte {
 
 func (ro *DChain) UnElaborate() {
 	ro.elaborated = false
+	ro.ronum = ro.GetRONum()
 }
 
 //GetContent returns the serialised content for this object
@@ -394,6 +407,17 @@ func (ps *AccessDOTPermissionSet) ReduceBy(rhs *AccessDOTPermissionSet) {
 	ps.CanTapPlus = ps.CanTapPlus && rhs.CanTapPlus && rhs.CanTap
 	ps.CanTapStar = ps.CanTapStar && rhs.CanTapStar && rhs.CanTapPlus && rhs.CanTap
 	ps.CanList = ps.CanList && rhs.CanList
+}
+
+func (ps *AccessDOTPermissionSet) IsSubsetOf(rhs *AccessDOTPermissionSet) bool {
+	return !(ps.CanPublish && !rhs.CanPublish ||
+		ps.CanConsume && !rhs.CanConsume ||
+		ps.CanConsumePlus && !rhs.CanConsumePlus ||
+		ps.CanConsumeStar && !rhs.CanConsumeStar ||
+		ps.CanTap && !rhs.CanTap ||
+		ps.CanTapPlus && !rhs.CanTapPlus ||
+		ps.CanTapStar && !rhs.CanTapStar ||
+		ps.CanList && !rhs.CanList)
 }
 
 func GetADPSFromPermString(v string) *AccessDOTPermissionSet {

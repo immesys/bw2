@@ -134,6 +134,9 @@ const (
 
 func handleSession(cl *BosswaveClient, conn net.Conn) {
 	log.Info("peer ", conn.RemoteAddr().String(), " connected on ", conn.LocalAddr().String())
+	defer func() {
+		cl.Destroy()
+	}()
 	hdr := make([]byte, 17)
 
 	rmutex := sync.Mutex{}

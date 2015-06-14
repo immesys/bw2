@@ -22,9 +22,11 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"runtime/debug"
+	"strconv"
 	"time"
 
 	log "github.com/cihub/seelog"
@@ -104,6 +106,7 @@ func NewDChain(ronum int, content []byte) (rv RoutingObject, err error) {
 	switch ronum {
 	case ROAccessDChain, ROPermissionDChain:
 		if len(content)%32 != 0 || len(content) == 0 {
+			log.Warnf("case 1 cl was %v", len(content))
 			return nil, NewObjectError(ronum, "Wrong content length")
 		}
 		ro.dothashes = content
@@ -115,7 +118,8 @@ func NewDChain(ronum int, content []byte) (rv RoutingObject, err error) {
 		return &ro, nil
 	case ROAccessDChainHash, ROPermissionDChainHash:
 		if len(content) != 32 {
-			return nil, NewObjectError(ronum, "Wrong content length")
+			log.Warnf("case 2 cl was %v", len(content))
+			return nil, NewObjectError(ronum, "Wrong content length: ")
 		}
 		ro.chainhash = content
 		ro.isAccess = ronum == 0x01
@@ -166,6 +170,25 @@ func (ro *DChain) WriteToStream(s io.Writer, fullObjNum bool) error {
 	return nil
 }
 
+func (ro *DChain) GetAccessURISuffix() (string, error) {
+	d := ro.dots[0]
+	u := d.GetAccessURISuffix()
+	for _, d := range ro.dots[1:] {
+		nu, ok := util.RestrictBy(u, d.GetAccessURISuffix())
+		if !ok {
+			return "", errors.New("Chain doesn't grant anything")
+		}
+		u = nu
+	}
+	return u, nil
+}
+func (ro *DChain) GetAccessURIPermString() string {
+	adps := ro.dots[0].GetPermissionSet()
+	for _, d := range ro.dots[1:] {
+		adps.ReduceBy(d.GetPermissionSet())
+	}
+	return adps.GetPermString()
+}
 func (ro *DChain) IsAccess() bool {
 	return ro.GetRONum() == ROAccessDChain ||
 		ro.GetRONum() == ROAccessDChainHash
@@ -187,6 +210,21 @@ func (ro *DChain) AugmentBy(d *DOT) {
 			ro.dots[i] = d
 		}
 	}
+}
+
+func (ro *DChain) GetTTL() int {
+	ttl := 256
+	for _, d := range ro.dots {
+		ttl -= 1
+		if d.GetTTL() < ttl {
+			ttl = d.GetTTL()
+		}
+	}
+	return ttl
+}
+
+func (ro *DChain) GetMVK() []byte {
+	return ro.dots[0].GetAccessURIMVK()
 }
 
 //SetDOT sets the specific DOT
@@ -217,7 +255,17 @@ func (ro *DChain) IsElaborated() bool {
 
 //GetRONum returns the RONum for this object
 func (ro *DChain) GetRONum() int {
-	return ro.ronum
+	fmt.Printf("ronum %x : %v %v\n", ro.ronum, ro.elaborated, ro.isAccess)
+	if ro.elaborated {
+		if ro.isAccess {
+			return ROAccessDChain
+		}
+		return ROPermissionDChain
+	}
+	if ro.isAccess {
+		return ROAccessDChainHash
+	}
+	return ROPermissionDChainHash
 }
 
 func (ro *DChain) GetGiverVK() []byte {
@@ -237,6 +285,7 @@ func (ro *DChain) GetReceiverVK() []byte {
 
 func (ro *DChain) UnElaborate() {
 	ro.elaborated = false
+	ro.ronum = ro.GetRONum()
 }
 
 //GetContent returns the serialised content for this object
@@ -375,6 +424,91 @@ func (ps *AccessDOTPermissionSet) ReduceBy(rhs *AccessDOTPermissionSet) {
 	ps.CanTapPlus = ps.CanTapPlus && rhs.CanTapPlus && rhs.CanTap
 	ps.CanTapStar = ps.CanTapStar && rhs.CanTapStar && rhs.CanTapPlus && rhs.CanTap
 	ps.CanList = ps.CanList && rhs.CanList
+}
+
+func (ps *AccessDOTPermissionSet) IsSubsetOf(rhs *AccessDOTPermissionSet) bool {
+	return !(ps.CanPublish && !rhs.CanPublish ||
+		ps.CanConsume && !rhs.CanConsume ||
+		ps.CanConsumePlus && !rhs.CanConsumePlus ||
+		ps.CanConsumeStar && !rhs.CanConsumeStar ||
+		ps.CanTap && !rhs.CanTap ||
+		ps.CanTapPlus && !rhs.CanTapPlus ||
+		ps.CanTapStar && !rhs.CanTapStar ||
+		ps.CanList && !rhs.CanList)
+}
+
+func GetADPSFromPermString(v string) *AccessDOTPermissionSet {
+	ro := &AccessDOTPermissionSet{}
+	for len(v) > 0 {
+		switch v[0] {
+		case 'C', 'c':
+			ro.CanConsume = true
+			if len(v) > 1 && v[1] == '*' {
+				ro.CanConsumeStar = true
+				ro.CanConsumePlus = true
+				v = v[2:]
+				continue
+			}
+			if len(v) > 1 && v[1] == '+' {
+				ro.CanConsumePlus = true
+				v = v[2:]
+				continue
+			}
+			v = v[1:]
+			continue
+		case 'P', 'p':
+			ro.CanPublish = true
+			v = v[1:]
+			continue
+		case 'T', 't':
+			ro.CanTap = true
+			if len(v) > 1 && v[1] == '*' {
+				ro.CanTapStar = true
+				ro.CanTapPlus = true
+				v = v[2:]
+				continue
+			}
+			if len(v) > 1 && v[1] == '+' {
+				ro.CanTapPlus = true
+				v = v[2:]
+				continue
+			}
+			v = v[1:]
+			continue
+		case 'L', 'l':
+			ro.CanList = true
+			v = v[1:]
+			continue
+		default:
+			log.Infof("Hit default permstring case: %v", v[0])
+			return nil
+		}
+	}
+	return ro
+}
+func (ps *AccessDOTPermissionSet) GetPermString() string {
+	rv := ""
+	if ps.CanConsumeStar {
+		rv += "C*"
+	} else if ps.CanConsumePlus {
+		rv += "C+"
+	} else if ps.CanConsume {
+		rv += "C"
+	}
+	if ps.CanTapStar {
+		rv += "T*"
+	} else if ps.CanTapPlus {
+		rv += "T+"
+	} else if ps.CanTap {
+		rv += "T"
+	}
+	if ps.CanPublish {
+		rv += "P"
+	}
+	if ps.CanList {
+		rv += "L"
+	}
+	return rv
 }
 
 //NewDOT constructs a DOT from its packed form
@@ -559,6 +693,26 @@ func (ro *DOT) SetComment(v string) {
 	ro.comment = v
 }
 
+func (ro *DOT) GetComment() string {
+	return ro.comment
+}
+
+func (ro *DOT) GetContact() string {
+	return ro.contact
+}
+
+func (ro *DOT) GetRevokers() [][]byte {
+	return ro.revokers
+}
+
+func (ro *DOT) GetExpiry() *time.Time {
+	return ro.expires
+}
+
+func (ro *DOT) GetCreated() *time.Time {
+	return ro.created
+}
+
 func (ro *DOT) SetContact(v string) {
 	ro.contact = v
 }
@@ -713,6 +867,10 @@ func (ro *DOT) GetRONum() int {
 		return ROAccessDOT
 	}
 	return ROPermissionDOT
+}
+
+func (ro *DOT) IsAccess() bool {
+	return ro.isAccess
 }
 
 //GetContent returns the binary representation of the DOT if Encode has been called
@@ -1077,6 +1235,15 @@ func (ro *Entity) StringKey() string {
 func (ro *Entity) SetExpiry(t time.Time) {
 	ro.expires = &t
 }
+func (ro *Entity) GetExpiry() *time.Time {
+	return ro.expires
+}
+func (ro *Entity) GetCreated() *time.Time {
+	return ro.created
+}
+func (ro *Entity) GetRevokers() [][]byte {
+	return ro.revokers
+}
 
 //SigValid returns if the Entity's signature is valid. This only checks
 //the signature on the first call, so the content must not change
@@ -1145,7 +1312,7 @@ func (ro *Entity) Encode() {
 
 func NewEntity(ronum int, content []byte) (RoutingObject, error) {
 	if ronum != ROEntity {
-		panic("Bad RONUM")
+		panic("Bad RONUM: " + strconv.Itoa(ronum))
 	}
 	e := &Entity{
 		content:  content,

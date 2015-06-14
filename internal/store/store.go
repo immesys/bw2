@@ -124,7 +124,7 @@ func GetEntity(vk []byte) (*objects.Entity, bool) {
 	if err == rocks.ErrObjNotFound {
 		return nil, false
 	}
-	rentity, err := objects.NewDChain(int(value[0]), value[1:])
+	rentity, err := objects.NewEntity(objects.ROEntity, value)
 	if err != nil {
 		log.Criticalf("Deserialising entity from DB: %v", err)
 		panic("Deserialising entity from dB")

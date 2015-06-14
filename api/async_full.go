@@ -79,10 +79,21 @@ type PublishCallback func(status int, msg string)
 
 func (c *BosswaveClient) checkAddOriginVK(m *core.Message) {
 
-	if m.PrimaryAccessChain == nil ||
-		m.PrimaryAccessChain.GetReceiverVK() == nil ||
-		objects.IsEveryoneVK(m.PrimaryAccessChain.GetReceiverVK()) {
-		fmt.Println("Adding an origin VK header")
+	//Although the PAC may not be elaborated, we might be able to
+	//elaborate it some more here for our decision support
+	pac := m.PrimaryAccessChain
+	if pac != nil {
+		if !pac.IsElaborated() {
+			dc := core.ElaborateDChain(m.PrimaryAccessChain)
+			if dc != nil {
+				pac = dc
+			}
+		}
+		core.ResolveDotsInDChain(pac, nil)
+	}
+	if pac == nil || !pac.IsElaborated() ||
+		pac.GetReceiverVK() == nil ||
+		objects.IsEveryoneVK(pac.GetReceiverVK()) {
 		ovk := objects.CreateOriginVK(c.us.GetVK())
 		m.RoutingObjects = append(m.RoutingObjects, ovk)
 		vk := c.us.GetVK()
@@ -185,7 +196,9 @@ func (c *BosswaveClient) Subscribe(params *SubscribeParams,
 		actionCB(code, false, core.UniqueMessageID{}, msg)
 		return
 	}
+	fmt.Println("a")
 	m.PrimaryAccessChain = params.PrimaryAccessChain
+	fmt.Println("PACinS: ", m.PrimaryAccessChain.GetRONum())
 	m.RoutingObjects = params.RoutingObjects
 	if s, msg := c.doPAC(m, params.ElaboratePAC); s != core.BWStatusOkay {
 		actionCB(s, false, core.UniqueMessageID{}, msg)
@@ -197,12 +210,13 @@ func (c *BosswaveClient) Subscribe(params *SubscribeParams,
 	} else if params.Expiry != nil {
 		m.RoutingObjects = append(m.RoutingObjects, objects.CreateNewExpiry(*params.Expiry))
 	}
-
+	fmt.Println("b")
 	//Check if we need to add an origin VK header
 	c.checkAddOriginVK(m)
-
+	fmt.Println("b2")
+	fmt.Println("PACafterb2: ", m.PrimaryAccessChain.GetRONum())
 	c.finishMessage(m)
-
+	fmt.Println("c")
 	if params.DoVerify {
 		s := m.Verify()
 		if s.Code != core.BWStatusOkay {
@@ -233,23 +247,34 @@ type SetEntityParams struct {
 	Keyfile []byte
 }
 
-func (c *BosswaveClient) SetEntity(p *SetEntityParams) int {
+func (c *BosswaveClient) SetEntity(p *SetEntityParams) (*objects.Entity, int) {
 	if len(p.Keyfile) < 33 {
-		return core.BWStatusBadOperation
+		return nil, core.BWStatusBadOperation
 	}
 	e, err := objects.NewEntity(objects.ROEntity, p.Keyfile[32:])
 	if err != nil {
-		return core.BWStatusBadOperation
+		return nil, core.BWStatusBadOperation
 	}
 	entity := e.(*objects.Entity)
 	entity.SetSK(p.Keyfile[:32])
 	keysOk := crypto.CheckKeypair(entity.GetSK(), entity.GetVK())
 	sigOk := entity.SigValid()
 	if !keysOk || !sigOk {
-		return core.BWStatusInvalidSig
+		return nil, core.BWStatusInvalidSig
 	}
 	c.us = entity
 	core.DistributeRO(c.BW().Entity, entity, c.cl)
+	return entity, core.BWStatusOkay
+}
+
+func (c *BosswaveClient) SetEntityObj(e *objects.Entity) int {
+	keysOk := crypto.CheckKeypair(e.GetSK(), e.GetVK())
+	sigOk := e.SigValid()
+	if !keysOk || !sigOk {
+		return core.BWStatusInvalidSig
+	}
+	c.us = e
+	core.DistributeRO(c.BW().Entity, e, c.cl)
 	return core.BWStatusOkay
 }
 
@@ -363,7 +388,18 @@ func (c *BosswaveClient) Query(params *QueryParams,
 	err := c.VerifyAffinity(m)
 	if err == nil { //Local delivery
 		actionCB(core.BWStatusOkay, "")
-		c.cl.Query(m, resultCB)
+		c.cl.Query(m, func(m *core.Message) {
+			if m == nil {
+				resultCB(nil)
+				return
+			}
+			sm := m.Verify()
+			if sm.Code == core.BWStatusOkay {
+				resultCB(m)
+			} else {
+				log.Info("dropping local query result (failed verify)")
+			}
+		})
 	} else { //Remote delivery
 		peer, err := c.GetPeer(m.MVK)
 		if err != nil {
@@ -480,17 +516,21 @@ func (c *BosswaveClient) CreateEntity(p *CreateEntityParams) *objects.Entity {
 func (c *BosswaveClient) doPAC(m *core.Message, elaboratePAC int) (int, string) {
 
 	//If there is no explicit PAC, use the first access chain in the ROs
-	if m.PrimaryAccessChain == nil {
-		for _, ro := range m.RoutingObjects {
-			if ro.GetRONum() == objects.ROAccessDChain ||
-				ro.GetRONum() == objects.ROAccessDChainHash {
-				m.PrimaryAccessChain = ro.(*objects.DChain)
-				break
+	//NOPE because sometimes you want to send access chains but not treat
+	//it as the PAC
+	/*
+		if m.PrimaryAccessChain == nil {
+			for _, ro := range m.RoutingObjects {
+				if ro.GetRONum() == objects.ROAccessDChain ||
+					ro.GetRONum() == objects.ROAccessDChainHash {
+					m.PrimaryAccessChain = ro.(*objects.DChain)
+					break
+				}
 			}
-		}
-	}
+		}*/
 	//Elaborate PAC
 	if elaboratePAC > NoElaboration {
+		fmt.Println("doing elab")
 		if m.PrimaryAccessChain == nil {
 			return core.BWStatusUnresolvable, "No PAC with elaboration"
 		}
@@ -530,11 +570,13 @@ func (c *BosswaveClient) getMid() uint64 {
 }
 
 func (c *BosswaveClient) newMessage(mtype int, mvk []byte, urisuffix string) (*core.Message, int, string) {
+	ovk := c.GetUs().GetVK()
 	m := core.Message{Type: uint8(mtype),
 		TopicSuffix:    urisuffix,
 		MVK:            mvk,
 		RoutingObjects: []objects.RoutingObject{},
 		PayloadObjects: []objects.PayloadObject{},
+		OriginVK:       &ovk,
 		MessageID:      c.getMid()}
 	valid, star, plus, _, _ := util.AnalyzeSuffix(urisuffix)
 	if !valid {

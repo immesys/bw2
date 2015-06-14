@@ -112,11 +112,11 @@ func (m *Message) Encode(sk []byte, vk []byte) {
 	b = append(b, 0, 0, 0, 0)
 	sig := make([]byte, 64)
 	m.Signature = sig
-	fmt.Printf("\nSigning message blob len %d\n", len(b))
-	fmt.Println("SK: ", crypto.FmtKey(sk))
-	fmt.Println("VK: ", crypto.FmtKey(vk))
+	//fmt.Printf("\nSigning message blob len %d\n", len(b))
+	//fmt.Println("SK: ", crypto.FmtKey(sk))
+	//fmt.Println("VK: ", crypto.FmtKey(vk))
 	crypto.SignBlob(sk, vk, sig, b)
-	fmt.Println("Signature: ", crypto.FmtSig(m.Signature))
+	//fmt.Println("Signature: ", crypto.FmtSig(m.Signature))
 	m.SigCoverEnd = len(b)
 	b = append(b, sig...)
 	m.Encoded = b
@@ -142,7 +142,6 @@ func LoadMessage(b []byte) (m *Message, err error) {
 	m.MVK = b[idx : idx+32]
 	idx += 32
 	suffixlen := binary.LittleEndian.Uint16(b[idx:])
-	fmt.Println("The suffixlen: ", suffixlen)
 	m.TopicSuffix = string(b[idx+2 : idx+2+int(suffixlen)])
 	idx += int(suffixlen) + 2
 	m.Topic = base64.URLEncoding.EncodeToString(m.MVK) + "/" + m.TopicSuffix
@@ -235,7 +234,7 @@ func ElaborateDChain(dc *objects.DChain) *objects.DChain {
 
 func ResolveDotsInDChain(dc *objects.DChain, cache []objects.RoutingObject) bool {
 	if !dc.IsElaborated() {
-		panic("Can only augment elaborated chain")
+		return false
 	}
 	//Augment the primary dchain by the ro's we got given
 	for _, ro := range cache {
@@ -406,8 +405,6 @@ func (m *Message) Verify() *StatusMessage {
 		fromMVK = true
 		m.status.Code = BWStatusOkay
 		goto endperm
-	} else {
-		log.Info("Failed origin MVK check", m.OriginVK, m.MVK)
 	}
 
 	//These will be populated by the permissions search process
@@ -481,10 +478,16 @@ endperm:
 		return &m.status
 	}
 
+	if m.OriginVK == nil {
+		log.Criticalf("V: no origin VK on message")
+		m.status.Code = BWStatusNoOrigin
+		return &m.status
+	}
+
 	//Now check if the signature is correct
-	fmt.Printf("\nenclen %v, sce %v, siglen %v\n", len(m.Encoded), m.SigCoverEnd, len(m.Signature))
-	fmt.Println("Signature: ", crypto.FmtSig(m.Signature))
-	fmt.Println("VK: ", crypto.FmtKey(*m.OriginVK))
+	//fmt.Printf("\nenclen %v, sce %v, siglen %v\n", len(m.Encoded), m.SigCoverEnd, len(m.Signature))
+	//fmt.Println("Signature: ", crypto.FmtSig(m.Signature))
+	//fmt.Println("VK: ", crypto.FmtKey(*m.OriginVK))
 	if !crypto.VerifyBlob(*m.OriginVK, m.Signature, m.Encoded[:m.SigCoverEnd]) {
 		m.status.Code = BWStatusInvalidSig
 		log.Infof("V: InvalidSig (whole sig)")

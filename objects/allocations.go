@@ -25,6 +25,7 @@ const (
 	ROAccessDOT            = 0x20
 	ROPermissionDOT        = 0x21
 	ROEntity               = 0x30
+	ROEntityWKey           = 0x32
 	ROOriginVK             = 0x31
 	ROExpiry               = 0x40
 )

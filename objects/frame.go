@@ -121,6 +121,30 @@ func (f *Frame) GetFirstHeader(k string) (string, bool) {
 	r, ok := f.GetFirstHeaderB(k)
 	return string(r), ok
 }
+func (f *Frame) ParseFirstHeaderAsBool(k string, def bool) (bool, bool, *string) {
+	v, ok := f.GetFirstHeader(k)
+	if !ok {
+		return def, false, nil
+	}
+	cx, e := strconv.ParseBool(v)
+	if e != nil {
+		msg := fmt.Sprintf("could not parse %s kv as boolean", k)
+		return def, false, &msg
+	}
+	return cx, true, nil
+}
+func (f *Frame) ParseFirstHeaderAsInt(k string, def int) (int, bool, *string) {
+	v, ok := f.GetFirstHeader(k)
+	if !ok {
+		return def, false, nil
+	}
+	cx, e := strconv.ParseInt(v, 10, 64)
+	if e != nil {
+		msg := fmt.Sprintf("could not parse %s kv as boolean", k)
+		return def, false, &msg
+	}
+	return int(cx), true, nil
+}
 func (f *Frame) GetAllHeaders(k string) []string {
 	var rv []string
 	for _, h := range f.Headers {

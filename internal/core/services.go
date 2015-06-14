@@ -26,10 +26,11 @@ import (
 )
 
 func makeROMessage(e *objects.Entity, ro objects.RoutingObject, uriSuffix string) *Message {
+	ovk := objects.CreateOriginVK(e.GetVK())
 	m := Message{
 		TopicSuffix:    uriSuffix,
 		MVK:            e.GetVK(),
-		RoutingObjects: []objects.RoutingObject{ro},
+		RoutingObjects: []objects.RoutingObject{ro, ovk},
 		PayloadObjects: []objects.PayloadObject{},
 	}
 	m.Encode(e.GetSK(), e.GetVK())

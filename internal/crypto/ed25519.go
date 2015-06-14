@@ -17,6 +17,7 @@
 
 package crypto
 
+// #cgo CFLAGS: -O3
 // #cgo LDFLAGS: -lssl -lcrypto -ldl -lz
 // #include "ed25519.h"
 import "C"
@@ -83,9 +84,13 @@ func VerifyBlob(vk []byte, sig []byte, blob []byte) bool {
 func GenerateKeypair() (sk []byte, vk []byte) {
 	sk = make([]byte, 32)
 	vk = make([]byte, 32)
-	C.bw_generate_keypair((*C.uchar)(unsafe.Pointer(&sk[0])),
-		(*C.uchar)(unsafe.Pointer(&vk[0])))
-	return
+	for {
+		C.bw_generate_keypair((*C.uchar)(unsafe.Pointer(&sk[0])),
+			(*C.uchar)(unsafe.Pointer(&vk[0])))
+		if FmtKey(vk)[0] != '-' {
+			return
+		}
+	}
 }
 
 func CheckKeypair(sk []byte, vk []byte) bool {

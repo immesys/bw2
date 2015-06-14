@@ -25,6 +25,7 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -90,6 +91,10 @@ func (a *Adapter) handleClient(conn net.Conn) {
 	helo.AddHeader("version", api.BW2Version)
 	send(helo)
 
+	defer func() {
+		bwcl.Destroy()
+	}()
+
 	for {
 		f, err := objects.LoadFrameFromStream(in)
 		if err != nil {
@@ -97,21 +102,29 @@ func (a *Adapter) handleClient(conn net.Conn) {
 			abort = true
 			return
 		}
+		fmt.Println("Received frame: ", f.Cmd)
 		dispatchFrame(bwcl, f, send)
+		fmt.Println("DF finished")
 	}
 }
 
-func loadCommonURI(f *objects.Frame) ([]byte, string, bool) {
+func loadCommonURI(f *objects.Frame, bw *api.BW) ([]byte, string, bool) {
 	mvk, mvkOk := f.GetFirstHeader("mvk")
 	var rmvk []byte
 	uri, uriOk := f.GetFirstHeader("uri")
 	suffix, suffixOk := f.GetFirstHeader("uri_suffix")
 	if uriOk {
-		var ok bool
-		rmvk, suffix, ok = api.SplitURI(uri)
-		if !ok {
+		var err error
+		parts := strings.SplitN(uri, "/", 2)
+		if len(parts) != 2 {
 			return nil, "", false
 		}
+		rmvk, err = bw.ResolveName(parts[0])
+		if err != nil {
+			log.Info("Could not resolve uri: " + parts[0] + ":" + err.Error())
+			return nil, "", false
+		}
+		suffix = parts[1]
 	} else if !(mvkOk && suffixOk) {
 		return nil, "", false
 	} else {
@@ -172,6 +185,7 @@ func loadCommonExpiry(f *objects.Frame) (*time.Duration, *time.Time, bool, strin
 }
 func loadCommonElaborate(f *objects.Frame) (int, bool) {
 	elaboratePAC, ok := f.GetFirstHeader("elaborate_pac")
+
 	if ok {
 		switch elaboratePAC {
 		case "partial":
@@ -238,7 +252,7 @@ func dispatchFrame(bwcl *api.BosswaveClient, f *objects.Frame, send func(f *obje
 	}
 	switch f.Cmd {
 	case objects.CmdPublish, objects.CmdPersist:
-		mvk, suffix, ok := loadCommonURI(f)
+		mvk, suffix, ok := loadCommonURI(f, bwcl.BW())
 		if !ok {
 			err("malformed URI components")
 			return
@@ -258,15 +272,10 @@ func dispatchFrame(bwcl *api.BosswaveClient, f *objects.Frame, send func(f *obje
 			err("malformed PAC elaboration directive")
 			return
 		}
-		sverify, ok := f.GetFirstHeader("doverify")
-		verify := false
-		if ok {
-			cx, e := strconv.ParseBool(sverify)
-			if e != nil {
-				err("malformed doverify")
-				return
-			}
-			verify = cx
+		verify, _, emsg := f.ParseFirstHeaderAsBool("doverify", false)
+		if emsg != nil {
+			err(*emsg)
+			return
 		}
 		ros, pos := loadCommonXOs(f)
 		p := &api.PublishParams{
@@ -284,7 +293,7 @@ func dispatchFrame(bwcl *api.BosswaveClient, f *objects.Frame, send func(f *obje
 		bwcl.Publish(p, mkGenericActionCB(replyto, send))
 		return
 	case objects.CmdList:
-		mvk, suffix, ok := loadCommonURI(f)
+		mvk, suffix, ok := loadCommonURI(f, bwcl.BW())
 		if !ok {
 			err("malformed URI components")
 			return
@@ -325,17 +334,12 @@ func dispatchFrame(bwcl *api.BosswaveClient, f *objects.Frame, send func(f *obje
 				send(r)
 			})
 	case objects.CmdQuery:
-		runpack, ok := f.GetFirstHeader("unpack")
-		unpack := false
-		if ok {
-			cx, e := strconv.ParseBool(runpack)
-			if e != nil {
-				err("Malformed unpack kn")
-				return
-			}
-			unpack = cx
+		unpack, _, emsg := f.ParseFirstHeaderAsBool("unpack", false)
+		if emsg != nil {
+			err(*emsg)
+			return
 		}
-		mvk, suffix, ok := loadCommonURI(f)
+		mvk, suffix, ok := loadCommonURI(f, bwcl.BW())
 		if !ok {
 			err("malformed URI components")
 			return
@@ -350,6 +354,7 @@ func dispatchFrame(bwcl *api.BosswaveClient, f *objects.Frame, send func(f *obje
 			err("malformed PAC elaboration directive")
 			return
 		}
+		fmt.Println("el: ", el)
 		expd, expt, ok, msg := loadCommonExpiry(f)
 		if !ok {
 			err(msg)
@@ -384,17 +389,12 @@ func dispatchFrame(bwcl *api.BosswaveClient, f *objects.Frame, send func(f *obje
 				send(r)
 			})
 	case objects.CmdSubscribe:
-		runpack, ok := f.GetFirstHeader("unpack")
-		unpack := false
-		if ok {
-			cx, e := strconv.ParseBool(runpack)
-			if e != nil {
-				err("Malformed unpack kn")
-				return
-			}
-			unpack = cx
+		unpack, _, emsg := f.ParseFirstHeaderAsBool("unpack", false)
+		if emsg != nil {
+			err(*emsg)
+			return
 		}
-		mvk, suffix, ok := loadCommonURI(f)
+		mvk, suffix, ok := loadCommonURI(f, bwcl.BW())
 		if !ok {
 			err("malformed URI components")
 			return
@@ -409,12 +409,15 @@ func dispatchFrame(bwcl *api.BosswaveClient, f *objects.Frame, send func(f *obje
 			err("malformed PAC elaboration directive")
 			return
 		}
+		fmt.Println("Elaboration directive: ", el)
 		expd, expt, ok, msg := loadCommonExpiry(f)
 		if !ok {
 			err(msg)
 			return
 		}
+		fmt.Println("SPAC:", pac.GetRONum())
 		ros, _ := loadCommonXOs(f)
+		fmt.Println("finished")
 		p := &api.SubscribeParams{
 			MVK:                mvk,
 			URISuffix:          suffix,
@@ -426,6 +429,7 @@ func dispatchFrame(bwcl *api.BosswaveClient, f *objects.Frame, send func(f *obje
 		}
 		bwcl.Subscribe(p,
 			func(status int, isNew bool, id core.UniqueMessageID, msg string) {
+				log.Infof("Got action CB for sub: %v %v %v", status, isNew, msg)
 				if status == core.BWStatusOkay {
 					r := objects.CreateFrame(objects.CmdResponse, replyto)
 					r.AddHeader("status", "okay")
@@ -453,6 +457,7 @@ func dispatchFrame(bwcl *api.BosswaveClient, f *objects.Frame, send func(f *obje
 				}
 				send(r)
 			})
+		fmt.Println("subsent")
 	case objects.CmdMakeEntity:
 		expd, expt, ok, msg := loadCommonExpiry(f)
 		if !ok {
@@ -470,15 +475,10 @@ func dispatchFrame(bwcl *api.BosswaveClient, f *objects.Frame, send func(f *obje
 			}
 			revokers = append(revokers, rvk)
 		}
-		romit, ok := f.GetFirstHeader("omitcreationdate")
-		omit := false
-		if ok {
-			cx, e := strconv.ParseBool(romit)
-			if e != nil {
-				err("invalid omitcreationdate")
-				return
-			}
-			omit = cx
+		omit, _, emsg := f.ParseFirstHeaderAsBool("omitcreationdate", false)
+		if emsg != nil {
+			err(*emsg)
+			return
 		}
 		p := &api.CreateEntityParams{
 			Expiry:           expt,
@@ -503,15 +503,14 @@ func dispatchFrame(bwcl *api.BosswaveClient, f *objects.Frame, send func(f *obje
 		send(r)
 
 	case objects.CmdMakeDot:
-		sttl, ok := f.GetFirstHeader("ttl")
-		ttl := 0
-		if ok {
-			cx, e := strconv.ParseUint(sttl, 10, 8)
-			if e != nil {
-				err("could not parse TTL")
-				return
-			}
-			ttl = int(cx)
+		ttl, _, emsg := f.ParseFirstHeaderAsInt("ttl", 0)
+		if emsg != nil {
+			err(*emsg)
+			return
+		}
+		if ttl < 0 || ttl > 255 {
+			err("ttl out of range")
+			return
 		}
 		sto, ok := f.GetFirstHeader("to")
 		if !ok {
@@ -523,15 +522,10 @@ func dispatchFrame(bwcl *api.BosswaveClient, f *objects.Frame, send func(f *obje
 			err("could not parse TO kv")
 			return
 		}
-		ispermission := false
-		sispermission, ok := f.GetFirstHeader("ispermission")
-		if ok {
-			cx, e := strconv.ParseBool(sispermission)
-			if e != nil {
-				err("could not parse 'ispermission' kv")
-				return
-			}
-			ispermission = cx
+		ispermission, _, emsg := f.ParseFirstHeaderAsBool("ispermission", false)
+		if emsg != nil {
+			err(*emsg)
+			return
 		}
 		expd, expt, ok, msg := loadCommonExpiry(f)
 		if !ok {
@@ -549,15 +543,10 @@ func dispatchFrame(bwcl *api.BosswaveClient, f *objects.Frame, send func(f *obje
 			}
 			revokers = append(revokers, rvk)
 		}
-		romit, ok := f.GetFirstHeader("omitcreationdate")
-		omit := false
-		if ok {
-			cx, e := strconv.ParseBool(romit)
-			if e != nil {
-				err("invalid omitcreationdate")
-				return
-			}
-			omit = cx
+		omit, _, emsg := f.ParseFirstHeaderAsBool("omitcreationdate", false)
+		if emsg != nil {
+			err(*emsg)
+			return
 		}
 
 		p := api.CreateDOTParams{
@@ -573,7 +562,7 @@ func dispatchFrame(bwcl *api.BosswaveClient, f *objects.Frame, send func(f *obje
 		}
 
 		if !ispermission {
-			mvk, suffix, ok := loadCommonURI(f)
+			mvk, suffix, ok := loadCommonURI(f, bwcl.BW())
 			if !ok {
 				err("access DOTs require URI")
 				return
@@ -617,10 +606,11 @@ func dispatchFrame(bwcl *api.BosswaveClient, f *objects.Frame, send func(f *obje
 			err("expected PO type 1.0.1.2")
 			return
 		}
-		status := bwcl.SetEntity(&api.SetEntityParams{Keyfile: po.GetContent()})
+		ent, status := bwcl.SetEntity(&api.SetEntityParams{Keyfile: po.GetContent()})
 		if status == core.BWStatusOkay {
 			r := objects.CreateFrame(objects.CmdResponse, replyto)
 			r.AddHeader("status", "okay")
+			r.AddHeader("vk", crypto.FmtKey(ent.GetVK()))
 			send(r)
 		} else {
 			r := objects.CreateFrame(objects.CmdResponse, replyto)
@@ -630,25 +620,15 @@ func dispatchFrame(bwcl *api.BosswaveClient, f *objects.Frame, send func(f *obje
 			send(r)
 		}
 	case objects.CmdMakeChain:
-		ispermission := false
-		sispermission, ok := f.GetFirstHeader("ispermission")
-		if ok {
-			cx, e := strconv.ParseBool(sispermission)
-			if e != nil {
-				err("could not parse 'ispermission' kv")
-				return
-			}
-			ispermission = cx
+		ispermission, _, emsg := f.ParseFirstHeaderAsBool("ispermission", false)
+		if emsg != nil {
+			err(*emsg)
+			return
 		}
-		unelaborate := false
-		sunelaborate, ok := f.GetFirstHeader("unelaborate")
-		if ok {
-			cx, e := strconv.ParseBool(sunelaborate)
-			if e != nil {
-				err("could not parse 'unelaborate' kv")
-				return
-			}
-			unelaborate = cx
+		unelaborate, _, emsg := f.ParseFirstHeaderAsBool("unelaborate", false)
+		if emsg != nil {
+			err(*emsg)
+			return
 		}
 		var DOTs []*objects.DOT
 		for _, sdhash := range f.GetAllHeaders("dot") {
@@ -694,6 +674,86 @@ func dispatchFrame(bwcl *api.BosswaveClient, f *objects.Frame, send func(f *obje
 		r.AddPayloadObject(po)
 		send(r)
 
+	case objects.CmdBuildChain:
+		var routers []string
+		var to []byte
+		mvk, suffix, ok := loadCommonURI(f, bwcl.BW())
+		if !ok {
+			err("buildchain requires a URI")
+			return
+		}
+		perms, ok := f.GetFirstHeader("accesspermissions")
+		if !ok {
+			err("buildchain requires a perm string")
+			return
+		}
+		for _, r := range f.GetAllHeaders("router") {
+			//TODO perhaps add a resolution check here
+			routers = append(routers, r)
+		}
+		sto, ok := f.GetFirstHeader("to")
+		if !ok {
+			err("buildchain requires 'to' kv")
+			return
+		}
+		to, e := crypto.UnFmtKey(sto)
+		if e != nil {
+			err("could not parse TO kv")
+			return
+		}
+		status := make(chan string, 10)
+		go func() {
+			for s := range status {
+				log.Infof("OOB BC S: %s", s)
+			}
+		}()
+		cb := api.NewChainBuilder(bwcl, crypto.FmtKey(mvk)+"/"+suffix, perms, to, status)
+		cb.AddPeerMVK(bwcl.BW().Entity.GetVK())
+		cb.AddPeerMVK(mvk)
+		for _, r := range routers {
+			mvk, e := bwcl.BW().ResolveName(r)
+			if e != nil {
+				err("could not resolve peer '" + r + "'")
+			}
+			cb.AddPeerMVK(mvk)
+		}
+		go func() {
+			//We are going to change the chain builder to emit results on a channel later
+			//so lets emit each result on a different message preemptively
+			chains, e := cb.Build()
+			fmt.Println("chain build in OOB complete")
+			if e != nil {
+				log.Criticalf("CB fail: %v", e.Error())
+				err(e.Error())
+				return
+			}
+			r := objects.CreateFrame(objects.CmdResponse, replyto)
+			r.AddHeader("status", "okay")
+			send(r)
+			for _, c := range chains {
+				core.DistributeRO(bwcl.BW().Entity, c, bwcl.CL())
+				po, err := objects.CreateOpaquePayloadObject(c.GetRONum(), c.GetContent())
+				if err != nil {
+					log.Criticalf("Not expecting this: %v", err)
+					continue
+				}
+				r := objects.CreateFrame(objects.CmdResult, replyto)
+				r.AddHeader("finished", "false")
+				r.AddHeader("hash", crypto.FmtHash(c.GetChainHash()))
+				sfx, err := c.GetAccessURISuffix()
+				if err != nil {
+					panic(err)
+				}
+				r.AddHeader("uri", crypto.FmtKey(c.GetMVK())+"/"+sfx)
+				r.AddHeader("permissions", c.GetAccessURIPermString())
+				r.AddPayloadObject(po)
+				send(r)
+			}
+			fmt.Println("sending no more chains frame")
+			r = objects.CreateFrame(objects.CmdResult, replyto)
+			r.AddHeader("finished", "true")
+			send(r)
+		}()
 		/*
 			case CmdPutDot:
 			case CmdPutChain:

@@ -1,3 +1,20 @@
+// This file is part of BOSSWAVE.
+//
+// BOSSWAVE is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// BOSSWAVE is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with BOSSWAVE.  If not, see <http://www.gnu.org/licenses/>.
+//
+// Copyright © 2015 Michael Andersen <m.andersen@cs.berkeley.edu>
+
 package core
 
 import (
@@ -138,27 +155,6 @@ func LoadMessage(b []byte) (m *Message, err error) {
 		idx++
 	}
 
-	//We (for Anarchy) persist all RO's we ever see (LOLWUT??!?)
-	//Do it marginally in parallel
-	/*
-		rochan := make(chan objects.RoutingObject, 20)
-		go func() {
-			for ro := range rochan {
-				switch ro.GetRONum() {
-				case objects.ROAccessDChain, objects.ROPermissionDChain:
-					dc := ro.(*objects.DChain)
-					store.PutDChain(dc)
-				case objects.ROAccessDOT, objects.ROPermissionDOT:
-					dot := ro.(*objects.DOT)
-					store.PutDOT(dot)
-
-				case objects.ROEntity:
-					e := ro.(*objects.Entity)
-					store.PutEntity(e)
-				}
-			}
-		}()*/
-
 	foundprimary := false
 	foundorigin := false
 	foundexpiry := false
@@ -197,13 +193,7 @@ func LoadMessage(b []byte) (m *Message, err error) {
 		m.ExpireTime = time.Date(2999, time.January, 1, 0, 0, 0, 0, time.UTC)
 	}
 	idx++ //Skip final zero
-	//close(rochan)
 
-	/*
-		if m.PrimaryAccessChain == nil {
-			return nil, errors.New("Missing primary access dchain")
-		}
-	*/
 	//Read payload objects
 	for {
 		PONum := int(binary.LittleEndian.Uint32(b[idx:]))
@@ -543,31 +533,3 @@ endperm:
 	m.status.Code = BWStatusOkay
 	return &m.status
 }
-
-/*
-// Message is the primary Bosswave message type that is passed all the way through
-type MessageFactory struct {
-	m   *Message
-	mid uint64
-	us  *objects.Entity
-}
-
-func NewMessageFactory() *MessageFactory {
-	return &MessageFactory{mid: uint64(rand.Int63() << 16)}
-}
-func (f *MessageFactory) GetMid() uint64 {
-	mid := atomic.AddUint64(&f.mid, 1)
-	fmt.Printf("Returning mid %v\n", mid)
-	return mid
-}
-
-//SetEntity sets who we are. It also verifies that the keypair is correct.
-//returns false if the entity is invalid
-func (f *MessageFactory) SetEntity(e *objects.Entity) bool {
-	if !crypto.CheckKeypair(e.GetSK(), e.GetVK()) {
-		return false
-	}
-	f.us = e
-	return true
-}
-*/

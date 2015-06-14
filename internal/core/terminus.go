@@ -1,3 +1,20 @@
+// This file is part of BOSSWAVE.
+//
+// BOSSWAVE is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// BOSSWAVE is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with BOSSWAVE.  If not, see <http://www.gnu.org/licenses/>.
+//
+// Copyright © 2015 Michael Andersen <m.andersen@cs.berkeley.edu>
+
 package core
 
 // If a message enters the terminus, it has already had its signature verified,
@@ -256,45 +273,6 @@ func (cl *Client) List(m *Message, cb func(s string, ok bool)) {
 		}
 	}
 }
-
-/*
-func (cl *Client) Query(topic string, tap bool) *Message {
-	cl.tm.persistLock.RLock()
-	m, ok := cl.tm.persist[topic]
-	cl.tm.persistLock.RUnlock()
-	if ok {
-		//Should we be monitoring delivery count
-		if !tap && m.Consumers > 0 {
-			m.Consumers--
-			//Last delivery, delete it
-			if m.Consumers == 0 {
-				cl.tm.persistLock.Lock()
-				delete(cl.tm.persist, topic)
-				cl.tm.persistLock.Unlock()
-			}
-		}
-		return m
-	}
-	return nil
-}
-*/
-
-/*
-//List will return a list of known immediate children for a given URI. A known
-//child can only exist if the children streams have persisted messages
-func (cl *Client) List(topic string) []string {
-	rv := make([]string, 0, 30)
-	cl.tm.persistLock.RLock()
-	tlen := len(topic)
-	for key := range cl.tm.persist {
-		if strings.HasPrefix(key, topic) {
-			rv = append(rv, key[tlen:])
-		}
-	}
-	cl.tm.persistLock.RUnlock()
-	return rv
-}
-*/
 
 //Unsubscribe does what it says. For now the topic system is crude
 //so this doesn't seem necessary to have the subid instead of topic

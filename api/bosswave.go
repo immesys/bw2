@@ -39,7 +39,7 @@ import (
 )
 
 //The version of BW2 this is
-var BW2Version = "2.0.0 - 'Anarchy'"
+var BW2Version = "2.0.1 - 'Broadside'"
 
 // This is the main function interface for BW2. All Out Of Band providers will
 // use this interface, and it is the main interface for creating GO based BW2

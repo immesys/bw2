@@ -36,7 +36,7 @@ func RawInitialize(dbname string) {
 	if doneInit {
 		return
 	}
-	os.MkdirAll(dbname, 0644)
+	os.MkdirAll(dbname, 0755)
 	for i := 0; i < CFEntity; i++ {
 		db, err := leveldb.OpenFile(path.Join(dbname, strconv.Itoa(i)), nil)
 		if err != nil {

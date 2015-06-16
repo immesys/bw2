@@ -101,7 +101,7 @@ func LoadBosswaveObject(s io.Reader) (BossWaveObject, error) {
 			return nil, e
 		}
 	}
-	if onum&0xFFFFFF00 == 0 {
+	if int64(onum)&0xFFFFFF00 == 0 {
 		//Routing object
 		constructor, ok := RoutingObjectConstructor[onum]
 		if !ok {

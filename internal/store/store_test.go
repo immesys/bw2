@@ -7,6 +7,9 @@ import (
 	"time"
 )
 
+func init() {
+	Initialize("foobar")
+}
 func PrintSync(ch chan SM) {
 	for {
 		select {

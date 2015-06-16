@@ -44,4 +44,5 @@ type BWDBIterator interface {
 	OK() bool
 	Key() []byte
 	Value() []byte
+	Release()
 }

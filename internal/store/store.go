@@ -28,7 +28,8 @@ import (
 	"sync"
 
 	log "github.com/cihub/seelog"
-	"github.com/immesys/bw2/internal/rocks"
+	"github.com/immesys/bw2/internal/db"
+	dbi "github.com/immesys/bw2/internal/level"
 	"github.com/immesys/bw2/objects"
 )
 
@@ -43,6 +44,10 @@ const (
 	markEEntity = 6
 )
 
+func Initialize(dbname string) {
+	dbi.RawInitialize(dbname)
+}
+
 //StoreDOT puts a DOT into the DB
 func PutDOT(v *objects.DOT) {
 	//We assume all DOTs in the DB are valid, so we should make sure it has
@@ -53,13 +58,13 @@ func PutDOT(v *objects.DOT) {
 	value := make([]byte, len(v.GetContent())+1)
 	value[0] = byte(v.GetRONum())
 	copy(value[1:], v.GetContent())
-	rocks.PutObject(rocks.CFDot, v.GetHash(), value)
+	dbi.PutObject(db.CFDot, v.GetHash(), value)
 }
 
 //RetreiveDOT gets a DOT from the DB
 func GetDOT(hash []byte) (*objects.DOT, bool) {
-	value, err := rocks.GetObject(rocks.CFDot, hash)
-	if err == rocks.ErrObjNotFound {
+	value, err := dbi.GetObject(db.CFDot, hash)
+	if err == db.ErrObjNotFound {
 		return nil, false
 	}
 	rdot, err := objects.NewDOT(int(value[0]), value[1:])
@@ -81,12 +86,12 @@ func PutDChain(v *objects.DChain) {
 	value := make([]byte, len(v.GetContent())+1)
 	value[0] = byte(v.GetRONum())
 	copy(value[1:], v.GetContent())
-	rocks.PutObject(rocks.CFDChain, v.GetChainHash(), value)
+	dbi.PutObject(db.CFDChain, v.GetChainHash(), value)
 }
 
 func GetDChain(hash []byte) (*objects.DChain, bool) {
-	value, err := rocks.GetObject(rocks.CFDChain, hash)
-	if err == rocks.ErrObjNotFound {
+	value, err := dbi.GetObject(db.CFDChain, hash)
+	if err == db.ErrObjNotFound {
 		return nil, false
 	}
 	rdchain, err := objects.NewDChain(int(value[0]), value[1:])
@@ -99,15 +104,15 @@ func GetDChain(hash []byte) (*objects.DChain, bool) {
 }
 
 func ExistsDChain(hash []byte) bool {
-	return rocks.Exists(rocks.CFDChain, hash)
+	return dbi.Exists(db.CFDChain, hash)
 }
 
 func ExistsDOT(hash []byte) bool {
-	return rocks.Exists(rocks.CFDot, hash)
+	return dbi.Exists(db.CFDot, hash)
 }
 
 func ExistsEntity(vk []byte) bool {
-	return rocks.Exists(rocks.CFEntity, vk)
+	return dbi.Exists(db.CFEntity, vk)
 }
 
 func PutEntity(v *objects.Entity) {
@@ -116,12 +121,12 @@ func PutEntity(v *objects.Entity) {
 	if !v.SigValid() {
 		return
 	}
-	rocks.PutObject(rocks.CFEntity, v.GetVK(), v.GetContent())
+	dbi.PutObject(db.CFEntity, v.GetVK(), v.GetContent())
 }
 
 func GetEntity(vk []byte) (*objects.Entity, bool) {
-	value, err := rocks.GetObject(rocks.CFEntity, vk)
-	if err == rocks.ErrObjNotFound {
+	value, err := dbi.GetObject(db.CFEntity, vk)
+	if err == db.ErrObjNotFound {
 		return nil, false
 	}
 	rentity, err := objects.NewEntity(objects.ROEntity, value)
@@ -200,8 +205,8 @@ func PutMessage(topic string, payload []byte) {
 	smrg := make([]byte, len(smrgs)+1)
 	copy(smrg[1:], []byte(smrgs))
 	smrg[0] = byte(len(mrg))
-	rocks.PutObject(rocks.CFMsgI, smrg, payload)
-	rocks.PutObject(rocks.CFMsg, tb, payload)
+	dbi.PutObject(db.CFMsgI, smrg, payload)
+	dbi.PutObject(db.CFMsg, tb, payload)
 
 	//Put parents
 	for i := len(ts) - 1; i > 0; i-- {
@@ -209,8 +214,8 @@ func PutMessage(topic string, payload []byte) {
 		pstr := make([]byte, len(pstrs)+1)
 		pstr[0] = byte(i)
 		copy(pstr[1:], pstrs)
-		if !rocks.Exists(rocks.CFMsg, pstr) {
-			rocks.PutObject(rocks.CFMsg, pstr, []byte{0})
+		if !dbi.Exists(db.CFMsg, pstr) {
+			dbi.PutObject(db.CFMsg, pstr, []byte{0})
 		} else {
 			//We assume that if a path exists, all its parents exist
 			break
@@ -221,8 +226,8 @@ func PutMessage(topic string, payload []byte) {
 		pstr := make([]byte, len(pstrs)+1)
 		pstr[0] = byte(i)
 		copy(pstr[1:], pstrs)
-		if !rocks.Exists(rocks.CFMsgI, pstr) {
-			rocks.PutObject(rocks.CFMsgI, pstr, []byte{0})
+		if !dbi.Exists(db.CFMsgI, pstr) {
+			dbi.PutObject(db.CFMsgI, pstr, []byte{0})
 		} else {
 			//We assume that if a path exists, all its parents exist
 			break
@@ -235,7 +240,7 @@ func GetExactMessage(topic string) ([]byte, bool) {
 	key := make([]byte, len(topic)+1)
 	copy(key[1:], []byte(topic))
 	key[0] = byte(len(ts))
-	value, err := rocks.GetObject(rocks.CFMsg, key)
+	value, err := dbi.GetObject(db.CFMsg, key)
 	if err != nil || IsDummy(value) {
 		return nil, false
 	}
@@ -290,9 +295,9 @@ func IsDummy(value []byte) bool {
 func getMatchingMessage(interlaced bool, uri []string, prefix int, frontD []string, backD []string,
 	skipbase bool, handle chan SM, wg *sync.WaitGroup) {
 	//Make CF
-	cf := rocks.CFMsg
+	cf := db.CFMsg
 	if interlaced {
-		cf = rocks.CFMsgI
+		cf = db.CFMsgI
 	}
 	//Extend our prefix until the next wildcard
 	nprefix := prefix
@@ -303,7 +308,7 @@ func getMatchingMessage(interlaced bool, uri []string, prefix int, frontD []stri
 		if len(backD) != 0 || len(frontD) != 0 {
 			panic("invariant failure")
 		}
-		value, err := rocks.GetObject(cf, mkkey(uri))
+		value, err := dbi.GetObject(cf, mkkey(uri))
 		if err == nil && !IsDummy(value) {
 			var newUri []string
 			if interlaced {
@@ -335,7 +340,7 @@ func getMatchingMessage(interlaced bool, uri []string, prefix int, frontD []stri
 				idx++
 			}
 		}
-		value, err := rocks.GetObject(rocks.CFMsg, mkkey(directUri))
+		value, err := dbi.GetObject(db.CFMsg, mkkey(directUri))
 		if err == nil && !IsDummy(value) {
 			handle <- MakeSMFromParts(directUri, value)
 		}
@@ -372,7 +377,7 @@ func getMatchingMessage(interlaced bool, uri []string, prefix int, frontD []stri
 	//If we got here, we could not skip the scan by using *D
 	if uri[nprefix] == "+" || uri[nprefix] == "*" {
 		pfx := mkchildkey(uri[:nprefix])
-		it := rocks.CreateIterator(cf, pfx)
+		it := dbi.CreateIterator(cf, pfx)
 		for it.OK() {
 			k := it.Key()
 			actualkey := unmakekey(k)
@@ -392,6 +397,7 @@ func getMatchingMessage(interlaced bool, uri []string, prefix int, frontD []stri
 			go getMatchingMessage(interlaced, newUri, nprefix, frontD, backD, false, handle, wg)
 			it.Next()
 		}
+		it.Release()
 		wg.Done()
 		return
 	}
@@ -399,12 +405,13 @@ func getMatchingMessage(interlaced bool, uri []string, prefix int, frontD []stri
 func ListChildren(uri string, handle chan string) {
 	parts := strings.Split(uri, "/")
 	ckey := mkchildkey(parts)
-	it := rocks.CreateIterator(rocks.CFMsg, ckey)
+	it := dbi.CreateIterator(db.CFMsg, ckey)
 	for it.OK() {
 		k := it.Key()
 		handle <- string(k[1:])
 		it.Next()
 	}
+	it.Release()
 	close(handle)
 }
 func GetMatchingMessage(uri string, handle chan SM) {

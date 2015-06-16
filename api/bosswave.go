@@ -33,7 +33,6 @@ import (
 	log "github.com/cihub/seelog"
 	"github.com/immesys/bw2/internal/core"
 	"github.com/immesys/bw2/internal/crypto"
-	"github.com/immesys/bw2/internal/rocks"
 	"github.com/immesys/bw2/internal/store"
 	"github.com/immesys/bw2/objects"
 )
@@ -102,7 +101,7 @@ func OpenBWContext(config *core.BWConfig) *BW {
 	rv.MVKs[len(config.Affinity.MVK)] = rv.Entity.GetVK()
 	rv.DRVKcache[config.Router.VK] = rVK
 
-	rocks.Initialize(config.Router.DB)
+	store.Initialize(config.Router.DB)
 	return rv
 }
 

@@ -18,7 +18,7 @@
 package rocks
 
 // #cgo CXXFLAGS: -I./include/ -std=gnu++11
-// #cgo LDFLAGS: -L/home/michael/go/src/github.com/immesys/bw2/lib -lrocksdb -lz -lbz2
+// #cgo LDFLAGS: -L/home/immesys/w/go/src/github.com/immesys/bw2/lib -lrocksdb -lz -lbz2
 // #include "iface.h"
 import "C"
 import (
@@ -30,7 +30,7 @@ import (
 
 var doneInit bool
 
-func Initialize(dbname string) {
+func RawInitialize(dbname string) {
 	if doneInit {
 		return
 	}
@@ -152,6 +152,9 @@ func (i *Iterator) Next() {
 	}
 	i.curk = key
 	i.valid = true
+}
+func (i *Iterator) Release() {
+	//Done by finaliser
 }
 func (i *Iterator) OK() bool {
 	return i.valid

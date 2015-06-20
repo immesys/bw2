@@ -248,12 +248,12 @@ func actionRouter(c *cli.Context) {
 	}
 	bw := api.OpenBWContext(config)
 
-	if config.Native.ListenOn != "" {
+	if bw.Config.Native.ListenOn != "" {
 		go api.Start(bw)
 	} else {
 		fmt.Println("not starting native server: no listen address")
 	}
-	if config.OOB.ListenOn != "" {
+	if bw.Config.OOB.ListenOn != "" {
 		oob := new(oob.Adapter)
 		go oob.Start(bw)
 	} else {

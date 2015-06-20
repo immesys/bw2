@@ -441,7 +441,7 @@ func (m *Message) Verify() *StatusMessage {
 		//Next check the chain is connected end to end, check the TTL and construct
 		//the merged topic
 		azCode, azMVK, azURI, _, _, _, azOVK := AnalyzeAccessDOTChain(int(m.Type), m.TopicSuffix, pac)
-		fmt.Println("AZDC says OVK is ", crypto.FmtKey(azOVK))
+		//fmt.Println("AZDC says OVK is ", crypto.FmtKey(azOVK))
 		m.status.Code = azCode
 		if azCode != BWStatusOkay {
 			goto endperm
@@ -532,7 +532,7 @@ endperm:
 		return &m.status
 	}
 
-	log.Infof("V: OK")
+	//log.Infof("V: OK")
 	m.status.Code = BWStatusOkay
 	return &m.status
 }

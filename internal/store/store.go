@@ -30,6 +30,7 @@ import (
 	log "github.com/cihub/seelog"
 	"github.com/immesys/bw2/internal/db"
 	dbi "github.com/immesys/bw2/internal/level"
+	//dbi "github.com/immesys/bw2/internal/rocks"
 	"github.com/immesys/bw2/objects"
 )
 
@@ -64,8 +65,11 @@ func PutDOT(v *objects.DOT) {
 //RetreiveDOT gets a DOT from the DB
 func GetDOT(hash []byte) (*objects.DOT, bool) {
 	value, err := dbi.GetObject(db.CFDot, hash)
-	if err == db.ErrObjNotFound {
+	if err == dbi.ErrObjNotFound {
 		return nil, false
+	}
+	if err != nil {
+		panic(err)
 	}
 	rdot, err := objects.NewDOT(int(value[0]), value[1:])
 	if err != nil {
@@ -91,7 +95,7 @@ func PutDChain(v *objects.DChain) {
 
 func GetDChain(hash []byte) (*objects.DChain, bool) {
 	value, err := dbi.GetObject(db.CFDChain, hash)
-	if err == db.ErrObjNotFound {
+	if err == dbi.ErrObjNotFound {
 		return nil, false
 	}
 	rdchain, err := objects.NewDChain(int(value[0]), value[1:])
@@ -126,7 +130,7 @@ func PutEntity(v *objects.Entity) {
 
 func GetEntity(vk []byte) (*objects.Entity, bool) {
 	value, err := dbi.GetObject(db.CFEntity, vk)
-	if err == db.ErrObjNotFound {
+	if err == dbi.ErrObjNotFound {
 		return nil, false
 	}
 	rentity, err := objects.NewEntity(objects.ROEntity, value)

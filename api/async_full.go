@@ -132,14 +132,12 @@ func (c *BosswaveClient) Publish(params *PublishParams,
 	c.finishMessage(m)
 
 	if params.DoVerify {
-		log.Info("verifying")
+		//log.Info("verifying")
 		s := m.Verify()
 		if s.Code != core.BWStatusOkay {
 			log.Info("verification failed")
 			cb(s.Code, "message verification failed")
 			return
-		} else {
-			log.Info("Message verified ok")
 		}
 	}
 	//Probably wanna do shit like determine if this is for remote delivery or local
@@ -530,7 +528,7 @@ func (c *BosswaveClient) doPAC(m *core.Message, elaboratePAC int) (int, string) 
 		}*/
 	//Elaborate PAC
 	if elaboratePAC > NoElaboration {
-		fmt.Println("doing elab")
+		//fmt.Println("doing elab")
 		if m.PrimaryAccessChain == nil {
 			return core.BWStatusUnresolvable, "No PAC with elaboration"
 		}

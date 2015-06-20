@@ -255,7 +255,6 @@ func (ro *DChain) IsElaborated() bool {
 
 //GetRONum returns the RONum for this object
 func (ro *DChain) GetRONum() int {
-	fmt.Printf("ronum %x : %v %v\n", ro.ronum, ro.elaborated, ro.isAccess)
 	if ro.elaborated {
 		if ro.isAccess {
 			return ROAccessDChain

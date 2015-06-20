@@ -15,14 +15,15 @@ import (
 )
 
 type ChainBuilder struct {
-	cl       *BosswaveClient
-	status   chan string
-	uri      string
-	perms    string
-	target   []byte
-	peers    [][]byte
-	urimvk   []byte
-	desperms *objects.AccessDOTPermissionSet
+	cl        *BosswaveClient
+	status    chan string
+	uri       string
+	perms     string
+	target    []byte
+	peers     [][]byte
+	urimvk    []byte
+	urisuffix string
+	desperms  *objects.AccessDOTPermissionSet
 }
 
 type scenario struct {
@@ -90,6 +91,7 @@ func NewChainBuilder(cl *BosswaveClient, uri, perms string, target []byte, statu
 	if err != nil {
 		panic("need to fix this")
 	}
+	rv.urisuffix = uriparts[1]
 	rv.urimvk = urimvk
 	return &rv
 }
@@ -106,6 +108,10 @@ func (b *ChainBuilder) dotUseful(d *objects.DOT) bool {
 	}
 	if !bytes.Equal(d.GetAccessURIMVK(), b.urimvk) {
 		fmt.Println("rejecting DOT: mvk")
+		return false
+	}
+	nu, ok := util.RestrictBy(b.urisuffix, d.GetAccessURISuffix())
+	if !ok || nu != b.urisuffix {
 		return false
 	}
 	return true

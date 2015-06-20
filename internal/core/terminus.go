@@ -93,12 +93,12 @@ type Terminus struct {
 //For a node in the tree, match the given subscription string and call visitor
 //for every subscription found
 func (s *snode) rmatchSubs(parts []string, visitor func(s subscription)) {
-	fmt.Println("rms ", parts)
+	//fmt.Println("rms ", parts)
 	if len(parts) == 0 {
-		fmt.Println("checking zero case")
+		//fmt.Println("checking zero case")
 		s.lock.RLock()
 		for _, sub := range s.subs {
-			fmt.Println("dispatching to sub")
+			//fmt.Println("dispatching to sub")
 			visitor(sub)
 		}
 		s.lock.RUnlock()
@@ -109,7 +109,7 @@ func (s *snode) rmatchSubs(parts []string, visitor func(s subscription)) {
 	v2, ok2 := s.children["+"]
 	v3, ok3 := s.children["*"]
 	s.lock.RUnlock()
-	fmt.Println("matches", ok1, ok2, ok3)
+	//fmt.Println("matches", ok1, ok2, ok3)
 	if ok1 {
 		v1.rmatchSubs(parts[1:], visitor)
 	}
@@ -209,7 +209,7 @@ func (tm *Terminus) CreateClient() *Client {
 func (cl *Client) Publish(m *Message) {
 	var clientlist []subscription
 	cl.tm.RMatchSubs(m.Topic, func(s subscription) {
-		fmt.Printf("sub match\n")
+		//fmt.Printf("sub match\n")
 		clientlist = append(clientlist, s)
 	})
 	//Note that the semantics of consumers here is a little odd, its subscriptions,

@@ -142,7 +142,7 @@ func handleSession(cl *BosswaveClient, conn net.Conn) {
 	rmutex := sync.Mutex{}
 
 	reply := func(f *nativeFrame) {
-		log.Infof("Sending reply of length %v to seqno %v", len(f.body), f.seqno)
+		//log.Infof("Sending reply of length %v to seqno %v", len(f.body), f.seqno)
 		tmphdr := make([]byte, 17)
 		binary.LittleEndian.PutUint64(tmphdr, uint64(len(f.body)))
 		binary.LittleEndian.PutUint64(tmphdr[8:], f.seqno)
@@ -193,13 +193,13 @@ func handleSession(cl *BosswaveClient, conn net.Conn) {
 			switch nf.cmd {
 			case nCmdMessage:
 				msg, err := core.LoadMessage(nf.body)
-				log.Info("Load message returned")
+				//log.Info("Load message returned")
 				if err != nil {
 					log.Info("Load message error: ", err.Error())
 					errframe(nf.seqno, core.BWStatusMalformedMessage, err.Error())
 					return
 				}
-				log.Info("Received message ok")
+				//log.Info("Received message ok")
 				for _, ro := range msg.RoutingObjects {
 					core.DistributeRO(cl.BW().Entity, ro, cl.cl)
 				}
@@ -214,7 +214,7 @@ func handleSession(cl *BosswaveClient, conn net.Conn) {
 					errframe(nf.seqno, s.Code, "see code("+strconv.Itoa(s.Code)+")")
 					return
 				}
-				log.Info("message verified ok")
+				//log.Info("message verified ok")
 
 				switch msg.Type {
 				case core.TypePublish:

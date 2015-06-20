@@ -21,8 +21,8 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"runtime"
 	"path"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -247,10 +247,21 @@ func actionRouter(c *cli.Context) {
 		config = core.LoadConfig(cfg)
 	}
 	bw := api.OpenBWContext(config)
-	oob := new(oob.Adapter)
-	fmt.Println("router starting")
-	go api.Start(bw)
-	oob.Start(bw)
+
+	if config.Native.ListenOn != "" {
+		go api.Start(bw)
+	} else {
+		fmt.Println("not starting native server: no listen address")
+	}
+	if config.OOB.ListenOn != "" {
+		oob := new(oob.Adapter)
+		go oob.Start(bw)
+	} else {
+		fmt.Println("not starting oob server: no listen address")
+	}
+	for {
+		time.Sleep(10 * time.Second)
+	}
 }
 
 func getTempBW(c *cli.Context) *api.BW {
@@ -634,9 +645,6 @@ func actionBuildChain(c *cli.Context) {
 		}
 		outwg.Done()
 	}()
-	cb := api.NewChainBuilder(cl, uri, perms, target, status)
-	//Add the CLI router as a peer so we use its database
-	cb.AddPeerMVK(bw.Entity.GetVK())
 	uriparts := strings.SplitN(uri, "/", 2)
 	if len(uriparts) != 2 {
 		doExit(bw, 1, "Malformed URI")
@@ -645,6 +653,9 @@ func actionBuildChain(c *cli.Context) {
 	if err != nil {
 		doExit(bw, 1, "Could not resolve URI MVK")
 	}
+	cb := api.NewChainBuilder(cl, crypto.FmtKey(urimvk)+"/"+uriparts[1], perms, target, status)
+	//Add the CLI router as a peer so we use its database
+	cb.AddPeerMVK(bw.Entity.GetVK())
 	cb.AddPeerMVK(urimvk)
 	fmt.Println("bw.Ent: ", crypto.FmtKey(bw.Entity.GetVK()))
 	for _, sp := range c.StringSlice("router") {

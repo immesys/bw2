@@ -102,9 +102,9 @@ func (a *Adapter) handleClient(conn net.Conn) {
 			abort = true
 			return
 		}
-		fmt.Println("Received frame: ", f.Cmd)
+		//fmt.Println("Received frame: ", f.Cmd)
 		dispatchFrame(bwcl, f, send)
-		fmt.Println("DF finished")
+		//fmt.Println("DF finished")
 	}
 }
 

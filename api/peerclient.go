@@ -23,7 +23,6 @@ import (
 	"crypto/x509"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -114,7 +113,7 @@ func (pc *PeerClient) rxloop() {
 			cmd:    cmd,
 			body:   body,
 		}
-		fmt.Printf("dispatching peer frame %x to %d\n", cmd, seqno)
+		//fmt.Printf("dispatching peer frame %x to %d\n", cmd, seqno)
 		pc.txmtx.Lock()
 		cb := pc.replyCB[seqno]
 		pc.txmtx.Unlock()
@@ -177,7 +176,7 @@ func (pc *PeerClient) Subscribe(m *core.Message,
 		seqno: pc.getSeqno(),
 	}
 	pc.transact(&nf, func(f *nativeFrame) {
-		log.Infof("got sub response cmd: %d", f.cmd)
+		//log.Infof("got sub response cmd: %d", f.cmd)
 		switch f.cmd {
 		case nCmdRStatus:
 			fallthrough
@@ -199,7 +198,7 @@ func (pc *PeerClient) Subscribe(m *core.Message,
 			}
 			return
 		case nCmdResult:
-			log.Infof("Got subscribe message response")
+			//log.Infof("Got subscribe message response")
 			nm, err := core.LoadMessage(f.body)
 			if err != nil {
 				log.Info("dropping incoming subscription result (malformed message)")

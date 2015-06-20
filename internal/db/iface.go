@@ -17,8 +17,6 @@
 
 package db
 
-import "errors"
-
 const (
 	CFDot    = 1
 	CFDChain = 2
@@ -26,9 +24,6 @@ const (
 	CFMsgI   = 4
 	CFEntity = 5
 )
-
-//ErrObjNotFound is returned from GetObject if the object cannot be found
-var ErrObjNotFound = errors.New("Object Not Found")
 
 type BWDB interface {
 	Initialize(dbname string)

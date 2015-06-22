@@ -21,7 +21,7 @@
 
 void bw_generate_keypair(unsigned char *private, unsigned char *public)
 {
-    RAND_bytes(private, 32);
+    ed25519_randombytes_unsafe(private, 32);
     ed25519_publickey(private, public);
 }
 

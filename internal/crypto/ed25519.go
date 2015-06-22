@@ -18,16 +18,75 @@
 package crypto
 
 // #cgo CFLAGS: -O3
-// #cgo LDFLAGS: -lssl -lcrypto -ldl -lz
+// #cgo linux LDFLAGS: -lssl -lcrypto
+// #cgo !linux CFLAGS: -DWINSUPPORT
 // #include "ed25519.h"
+// #include <string.h>
+// #include <stdint.h>
 import "C"
 
 import (
 	"crypto/rand"
+	"crypto/sha512"
 	"encoding/base64"
 	"errors"
+	"hash"
+	"sync"
 	"unsafe"
 )
+
+//These functions are used on windows by the C so we don't have to link to openSSL
+
+var hashCtxLock sync.Mutex
+var hashCtxMap map[uint32]hash.Hash
+var hashCtxIdx uint32
+
+func init() {
+	hashCtxMap = make(map[uint32]hash.Hash)
+}
+
+//export HashInit
+func HashInit(ctx *C.uint32_t) {
+	hashCtxLock.Lock()
+	idx := hashCtxIdx
+	hashCtxIdx++
+	hashCtxMap[idx] = sha512.New()
+	hashCtxLock.Unlock()
+	*ctx = C.uint32_t(idx)
+}
+
+//export HashUpdate
+func HashUpdate(ctx *C.uint32_t, in *C.uint8_t, inlen C.size_t) {
+	hashCtxLock.Lock()
+	h := hashCtxMap[uint32(*ctx)]
+	hashCtxLock.Unlock()
+	//Not that I care about windows performance, but this is an
+	//unecessary copy
+	h.Write(C.GoBytes(unsafe.Pointer(in), C.int(inlen)))
+}
+
+//export HashFinal
+func HashFinal(ctx *C.uint32_t, hash *C.uint8_t) {
+	hashCtxLock.Lock()
+	h := hashCtxMap[uint32(*ctx)]
+	delete(hashCtxMap, uint32(*ctx))
+	hashCtxLock.Unlock()
+	rv := h.Sum(nil)
+	C.memcpy(unsafe.Pointer(hash), unsafe.Pointer(&rv[0]), 64)
+}
+
+//export Hash
+func Hash(hash *C.uint8_t, in *C.uint8_t, inlen C.size_t) {
+	rv := sha512.Sum512(C.GoBytes(unsafe.Pointer(in), C.int(inlen)))
+	C.memcpy(unsafe.Pointer(hash), unsafe.Pointer(&rv[0]), 64)
+}
+
+//export RandomBytes
+func RandomBytes(dest *C.uint8_t, ln C.size_t) {
+	rv := make([]byte, ln)
+	rand.Read(rv)
+	C.memcpy(unsafe.Pointer(dest), unsafe.Pointer(&rv[0]), ln)
+}
 
 //SignVector will generate a signature on the arguments, in order
 //and return it

@@ -25,6 +25,7 @@ const (
 	CFEntity = 5
 )
 
+/*
 type BWDB interface {
 	Initialize(dbname string)
 	PutObject(cf int, key []byte, val []byte)
@@ -33,6 +34,7 @@ type BWDB interface {
 	Exists(cf int, key []byte) bool
 	CreateIterator(cf int, prefix []byte) BWDBIterator
 }
+*/
 
 type BWDBIterator interface {
 	Next()

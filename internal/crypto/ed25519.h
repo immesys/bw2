@@ -3,6 +3,11 @@
 
 #include <stdlib.h>
 
+#if defined(WINSUPPORT)
+#define ED25519_CUSTOMHASH 1
+#define ED25519_CUSTOMRANDOM 1
+#endif
+
 #if defined(__cplusplus)
 extern "C" {
 #endif

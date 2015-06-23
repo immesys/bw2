@@ -24,6 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -241,6 +242,73 @@ func (c *BosswaveClient) Subscribe(params *SubscribeParams,
 	}
 }
 
+type BuildChainParams struct {
+	To          []byte
+	URI         string
+	Status      *chan string
+	Permissions string
+	Peers       []string
+}
+
+func (c *BosswaveClient) BuildChain(p *BuildChainParams) (chan *objects.DChain, error) {
+	log.Info("BC TO: ", crypto.FmtKey(p.To))
+	log.Info("Permissions: ", p.Permissions)
+	log.Info("URI: ", p.URI)
+	var status chan string
+	if p.Status == nil {
+		log.Info("default status")
+		status = make(chan string, 10)
+		go func() {
+			for m := range status {
+				log.Info("chain build status: ", m)
+			}
+		}()
+	} else {
+		status = *p.Status
+	}
+	parts := strings.SplitN(p.URI, "/", 2)
+	if len(parts) != 2 {
+		return nil, errors.New("bad URI")
+	}
+	rmvk, err := c.BW().ResolveName(parts[0])
+	if err != nil {
+		return nil, err
+	}
+	log.Info("making CB")
+	cb := NewChainBuilder(c, crypto.FmtKey(rmvk)+"/"+parts[1], p.Permissions, p.To, status)
+	if cb == nil {
+		return nil, errors.New("Could not construct CB: bad params")
+	}
+	cb.AddPeerMVK(c.BW().Entity.GetVK())
+	cb.AddPeerMVK(rmvk)
+	for _, r := range p.Peers {
+		mvk, e := c.BW().ResolveName(r)
+		if e != nil {
+			return nil, errors.New("could not resolve peer '" + r + "'")
+		}
+		cb.AddPeerMVK(mvk)
+	}
+	log.Info("making RV chan")
+	rv := make(chan *objects.DChain)
+	go func() {
+		//We are going to change the chain builder to emit results on a channel later
+		//so lets emit each result on a different message preemptively
+		chains, e := cb.Build()
+		fmt.Println("chain build in async complete")
+		if e != nil {
+			log.Criticalf("CB fail: %v", e.Error())
+			close(rv)
+			return
+		}
+		for _, ch := range chains {
+			core.DistributeRO(c.BW().Entity, ch, c.CL())
+			rv <- ch
+		}
+		close(rv)
+	}()
+	return rv, nil
+}
+
 type SetEntityParams struct {
 	Keyfile []byte
 }
@@ -432,6 +500,7 @@ type CreateDOTParams struct {
 func (c *BosswaveClient) CreateDOT(p *CreateDOTParams) *objects.DOT {
 	if len(p.To) != 32 {
 		log.Info("To VK bad")
+		fmt.Println("a")
 		return nil
 	}
 	d := objects.CreateDOT(!p.IsPermission, c.us.GetVK(), p.To)
@@ -449,6 +518,7 @@ func (c *BosswaveClient) CreateDOT(p *CreateDOTParams) *objects.DOT {
 	for _, r := range p.Revokers {
 		if len(r) != 32 {
 			log.Info("Delegated revoker bad")
+			fmt.Println("b")
 			return nil
 		}
 		d.AddRevoker(r)
@@ -461,6 +531,7 @@ func (c *BosswaveClient) CreateDOT(p *CreateDOTParams) *objects.DOT {
 		d.SetAccessURI(p.MVK, p.URISuffix)
 		if !d.SetPermString(p.AccessPermissions) {
 			log.Info("Failed to set access permissions")
+			fmt.Println("c")
 			return nil
 		}
 	}

@@ -86,6 +86,10 @@ func NewChainBuilder(cl *BosswaveClient, uri, perms string, target []byte, statu
 		peers:    make([][]byte, 0),
 		status:   status,
 		desperms: objects.GetADPSFromPermString(perms)}
+	if rv.desperms == nil {
+		status <- "Bad permissions"
+		return nil
+	}
 	uriparts := strings.SplitN(uri, "/", 2)
 	urimvk, err := crypto.UnFmtKey(uriparts[0])
 	if err != nil {

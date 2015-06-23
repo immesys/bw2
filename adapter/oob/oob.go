@@ -144,7 +144,40 @@ func loadCommonURI(f *objects.Frame, bw *api.BW) ([]byte, string, bool) {
 	}
 	return rmvk, suffix, true
 }
-func loadCommonPAC(f *objects.Frame) (*objects.DChain, bool, string) {
+
+type BuildChainParams struct {
+	To          []byte
+	URI         string
+	Status      chan string
+	Permissions string
+	Peers       []string
+}
+
+func loadCommonPAC(f *objects.Frame, c *api.BosswaveClient, autochain bool, perms string) (*objects.DChain, bool, string) {
+	if autochain {
+		log.Info("autochaining")
+		mvk, suffix, _ := loadCommonURI(f, c.BW())
+		ch, err := c.BuildChain(&api.BuildChainParams{
+			To:          c.GetUs().GetVK(),
+			URI:         crypto.FmtKey(mvk) + "/" + suffix,
+			Status:      nil,
+			Permissions: perms,
+		})
+		if err != nil {
+			return nil, false, err.Error()
+		}
+		log.Info("blocking on chain")
+		realpac := <-ch
+		log.Info("built")
+		if realpac == nil {
+			return nil, false, "could not build a chain"
+		}
+		go func() {
+			for _ = range ch {
+			}
+		}()
+		return realpac, true, ""
+	}
 	pac, pacok := f.GetFirstHeader("primary_access_chain")
 	if !pacok {
 		return nil, true, "" //No error, but no object
@@ -257,7 +290,12 @@ func dispatchFrame(bwcl *api.BosswaveClient, f *objects.Frame, send func(f *obje
 			err("malformed URI components")
 			return
 		}
-		pac, ok, msg := loadCommonPAC(f)
+		autochain, _, emsg := f.ParseFirstHeaderAsBool("autochain", false)
+		if emsg != nil {
+			err(*emsg)
+			return
+		}
+		pac, ok, msg := loadCommonPAC(f, bwcl, autochain, "P")
 		if !ok {
 			err(msg)
 			return
@@ -298,7 +336,12 @@ func dispatchFrame(bwcl *api.BosswaveClient, f *objects.Frame, send func(f *obje
 			err("malformed URI components")
 			return
 		}
-		pac, ok, msg := loadCommonPAC(f)
+		autochain, _, emsg := f.ParseFirstHeaderAsBool("autochain", false)
+		if emsg != nil {
+			err(*emsg)
+			return
+		}
+		pac, ok, msg := loadCommonPAC(f, bwcl, autochain, "L")
 		if !ok {
 			err(msg)
 			return
@@ -339,12 +382,17 @@ func dispatchFrame(bwcl *api.BosswaveClient, f *objects.Frame, send func(f *obje
 			err(*emsg)
 			return
 		}
+		autochain, _, emsg := f.ParseFirstHeaderAsBool("autochain", false)
+		if emsg != nil {
+			err(*emsg)
+			return
+		}
 		mvk, suffix, ok := loadCommonURI(f, bwcl.BW())
 		if !ok {
 			err("malformed URI components")
 			return
 		}
-		pac, ok, msg := loadCommonPAC(f)
+		pac, ok, msg := loadCommonPAC(f, bwcl, autochain, "C")
 		if !ok {
 			err(msg)
 			return
@@ -394,12 +442,17 @@ func dispatchFrame(bwcl *api.BosswaveClient, f *objects.Frame, send func(f *obje
 			err(*emsg)
 			return
 		}
+		autochain, _, emsg := f.ParseFirstHeaderAsBool("autochain", false)
+		if emsg != nil {
+			err(*emsg)
+			return
+		}
 		mvk, suffix, ok := loadCommonURI(f, bwcl.BW())
 		if !ok {
 			err("malformed URI components")
 			return
 		}
-		pac, ok, msg := loadCommonPAC(f)
+		pac, ok, msg := loadCommonPAC(f, bwcl, autochain, "C")
 		if !ok {
 			err(msg)
 			return

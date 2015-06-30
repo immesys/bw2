@@ -107,15 +107,16 @@ func (b *ChainBuilder) AddPeerMVK(mvk []byte) {
 func (b *ChainBuilder) dotUseful(d *objects.DOT) bool {
 	adps := d.GetPermissionSet()
 	if !b.desperms.IsSubsetOf(adps) {
-		fmt.Println("rejecting DOT: perms")
+		fmt.Println("rejecting DOT(", crypto.FmtHash(d.GetHash()), "): perms")
 		return false
 	}
 	if !bytes.Equal(d.GetAccessURIMVK(), b.urimvk) {
-		fmt.Println("rejecting DOT: mvk")
+		fmt.Println("rejecting DOT: ", crypto.FmtHash(d.GetHash()), "mvk")
 		return false
 	}
 	nu, ok := util.RestrictBy(b.urisuffix, d.GetAccessURISuffix())
 	if !ok || nu != b.urisuffix {
+		fmt.Println("rejecting DOT: ", crypto.FmtHash(d.GetHash()), "3")
 		return false
 	}
 	return true
@@ -135,7 +136,7 @@ func (b *ChainBuilder) getOptions(from []byte) []*objects.DOT {
 			//The peer might be an MVK, but its the DR itself that we need to query
 			go b.cl.Query(&QueryParams{
 				MVK:       drVK,
-				URISuffix: "$/dot/fromto/" + crypto.FmtKey(from)[:43] + "/+",
+				URISuffix: "$/dot/fromto/" + crypto.FmtKey(from)[:43] + "/+/+",
 			},
 				func(status int, msg string) {
 					if status != core.BWStatusOkay {
@@ -155,6 +156,7 @@ func (b *ChainBuilder) getOptions(from []byte) []*objects.DOT {
 						if ok {
 							core.DistributeRO(b.cl.BW().Entity, dot, b.cl.CL())
 							if b.dotUseful(dot) {
+								b.status <- "useful dot: " + crypto.FmtHash(dot.GetHash())
 								rc <- dot
 							}
 						}

@@ -63,7 +63,7 @@ func DistributeRO(routerEntity *objects.Entity,
 			cl.Persist(m)
 			m = makeROMessage(routerEntity, dot,
 				"$/dot/fromto/"+crypto.FmtKey(dot.GetGiverVK())[:43]+"/"+
-					crypto.FmtKey(dot.GetReceiverVK())[:43])
+					crypto.FmtKey(dot.GetReceiverVK())[:43]+"/"+crypto.FmtHash(dot.GetHash())[:43])
 			cl.Persist(m)
 		}
 	case objects.ROEntity:

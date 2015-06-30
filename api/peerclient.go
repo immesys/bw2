@@ -34,10 +34,10 @@ import (
 )
 
 type PeerClient struct {
+	seqno    uint64
 	conn     net.Conn
 	txmtx    sync.Mutex
 	replyCB  map[uint64]func(*nativeFrame)
-	seqno    uint64
 	remoteVK []byte
 	target   string
 }

@@ -120,12 +120,12 @@ func (cl *BosswaveClient) BW() *BW {
 // BosswaveClient represents an individual client. It contains the
 // handle to the terminus client that contains the message queue
 type BosswaveClient struct {
-	bw *BW
-	cl *core.Client
-
 	//MessageFactory stuff
 	mid uint64
 	us  *objects.Entity
+
+	bw *BW
+	cl *core.Client
 
 	peerlock sync.Mutex
 	peers    map[string]*PeerClient

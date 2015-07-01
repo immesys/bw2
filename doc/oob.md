@@ -78,6 +78,7 @@ Fields:
 * kv(expiry) - the date in RFC3339 format for the message to expire
 * kv(expirydelta) - the duration after now for the message to expire. Allowable suffixes include ms,s,m,h
 * kv(elaborate_pac) - the elaboration level for the PAC. Allowable values are "partial" or "full". Omitting results in no elaboration.
+* kv(autochain) - automatically build the PAC on the router
 * ro(*) - will be included
 * po(*) - will be included
 
@@ -92,6 +93,7 @@ Fields:
 * kv(expiry) - the date in RFC3339 format for the subscribe request to expire
 * kv(expirydelta) - the duration after now for the subscribe request to expire. Allowable suffixes include ms,s,m,h
 * kv(elaborate_pac) - the elaboration level for the PAC. Allowable values are "partial" or "full". Omitting results in no elaboration.
+* kv(autochain) - automatically build the PAC on the router
 * kv(unpack) - boolean: should the matching messages be unpacked
 * ro(*) - will be included
 
@@ -109,6 +111,7 @@ Fields:
 * REQUIRED kv(uri) - the URI to list. Can be given split as kv(mvk) and kv(uri_suffix)
 * kv(primary_access_chain) - the hash of the primary access DOT chain to use
 * kv(expiry) - the date in RFC3339 format for the list request to expire
+* kv(autochain) - automatically build the PAC on the router
 * kv(expirydelta) - the duration after now for the list request to expire. Allowable suffixes include ms,s,m,h
 * kv(elaborate_pac) - the elaboration level for the PAC. Allowable values are "partial" or "full". Omitting results in no elaboration.
 * ro(*) - will be included
@@ -126,6 +129,7 @@ Fields:
 * kv(primary_access_chain) - the hash of the primary access DOT chain to use
 * kv(expiry) - the date in RFC3339 format for the query request to expire
 * kv(expirydelta) - the duration after now for the query request to expire. Allowable suffixes include ms,s,m,h
+* kv(autochain) - automatically build the PAC on the router
 * kv(elaborate_pac) - the elaboration level for the PAC. Allowable values are "partial" or "full". Omitting results in no elaboration.
 * kv(unpack) - boolean: should the matching messages be unpacked
 * ro(*) - will be included

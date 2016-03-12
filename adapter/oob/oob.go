@@ -468,9 +468,7 @@ func dispatchFrame(bwcl *api.BosswaveClient, f *objects.Frame, send func(f *obje
 			err(msg)
 			return
 		}
-		fmt.Println("SPAC:", pac.GetRONum())
 		ros, _ := loadCommonXOs(f)
-		fmt.Println("finished")
 		p := &api.SubscribeParams{
 			MVK:                mvk,
 			URISuffix:          suffix,

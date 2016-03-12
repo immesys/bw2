@@ -195,9 +195,7 @@ func (c *BosswaveClient) Subscribe(params *SubscribeParams,
 		actionCB(code, false, core.UniqueMessageID{}, msg)
 		return
 	}
-	fmt.Println("a")
 	m.PrimaryAccessChain = params.PrimaryAccessChain
-	fmt.Println("PACinS: ", m.PrimaryAccessChain.GetRONum())
 	m.RoutingObjects = params.RoutingObjects
 	if s, msg := c.doPAC(m, params.ElaboratePAC); s != core.BWStatusOkay {
 		actionCB(s, false, core.UniqueMessageID{}, msg)
@@ -209,13 +207,9 @@ func (c *BosswaveClient) Subscribe(params *SubscribeParams,
 	} else if params.Expiry != nil {
 		m.RoutingObjects = append(m.RoutingObjects, objects.CreateNewExpiry(*params.Expiry))
 	}
-	fmt.Println("b")
 	//Check if we need to add an origin VK header
 	c.checkAddOriginVK(m)
-	fmt.Println("b2")
-	fmt.Println("PACafterb2: ", m.PrimaryAccessChain.GetRONum())
 	c.finishMessage(m)
-	fmt.Println("c")
 	if params.DoVerify {
 		s := m.Verify()
 		if s.Code != core.BWStatusOkay {

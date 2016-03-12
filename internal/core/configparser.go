@@ -23,7 +23,7 @@ import (
 
 	"code.google.com/p/gcfg"
 	log "github.com/cihub/seelog"
-	"github.com/immesys/bw2/internal/crypto"
+	"github.com/immesys/bw2/crypto"
 )
 
 // BWConfig is the configuration for a router

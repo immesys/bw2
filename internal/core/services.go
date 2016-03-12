@@ -20,7 +20,7 @@ package core
 import (
 	"encoding/base64"
 
-	"github.com/immesys/bw2/internal/crypto"
+	"github.com/immesys/bw2/crypto"
 	"github.com/immesys/bw2/internal/store"
 	"github.com/immesys/bw2/objects"
 )

@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/immesys/bw2/api"
-	"github.com/immesys/bw2/internal/crypto"
+	"github.com/immesys/bw2/crypto"
 	"github.com/immesys/bw2/objects"
 	"github.com/mgutz/ansi"
 )

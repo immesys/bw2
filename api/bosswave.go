@@ -31,14 +31,14 @@ import (
 	"time"
 
 	log "github.com/cihub/seelog"
+	"github.com/immesys/bw2/crypto"
 	"github.com/immesys/bw2/internal/core"
-	"github.com/immesys/bw2/internal/crypto"
 	"github.com/immesys/bw2/internal/store"
 	"github.com/immesys/bw2/objects"
 )
 
 //The version of BW2 this is
-var BW2Version = "2.0.2 - 'Chimera'"
+var BW2Version = "2.0.3 - 'Dragonborn'"
 
 // This is the main function interface for BW2. All Out Of Band providers will
 // use this interface, and it is the main interface for creating GO based BW2

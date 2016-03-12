@@ -23,7 +23,7 @@ import (
 
 	"github.com/codegangsta/cli"
 	"github.com/immesys/bw2/api"
-	"github.com/immesys/bw2/internal/crypto"
+	"github.com/immesys/bw2/crypto"
 )
 
 func makeConf(c *cli.Context) {

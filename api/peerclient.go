@@ -31,6 +31,7 @@ import (
 	log "github.com/cihub/seelog"
 	"github.com/immesys/bw2/crypto"
 	"github.com/immesys/bw2/internal/core"
+	"github.com/immesys/bw2/util"
 )
 
 type PeerClient struct {
@@ -157,7 +158,7 @@ func (pc *PeerClient) PublishPersist(m *core.Message, actionCB func(code int, ms
 	pc.transact(&nf, func(f *nativeFrame) {
 		defer pc.removeCB(nf.seqno)
 		if len(f.body) < 2 {
-			actionCB(core.BWStatusPeerError, "short response frame")
+			actionCB(util.BWStatusPeerError, "short response frame")
 			return
 		}
 		code := int(binary.LittleEndian.Uint16(f.body))
@@ -183,18 +184,18 @@ func (pc *PeerClient) Subscribe(m *core.Message,
 		case nCmdRSub:
 			log.Infof("Got subscribe status response")
 			if len(f.body) < 2 {
-				actionCB(core.BWStatusPeerError, false, core.UniqueMessageID{}, "short response frame")
+				actionCB(util.BWStatusPeerError, false, core.UniqueMessageID{}, "short response frame")
 				return
 			}
 			code := int(binary.LittleEndian.Uint16(f.body))
-			if code != core.BWStatusOkay {
+			if code != util.BWStatusOkay {
 				actionCB(code, false, core.UniqueMessageID{}, string(f.body[2:]))
 			} else {
 				mid := binary.LittleEndian.Uint64(f.body[2:])
 				sig := binary.LittleEndian.Uint64(f.body[10:])
 				umid := core.UniqueMessageID{Mid: mid, Sig: sig}
 				isnew := m.UMid == umid
-				actionCB(core.BWStatusOkay, isnew, umid, "")
+				actionCB(util.BWStatusOkay, isnew, umid, "")
 			}
 			return
 		case nCmdResult:
@@ -205,7 +206,7 @@ func (pc *PeerClient) Subscribe(m *core.Message,
 				return
 			}
 			s := nm.Verify()
-			if s.Code != core.BWStatusOkay {
+			if s.Code != util.BWStatusOkay {
 				log.Infof("dropping incoming subscription result on uri=%s (failed local validation)", nm.Topic)
 				return
 			}
@@ -230,7 +231,7 @@ func (pc *PeerClient) List(m *core.Message,
 		switch f.cmd {
 		case nCmdRStatus:
 			if len(f.body) < 2 {
-				actionCB(core.BWStatusPeerError, "short response frame")
+				actionCB(util.BWStatusPeerError, "short response frame")
 				return
 			}
 			code := int(binary.LittleEndian.Uint16(f.body))
@@ -259,7 +260,7 @@ func (pc *PeerClient) Query(m *core.Message,
 		switch f.cmd {
 		case nCmdRStatus:
 			if len(f.body) < 2 {
-				actionCB(core.BWStatusPeerError, "short response frame")
+				actionCB(util.BWStatusPeerError, "short response frame")
 				return
 			}
 			code := int(binary.LittleEndian.Uint16(f.body))
@@ -271,7 +272,7 @@ func (pc *PeerClient) Query(m *core.Message,
 				return
 			}
 			s := nm.Verify()
-			if s.Code != core.BWStatusOkay {
+			if s.Code != util.BWStatusOkay {
 				log.Infof("dropping incoming query result on uri=%s (failed local validation)", m.Topic)
 				return
 			}

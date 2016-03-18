@@ -31,7 +31,7 @@ import (
 
 	log "github.com/cihub/seelog"
 	"github.com/immesys/bw2/crypto"
-	"github.com/immesys/bw2/internal/util"
+	"github.com/immesys/bw2/util"
 )
 
 //RoutingObject is the interface that is common among all objects that
@@ -201,6 +201,158 @@ func (ro *DChain) NumHashes() int {
 		return len(ro.dots)
 	}
 	panic("DChain not elaborated")
+}
+
+// CheckAccessGrants is supposed to verify absolutely everything it can.
+// As a quirk, it is written to use external state so it can be used
+// for BC and statedb work. It fails if absoulutely ANYTHING is out of
+// order.
+// it checks
+//  - all DOT sigs,
+//  - Revocations on srcvk, dstvk, dothash
+//  - all dots are access
+//  - dots are tail-to-tail
+//  - dot expiry against curTimeNs
+//  - TTL
+//  - all dots grant on MVK
+//  - final chain gives superset of ADPS and Suffix
+//  - all entity sigs
+//  - entity expiry against curTimeNs
+//  - given URI suffix is well formed
+//  - the origin of the dchain is the mvk - this might be contentious
+// it is my hope that if this method gives the okay, there is nothing
+// (save for unknown revocations) that could be wrong
+// if curTimeNs is nil, the current system time will be used
+// if any of the state functions cannot find, it should return nil
+// if status is BWStatusOkay, everything is A-OK,
+// if it is BWStatusOkayAsResolved it MIGHT be ok
+// it is up to the caller to determine if they need to know that the entities
+// are unexpired. Otherwise any entity that fails to resolve is not an error
+// but may have been expired and we don't know.
+// DOTs must be resolvable so we know they are not expired.
+func (ro *DChain) CheckAccessGrants(curTime *time.Time,
+	ADPS *AccessDOTPermissionSet, mvk []byte, suffix string,
+	getDOT func([]byte) *DOT, getEntity func([]byte) *Entity,
+	getRevocations func([]byte) []*Revocation) int {
+
+	if curTime == nil {
+		t := time.Now()
+		curTime = &t
+	}
+	// First augment the chain, checking all DOTs are individually ok
+	for i := 0; i < ro.NumHashes(); i++ {
+		dt := getDOT(ro.GetDotHash(i))
+		if dt == nil {
+			return util.BWStatusUnresolvable
+		}
+		// Check DOT signature
+		if !dt.SigValid() {
+			return util.BWStatusInvalidDOT
+		}
+		// Check is access
+		if !dt.IsAccess() {
+			return util.BWStatusNotAccessRO
+		}
+		// Check is unexpired
+		if dt.GetExpiry() != nil && dt.GetExpiry().Before(*curTime) {
+			return util.BWStatusExpiredDOT
+		}
+		// Check grants on MVK
+		if !bytes.Equal(dt.GetAccessURIMVK(), mvk) {
+			return util.BWStatusMVKMismatch
+		}
+		// Check for DOT revocation
+		for _, r := range getRevocations(dt.GetHash()) {
+			if r.IsValidFor(dt) {
+				return util.BWStatusRevokedDOT
+			}
+		}
+	}
+	ovk := ro.GetDOT(0).GetGiverVK()
+
+	// Check OVK is MVK
+	if !bytes.Equal(ovk, mvk) {
+		return util.BWStatusChainOriginNotMVK
+	}
+	tail := ro.GetDOT(0).GetReceiverVK()
+
+	entitiesToCheck := [][]byte{ro.GetDOT(0).GetGiverVK(), ro.GetDOT(0).GetReceiverVK()}
+
+	// Then check all DOTs are end-to-end and rest of entities are ok
+	for i := 1; i < ro.NumHashes(); i++ {
+		if !bytes.Equal(tail, ro.GetDOT(i).GetGiverVK()) {
+			return util.BWStatusBadLink
+		}
+		entitiesToCheck = append(entitiesToCheck, ro.GetDOT(i).GetReceiverVK())
+	}
+
+	// Check entities
+	unresolvedEntities := false
+	for _, vk := range entitiesToCheck {
+		e := getEntity(vk)
+		if e == nil {
+			unresolvedEntities = true
+			continue
+		}
+		if !e.SigValid() {
+			return util.BWStatusInvalidEntity
+		}
+		if e.GetExpiry() != nil {
+			if e.GetExpiry().Before(*curTime) {
+				return util.BWStatusExpiredEntity
+			}
+		}
+		for _, r := range getRevocations(e.GetVK()) {
+			if r.IsValidFor(e) {
+				return util.BWStatusRevokedEntity
+			}
+		}
+	}
+	// Check TTL
+	ttl := 255
+	for i := 0; i < ro.NumHashes(); i++ {
+		if ttl == 0 {
+			return util.BWStatusTTLExpired
+		}
+		ttl--
+		if ro.GetDOT(i).GetTTL() < ttl {
+			ttl = ro.GetDOT(i).GetTTL()
+		}
+	}
+
+	// Calc ADPS
+	for i := 0; i < ro.NumHashes(); i++ {
+		ADPS.ReduceBy(ro.GetDOT(i).GetPermissionSet())
+	}
+
+	// Chcek suffix well formed
+	// Note that the stars/plusses etc in the URI are NOT
+	// relevant to the ADPS because this is about granting.
+	// granting foo/* has nothing to do with P*C*
+	valid, _, _, _, _ := util.AnalyzeSuffix(suffix)
+	if !valid {
+		return util.BWStatusBadURI
+	}
+	uri := suffix
+
+	// Calc URI
+	for i := 0; i < ro.NumHashes(); i++ {
+		nuri, ok := util.RestrictBy(uri, ro.GetDOT(i).GetAccessURISuffix())
+		if !ok {
+			return util.BWStatusOverconstrainedURI
+		}
+		uri = nuri
+	}
+
+	// The suffix will not have gotten MORE permissive, so any change is bad
+	if suffix != uri {
+		return util.BWStatusBadPermissions
+	}
+
+	if unresolvedEntities {
+		return util.BWStatusOkayAsResolved
+	}
+	return util.BWStatusOkay
 }
 
 //AugmentBy fills the given dot into the right position in the chain
@@ -415,6 +567,48 @@ type AccessDOTPermissionSet struct {
 	CanList        bool
 }
 
+// This is not the encoding used on the wire, but it is used on the BC
+func (ps *AccessDOTPermissionSet) Encode() []byte {
+	rv := make([]byte, 8)
+	if ps.CanPublish {
+		rv[0] = 1
+	}
+	if ps.CanConsume {
+		rv[1] = 1
+	}
+	if ps.CanConsumePlus {
+		rv[2] = 1
+	}
+	if ps.CanConsumeStar {
+		rv[3] = 1
+	}
+	if ps.CanTap {
+		rv[4] = 1
+	}
+	if ps.CanTapPlus {
+		rv[5] = 1
+	}
+	if ps.CanTapStar {
+		rv[6] = 1
+	}
+	if ps.CanList {
+		rv[7] = 1
+	}
+	return rv
+}
+func DecodeADPS(raw []byte) *AccessDOTPermissionSet {
+	rv := AccessDOTPermissionSet{
+		CanPublish:     raw[0] == 1,
+		CanConsume:     raw[1] == 1,
+		CanConsumePlus: raw[2] == 1,
+		CanConsumeStar: raw[3] == 1,
+		CanTap:         raw[4] == 1,
+		CanTapPlus:     raw[5] == 1,
+		CanTapStar:     raw[6] == 1,
+		CanList:        raw[7] == 1,
+	}
+	return &rv
+}
 func (ps *AccessDOTPermissionSet) ReduceBy(rhs *AccessDOTPermissionSet) {
 	ps.CanPublish = ps.CanPublish && rhs.CanPublish
 	ps.CanConsume = ps.CanConsume && rhs.CanConsume
@@ -1579,11 +1773,18 @@ type Revocation struct {
 	vk        []byte
 	target    []byte
 	signature []byte
+	hash      []byte
 	sigok     sigState
 	created   *time.Time
 	comment   string
 }
 
+func (ro *Revocation) GetHash() []byte {
+	if len(ro.hash) != 32 {
+		panic("Bad Revocation Hash")
+	}
+	return ro.hash
+}
 func (ro *Revocation) GetVK() []byte {
 	return ro.vk
 }
@@ -1594,6 +1795,51 @@ func (ro *Revocation) GetRONum() int {
 	return RORevocation
 }
 
+//This does not recurse. E.g. for a dot this would return
+//false even if valid for src/dstvk...
+//this is because you have to check the entities seperately anyway
+//to fully factor in the entities DRVKs
+func (ro *Revocation) IsValidFor(obj RoutingObject) bool {
+	if !ro.SigValid() {
+		return false
+	}
+	switch obj := obj.(type) {
+	case *DOT:
+		if !bytes.Equal(ro.GetTarget(), obj.GetHash()) {
+			return false
+		}
+		//It is valid, as long as the src is valid
+		if bytes.Equal(ro.GetVK(), obj.GetGiverVK()) {
+			return true
+		}
+		//It might also be valid if it is a DRVKR
+		for _, drvk := range obj.GetRevokers() {
+			if bytes.Equal(ro.GetVK(), drvk) {
+				return true
+			}
+		}
+		//Someone trying to revoke something with no AUTHORITAH
+		return false
+	case *Entity:
+		if !bytes.Equal(ro.GetTarget(), obj.GetVK()) {
+			return false
+		}
+		//It is valid, as long as the src is valid
+		if bytes.Equal(ro.GetVK(), obj.GetVK()) {
+			return true
+		}
+		//It might also be valid if it is a DRVKR
+		for _, drvk := range obj.GetRevokers() {
+			if bytes.Equal(ro.GetVK(), drvk) {
+				return true
+			}
+		}
+		//Someone trying to revoke something with no AUTHORITAH
+		return false
+	default:
+		return false
+	}
+}
 func (ro *Revocation) GetContent() []byte {
 	return ro.content
 }
@@ -1613,10 +1859,12 @@ func NewRevocation(ronum int, content []byte) (rv RoutingObject, err error) {
 	if ronum != RORevocation {
 		panic("Bad RONUM: " + strconv.Itoa(ronum))
 	}
+	hasharr := sha256.Sum256(content)
 	rk := &Revocation{
 		content: content,
 		vk:      content[:32],
 		target:  content[32:64],
+		hash:    hasharr[:],
 	}
 	idx := 64
 	for {

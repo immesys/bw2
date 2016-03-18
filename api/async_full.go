@@ -31,8 +31,8 @@ import (
 	log "github.com/cihub/seelog"
 	"github.com/immesys/bw2/crypto"
 	"github.com/immesys/bw2/internal/core"
-	"github.com/immesys/bw2/internal/util"
 	"github.com/immesys/bw2/objects"
+	"github.com/immesys/bw2/util"
 )
 
 const (
@@ -115,7 +115,7 @@ func (c *BosswaveClient) Publish(params *PublishParams,
 	m.PrimaryAccessChain = params.PrimaryAccessChain
 	m.RoutingObjects = params.RoutingObjects
 	m.PayloadObjects = params.PayloadObjects
-	if s, msg := c.doPAC(m, params.ElaboratePAC); s != core.BWStatusOkay {
+	if s, msg := c.doPAC(m, params.ElaboratePAC); s != util.BWStatusOkay {
 		cb(s, msg)
 		return
 	}
@@ -135,7 +135,7 @@ func (c *BosswaveClient) Publish(params *PublishParams,
 	if params.DoVerify {
 		//log.Info("verifying")
 		s := m.Verify()
-		if s.Code != core.BWStatusOkay {
+		if s.Code != util.BWStatusOkay {
 			log.Info("verification failed")
 			cb(s.Code, "message verification failed")
 			return
@@ -150,12 +150,12 @@ func (c *BosswaveClient) Publish(params *PublishParams,
 		} else {
 			c.cl.Publish(m)
 		}
-		cb(core.BWStatusOkay, "")
+		cb(util.BWStatusOkay, "")
 	} else { //Remote delivery
 		peer, err := c.GetPeer(m.MVK)
 		if err != nil {
 			log.Info("Could not deliver to peer: ", err)
-			cb(core.BWStatusPeerError, "could not peer")
+			cb(util.BWStatusPeerError, "could not peer")
 			return
 		}
 		peer.PublishPersist(m, cb)
@@ -197,7 +197,7 @@ func (c *BosswaveClient) Subscribe(params *SubscribeParams,
 	}
 	m.PrimaryAccessChain = params.PrimaryAccessChain
 	m.RoutingObjects = params.RoutingObjects
-	if s, msg := c.doPAC(m, params.ElaboratePAC); s != core.BWStatusOkay {
+	if s, msg := c.doPAC(m, params.ElaboratePAC); s != util.BWStatusOkay {
 		actionCB(s, false, core.UniqueMessageID{}, msg)
 		return
 	}
@@ -212,7 +212,7 @@ func (c *BosswaveClient) Subscribe(params *SubscribeParams,
 	c.finishMessage(m)
 	if params.DoVerify {
 		s := m.Verify()
-		if s.Code != core.BWStatusOkay {
+		if s.Code != util.BWStatusOkay {
 			actionCB(s.Code, false, core.UniqueMessageID{}, "see code")
 			return
 		}
@@ -224,12 +224,12 @@ func (c *BosswaveClient) Subscribe(params *SubscribeParams,
 			messageCB(m)
 		})
 		isNew := subid == m.UMid
-		actionCB(core.BWStatusOkay, isNew, subid, "")
+		actionCB(util.BWStatusOkay, isNew, subid, "")
 	} else { //Remote delivery
 		peer, err := c.GetPeer(m.MVK)
 		if err != nil {
 			log.Info("Could not deliver to peer: ", err)
-			actionCB(core.BWStatusPeerError, false, core.UniqueMessageID{}, "could not peer")
+			actionCB(util.BWStatusPeerError, false, core.UniqueMessageID{}, "could not peer")
 			return
 		}
 		peer.Subscribe(m, actionCB, messageCB)
@@ -309,33 +309,33 @@ type SetEntityParams struct {
 
 func (c *BosswaveClient) SetEntity(p *SetEntityParams) (*objects.Entity, int) {
 	if len(p.Keyfile) < 33 {
-		return nil, core.BWStatusBadOperation
+		return nil, util.BWStatusBadOperation
 	}
 	e, err := objects.NewEntity(objects.ROEntity, p.Keyfile[32:])
 	if err != nil {
-		return nil, core.BWStatusBadOperation
+		return nil, util.BWStatusBadOperation
 	}
 	entity := e.(*objects.Entity)
 	entity.SetSK(p.Keyfile[:32])
 	keysOk := crypto.CheckKeypair(entity.GetSK(), entity.GetVK())
 	sigOk := entity.SigValid()
 	if !keysOk || !sigOk {
-		return nil, core.BWStatusInvalidSig
+		return nil, util.BWStatusInvalidSig
 	}
 	c.us = entity
 	core.DistributeRO(c.BW().Entity, entity, c.cl)
-	return entity, core.BWStatusOkay
+	return entity, util.BWStatusOkay
 }
 
 func (c *BosswaveClient) SetEntityObj(e *objects.Entity) int {
 	keysOk := crypto.CheckKeypair(e.GetSK(), e.GetVK())
 	sigOk := e.SigValid()
 	if !keysOk || !sigOk {
-		return core.BWStatusInvalidSig
+		return util.BWStatusInvalidSig
 	}
 	c.us = e
 	core.DistributeRO(c.BW().Entity, e, c.cl)
-	return core.BWStatusOkay
+	return util.BWStatusOkay
 }
 
 type ListParams struct {
@@ -361,7 +361,7 @@ func (c *BosswaveClient) List(params *ListParams,
 	}
 	m.PrimaryAccessChain = params.PrimaryAccessChain
 	m.RoutingObjects = params.RoutingObjects
-	if s, msg := c.doPAC(m, params.ElaboratePAC); s != core.BWStatusOkay {
+	if s, msg := c.doPAC(m, params.ElaboratePAC); s != util.BWStatusOkay {
 		actionCB(s, msg)
 		return
 	}
@@ -379,20 +379,20 @@ func (c *BosswaveClient) List(params *ListParams,
 
 	if params.DoVerify {
 		s := m.Verify()
-		if s.Code != core.BWStatusOkay {
+		if s.Code != util.BWStatusOkay {
 			actionCB(s.Code, "see code")
 			return
 		}
 	}
 	err := c.VerifyAffinity(m)
 	if err == nil { //Local delivery
-		actionCB(core.BWStatusOkay, "")
+		actionCB(util.BWStatusOkay, "")
 		c.cl.List(m, resultCB)
 	} else { //Remote delivery
 		peer, err := c.GetPeer(m.MVK)
 		if err != nil {
 			log.Info("Could not deliver to peer: ", err)
-			actionCB(core.BWStatusPeerError, "could not peer")
+			actionCB(util.BWStatusPeerError, "could not peer")
 			return
 		}
 		peer.List(m, actionCB, resultCB)
@@ -422,7 +422,7 @@ func (c *BosswaveClient) Query(params *QueryParams,
 	}
 	m.PrimaryAccessChain = params.PrimaryAccessChain
 	m.RoutingObjects = params.RoutingObjects
-	if s, msg := c.doPAC(m, params.ElaboratePAC); s != core.BWStatusOkay {
+	if s, msg := c.doPAC(m, params.ElaboratePAC); s != util.BWStatusOkay {
 		actionCB(s, msg)
 		return
 	}
@@ -439,7 +439,7 @@ func (c *BosswaveClient) Query(params *QueryParams,
 
 	if params.DoVerify {
 		s := m.Verify()
-		if s.Code != core.BWStatusOkay {
+		if s.Code != util.BWStatusOkay {
 			actionCB(s.Code, "see code")
 			return
 		}
@@ -447,14 +447,14 @@ func (c *BosswaveClient) Query(params *QueryParams,
 
 	err := c.VerifyAffinity(m)
 	if err == nil { //Local delivery
-		actionCB(core.BWStatusOkay, "")
+		actionCB(util.BWStatusOkay, "")
 		c.cl.Query(m, func(m *core.Message) {
 			if m == nil {
 				resultCB(nil)
 				return
 			}
 			sm := m.Verify()
-			if sm.Code == core.BWStatusOkay {
+			if sm.Code == util.BWStatusOkay {
 				resultCB(m)
 			} else {
 				log.Info("dropping local query result (failed verify)")
@@ -464,7 +464,7 @@ func (c *BosswaveClient) Query(params *QueryParams,
 		peer, err := c.GetPeer(m.MVK)
 		if err != nil {
 			log.Info("Could not deliver to peer: ", err)
-			actionCB(core.BWStatusPeerError, "could not peer")
+			actionCB(util.BWStatusPeerError, "could not peer")
 			return
 		}
 		peer.Query(m, actionCB, resultCB)
@@ -595,19 +595,19 @@ func (c *BosswaveClient) doPAC(m *core.Message, elaboratePAC int) (int, string) 
 	if elaboratePAC > NoElaboration {
 		//fmt.Println("doing elab")
 		if m.PrimaryAccessChain == nil {
-			return core.BWStatusUnresolvable, "No PAC with elaboration"
+			return util.BWStatusUnresolvable, "No PAC with elaboration"
 		}
 		if !m.PrimaryAccessChain.IsElaborated() {
 			dc := core.ElaborateDChain(m.PrimaryAccessChain)
 			if dc == nil {
-				return core.BWStatusUnresolvable, "Could not resolve PAC"
+				return util.BWStatusUnresolvable, "Could not resolve PAC"
 			}
 			m.RoutingObjects = append(m.RoutingObjects, dc)
 		}
 		if elaboratePAC > PartialElaboration {
 			ok := core.ResolveDotsInDChain(m.PrimaryAccessChain, m.RoutingObjects)
 			if !ok {
-				return core.BWStatusUnresolvable, "dot in PAC unresolvable"
+				return util.BWStatusUnresolvable, "dot in PAC unresolvable"
 			}
 			for i := 0; i < m.PrimaryAccessChain.NumHashes(); i++ {
 				d := m.PrimaryAccessChain.GetDOT(i)
@@ -624,7 +624,7 @@ func (c *BosswaveClient) doPAC(m *core.Message, elaboratePAC int) (int, string) 
 		m.RoutingObjects = append(m.RoutingObjects, m.PrimaryAccessChain)
 	}
 	//TODO remove duplicates in the routing objects, but preserve order.
-	return core.BWStatusOkay, ""
+	return util.BWStatusOkay, ""
 }
 
 func (c *BosswaveClient) getMid() uint64 {
@@ -643,13 +643,13 @@ func (c *BosswaveClient) newMessage(mtype int, mvk []byte, urisuffix string) (*c
 		MessageID:      c.getMid()}
 	valid, star, plus, _, _ := util.AnalyzeSuffix(urisuffix)
 	if !valid {
-		return nil, core.BWStatusBadURI, "invalid URI"
+		return nil, util.BWStatusBadURI, "invalid URI"
 	} else if len(mvk) != 32 {
-		return nil, core.BWStatusBadURI, "bad MVK"
+		return nil, util.BWStatusBadURI, "bad MVK"
 	} else if (star || plus) && (mtype == core.TypePublish || mtype == core.TypePersist) {
-		return nil, core.BWStatusBadOperation, "bad OP with wildcard"
+		return nil, util.BWStatusBadOperation, "bad OP with wildcard"
 	}
-	return &m, core.BWStatusOkay, ""
+	return &m, util.BWStatusOkay, ""
 }
 
 func (c *BosswaveClient) finishMessage(m *core.Message) {

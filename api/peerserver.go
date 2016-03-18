@@ -36,6 +36,7 @@ import (
 	log "github.com/cihub/seelog"
 	"github.com/immesys/bw2/crypto"
 	"github.com/immesys/bw2/internal/core"
+	"github.com/immesys/bw2/util"
 )
 
 func genCert(vk string) (tls.Certificate, *x509.Certificate) {
@@ -196,7 +197,7 @@ func handleSession(cl *BosswaveClient, conn net.Conn) {
 				//log.Info("Load message returned")
 				if err != nil {
 					log.Info("Load message error: ", err.Error())
-					errframe(nf.seqno, core.BWStatusMalformedMessage, err.Error())
+					errframe(nf.seqno, util.BWStatusMalformedMessage, err.Error())
 					return
 				}
 				//log.Info("Received message ok")
@@ -205,11 +206,11 @@ func handleSession(cl *BosswaveClient, conn net.Conn) {
 				}
 				err = cl.VerifyAffinity(msg)
 				if err != nil {
-					errframe(nf.seqno, core.BWStatusAffinityMismatch, err.Error())
+					errframe(nf.seqno, util.BWStatusAffinityMismatch, err.Error())
 					return
 				}
 				s := msg.Verify()
-				if s.Code != core.BWStatusOkay {
+				if s.Code != util.BWStatusOkay {
 					log.Info("message failed verification")
 					errframe(nf.seqno, s.Code, "see code("+strconv.Itoa(s.Code)+")")
 					return
@@ -218,10 +219,10 @@ func handleSession(cl *BosswaveClient, conn net.Conn) {
 
 				switch msg.Type {
 				case core.TypePublish:
-					errframe(nf.seqno, core.BWStatusOkay, "")
+					errframe(nf.seqno, util.BWStatusOkay, "")
 					cl.cl.Publish(msg)
 				case core.TypePersist:
-					errframe(nf.seqno, core.BWStatusOkay, "")
+					errframe(nf.seqno, util.BWStatusOkay, "")
 					cl.cl.Persist(msg)
 				case core.TypeSubscribe, core.TypeTap:
 					subid := cl.cl.Subscribe(msg, func(m *core.Message, subid core.UniqueMessageID) {
@@ -237,12 +238,12 @@ func handleSession(cl *BosswaveClient, conn net.Conn) {
 						cmd:   nCmdRSub,
 						body:  make([]byte, 18),
 					}
-					binary.LittleEndian.PutUint16(rv.body, uint16(core.BWStatusOkay))
+					binary.LittleEndian.PutUint16(rv.body, uint16(util.BWStatusOkay))
 					binary.LittleEndian.PutUint64(rv.body[2:], subid.Mid)
 					binary.LittleEndian.PutUint64(rv.body[10:], subid.Sig)
 					reply(&rv)
 				case core.TypeQuery, core.TypeTapQuery:
-					errframe(nf.seqno, core.BWStatusOkay, "")
+					errframe(nf.seqno, util.BWStatusOkay, "")
 					cl.cl.Query(msg, func(m *core.Message) {
 						rv := nativeFrame{
 							seqno: nf.seqno,
@@ -257,7 +258,7 @@ func handleSession(cl *BosswaveClient, conn net.Conn) {
 						reply(&rv)
 					})
 				case core.TypeLS:
-					errframe(nf.seqno, core.BWStatusOkay, "")
+					errframe(nf.seqno, util.BWStatusOkay, "")
 					cl.cl.List(msg, func(uri string, ok bool) {
 						rv := nativeFrame{
 							seqno: nf.seqno,
@@ -272,11 +273,11 @@ func handleSession(cl *BosswaveClient, conn net.Conn) {
 						reply(&rv)
 					})
 				default:
-					errframe(nf.seqno, core.BWStatusBadOperation, "type mismatch")
+					errframe(nf.seqno, util.BWStatusBadOperation, "type mismatch")
 					return
 				}
 			default: //nCmd
-				errframe(nf.seqno, core.BWStatusBadOperation, "what command is this?")
+				errframe(nf.seqno, util.BWStatusBadOperation, "what command is this?")
 				return
 			}
 		}()

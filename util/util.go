@@ -31,6 +31,8 @@ import "strings"
 // A "$" cell denotes the start of a read-only free-path. It may be accessed
 // even if the person does not have permissions for the tree above it, although
 // finding it in that case can be difficult
+// finally, as of dragonborn, each path element is a maximum of 32 characters.
+// pain in the ass but could simplify future BC work
 
 //AnalyzeSuffix checks a given URI for schema validity and possession of characteristics
 func AnalyzeSuffix(uri string) (valid, hasStar, hasPlus, hasDollar, hasBang bool) {
@@ -43,6 +45,9 @@ func AnalyzeSuffix(uri string) (valid, hasStar, hasPlus, hasDollar, hasBang bool
 
 	for _, c := range cells {
 		ln := len(c)
+		if ln > 32 {
+			return
+		}
 		switch ln {
 		case 0:
 			return

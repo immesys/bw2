@@ -28,8 +28,8 @@ import (
 	log "github.com/cihub/seelog"
 	"github.com/immesys/bw2/crypto"
 	"github.com/immesys/bw2/internal/store"
-	"github.com/immesys/bw2/internal/util"
 	"github.com/immesys/bw2/objects"
+	"github.com/immesys/bw2/util"
 )
 
 const (
@@ -275,14 +275,14 @@ func AnalyzeAccessDOTChain(mtype int, targetURI string, dc *objects.DChain) (cod
 	ttl := firstdot.GetTTL()
 	uri, uriok := util.RestrictBy(targetURI, firstdot.GetAccessURISuffix())
 	if !uriok {
-		code = BWStatusBadURI
+		code = util.BWStatusBadURI
 		log.Infof("AZ: BadURI %v", uri)
 		return
 	}
 	mvk = firstdot.GetAccessURIMVK()
 	ps = firstdot.GetPermissionSet()
 	if !bytes.Equal(head, mvk) {
-		code = BWStatusBadPermissions
+		code = util.BWStatusChainOriginNotMVK
 		log.Infof("AZ: BadPermissions (mvk) %v != %v", crypto.FmtKey(head), crypto.FmtKey(mvk))
 		return
 	}
@@ -290,7 +290,7 @@ func AnalyzeAccessDOTChain(mtype int, targetURI string, dc *objects.DChain) (cod
 		d := dc.GetDOT(i)
 		if ttl == 0 {
 			log.Infof("AZ: TTLExpired")
-			code = BWStatusTTLExpired
+			code = util.BWStatusTTLExpired
 			return
 		}
 		ttl--
@@ -301,14 +301,14 @@ func AnalyzeAccessDOTChain(mtype int, targetURI string, dc *objects.DChain) (cod
 		if !bytes.Equal(tail, d.GetGiverVK()) ||
 			!bytes.Equal(mvk, d.GetAccessURIMVK()) {
 			log.Infof("AZ: InvalidDot (chain link mismatch)")
-			code = BWStatusInvalidDOT
+			code = util.BWStatusBadLink
 			return
 		}
 		var okay bool
 		uri, okay = util.RestrictBy(uri, d.GetAccessURISuffix())
 		if !okay {
 			log.Infof("AZ: BadPermissions (merging URI)")
-			code = BWStatusBadPermissions
+			code = util.BWStatusOverconstrainedURI
 			return
 		}
 		tail = d.GetReceiverVK()
@@ -319,7 +319,7 @@ func AnalyzeAccessDOTChain(mtype int, targetURI string, dc *objects.DChain) (cod
 
 	if !tValid {
 		log.Infof("AZ: BadURI (merged URI)")
-		code = BWStatusBadURI
+		code = util.BWStatusOverconstrainedURI
 		return
 	}
 
@@ -330,34 +330,34 @@ func AnalyzeAccessDOTChain(mtype int, targetURI string, dc *objects.DChain) (cod
 	case TypePublish, TypePersist:
 		if !ps.CanPublish {
 			log.Infof("AZ: BadPermissions (ps.pub)")
-			code = BWStatusBadPermissions
+			code = util.BWStatusBadPermissions
 			return
 		}
 	case TypeQuery, TypeSubscribe:
 		if !ps.CanConsume || (plus && !ps.CanConsumePlus) || (star && !ps.CanConsumeStar) {
 			log.Infof("AZ: BadPermissions (ps.consume...)")
-			code = BWStatusBadPermissions
+			code = util.BWStatusBadPermissions
 			return
 		}
 	case TypeTapQuery, TypeTap:
 		if !ps.CanTap || (plus && !ps.CanTapPlus) || (star && !ps.CanTapStar) {
 			log.Infof("AZ: BadPermissions (ps.tap...)")
-			code = BWStatusBadPermissions
+			code = util.BWStatusBadPermissions
 			return
 		}
 	case TypeLS:
 		if !ps.CanList {
 			log.Infof("AZ: BadPermissions (ps.list)")
-			code = BWStatusBadPermissions
+			code = util.BWStatusBadPermissions
 			return
 		}
 	default:
 		log.Infof("AZ: BadOperation (typecode)")
-		code = BWStatusBadOperation
+		code = util.BWStatusBadOperation
 		return
 	}
 
-	code = BWStatusOkay
+	code = util.BWStatusOkay
 	return
 }
 
@@ -377,7 +377,7 @@ func AnalyzeAccessDOTChain(mtype int, targetURI string, dc *objects.DChain) (cod
 //    these can be queried or subscribed to.
 func (m *Message) Verify() *StatusMessage {
 	//Return cached code if you can
-	if m.status.Code != BWStatusUnchecked {
+	if m.status.Code != util.BWStatusUnchecked {
 		return &m.status
 	}
 	//This is used as the EVERYONE vk (all zeroes) or the router MVK (all zeroes)
@@ -390,12 +390,12 @@ func (m *Message) Verify() *StatusMessage {
 	urivalid, star, plus, uridollar, _ := util.AnalyzeSuffix(m.TopicSuffix)
 	//Can't publish to wildcards
 	if (star || plus) && (m.Type == TypePublish || m.Type == TypePersist || m.Type == TypeLS) {
-		m.status.Code = BWStatusBadOperation
+		m.status.Code = util.BWStatusBadOperation
 		log.Infof("V: BadOperation (bad wild)")
 		return &m.status
 	}
 	if !urivalid {
-		m.status.Code = BWStatusBadURI
+		m.status.Code = util.BWStatusBadURI
 		return &m.status
 	}
 
@@ -403,7 +403,7 @@ func (m *Message) Verify() *StatusMessage {
 	//If message is from MVK it can do whatever it wants
 	if m.OriginVK != nil && bytes.Equal(*m.OriginVK, m.MVK) {
 		fromMVK = true
-		m.status.Code = BWStatusOkay
+		m.status.Code = util.BWStatusOkay
 		goto endperm
 	}
 
@@ -413,19 +413,19 @@ func (m *Message) Verify() *StatusMessage {
 	//Can't get permissions if there is no access chain
 	if pac == nil {
 		log.Infof("V: BadPermissions (no PAC)")
-		m.status.Code = BWStatusBadPermissions
+		m.status.Code = util.BWStatusBadPermissions
 		goto endperm
 	} else {
 		pac = ElaborateDChain(pac)
 		if pac == nil {
-			m.status.Code = BWStatusUnresolvable
+			m.status.Code = util.BWStatusUnresolvable
 			log.Infof("V: Unresolvable (elaborating chain)")
 			goto endperm
 		}
 
 		ok := ResolveDotsInDChain(pac, m.RoutingObjects)
 		if !ok {
-			m.status.Code = BWStatusUnresolvable
+			m.status.Code = util.BWStatusUnresolvable
 			log.Infof("V: Unresolvable (dots in chain)")
 			goto endperm
 		}
@@ -433,7 +433,7 @@ func (m *Message) Verify() *StatusMessage {
 		//Check the signature of all the dots. This also checks that their topics are
 		//well formed
 		if !pac.CheckAllSigs() {
-			m.status.Code = BWStatusInvalidDOT
+			m.status.Code = util.BWStatusInvalidSig
 			log.Infof("V: InvalidDOT (dot signature)")
 			goto endperm
 		}
@@ -443,7 +443,7 @@ func (m *Message) Verify() *StatusMessage {
 		azCode, azMVK, azURI, _, _, _, azOVK := AnalyzeAccessDOTChain(int(m.Type), m.TopicSuffix, pac)
 		//fmt.Println("AZDC says OVK is ", crypto.FmtKey(azOVK))
 		m.status.Code = azCode
-		if azCode != BWStatusOkay {
+		if azCode != util.BWStatusOkay {
 			goto endperm
 		}
 		m.MergedTopic = azURI
@@ -451,7 +451,7 @@ func (m *Message) Verify() *StatusMessage {
 		//Check if this is an ALL grant and we don't have an origin VK
 		if bytes.Equal(azOVK, allzeroes) {
 			if m.OriginVK == nil {
-				m.status.Code = BWStatusNoOrigin
+				m.status.Code = util.BWStatusNoOrigin
 				log.Infof("V: NoOrigin (allgrant, no OVK ro)")
 				goto endperm
 			}
@@ -462,7 +462,7 @@ func (m *Message) Verify() *StatusMessage {
 		}
 		//Also check chain MVK matches message
 		if !bytes.Equal(m.MVK, azMVK) {
-			m.status.Code = BWStatusMVKMismatch
+			m.status.Code = util.BWStatusMVKMismatch
 			log.Infof("V: MVKMismatch %v != %v", crypto.FmtKey(m.MVK), crypto.FmtKey(azMVK))
 			goto endperm
 		}
@@ -474,13 +474,13 @@ func (m *Message) Verify() *StatusMessage {
 endperm:
 
 	//No dollar, and we hit an error, bail
-	if !uridollar && m.status.Code != BWStatusOkay {
+	if !uridollar && m.status.Code != util.BWStatusOkay {
 		return &m.status
 	}
 
 	if m.OriginVK == nil {
 		log.Criticalf("V: no origin VK on message")
-		m.status.Code = BWStatusNoOrigin
+		m.status.Code = util.BWStatusNoOrigin
 		return &m.status
 	}
 
@@ -489,24 +489,24 @@ endperm:
 	//fmt.Println("Signature: ", crypto.FmtSig(m.Signature))
 	//fmt.Println("VK: ", crypto.FmtKey(*m.OriginVK))
 	if !crypto.VerifyBlob(*m.OriginVK, m.Signature, m.Encoded[:m.SigCoverEnd]) {
-		m.status.Code = BWStatusInvalidSig
+		m.status.Code = util.BWStatusInvalidSig
 		log.Infof("V: InvalidSig (whole sig)")
 		//Not even a dollar can save you
 		return &m.status
 	}
 
 	if fromMVK {
-		m.status.Code = BWStatusOkay
+		m.status.Code = util.BWStatusOkay
 		return &m.status
 	}
 
-	dollarpath := uridollar && m.status.Code != BWStatusOkay
+	dollarpath := uridollar && m.status.Code != util.BWStatusOkay
 
 	//Now check type vs dollar
 	switch m.Type {
 	case TypePublish, TypePersist:
 		if dollarpath {
-			m.status.Code = BWStatusBadPermissions
+			m.status.Code = util.BWStatusBadPermissions
 			log.Infof("V: BadPermissions (dollarpath pub)")
 			return &m.status
 		}
@@ -517,7 +517,7 @@ endperm:
 		}
 	case TypeTapQuery, TypeTap:
 		if dollarpath {
-			m.status.Code = BWStatusBadPermissions
+			m.status.Code = util.BWStatusBadPermissions
 			log.Infof("V: BadPermissions (dollarpath tap)")
 			return &m.status
 		}
@@ -527,12 +527,12 @@ endperm:
 			m.MergedTopic = &m.TopicSuffix
 		}
 	default:
-		m.status.Code = BWStatusBadOperation
+		m.status.Code = util.BWStatusBadOperation
 		log.Infof("V: BadOperation (type)")
 		return &m.status
 	}
 
 	//log.Infof("V: OK")
-	m.status.Code = BWStatusOkay
+	m.status.Code = util.BWStatusOkay
 	return &m.status
 }

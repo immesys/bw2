@@ -34,8 +34,8 @@ import (
 	"github.com/immesys/bw2/crypto"
 	"github.com/immesys/bw2/internal/core"
 	"github.com/immesys/bw2/internal/store"
-	"github.com/immesys/bw2/internal/util"
 	"github.com/immesys/bw2/objects"
+	"github.com/immesys/bw2/util"
 )
 
 type Adapter struct {
@@ -264,7 +264,7 @@ func commonUnpackEntity(e *objects.Entity, r *objects.Frame) {
 }
 func mkGenericActionCB(replyto int, send func(f *objects.Frame)) func(status int, msg string) {
 	return func(status int, msg string) {
-		if status == core.BWStatusOkay {
+		if status == util.BWStatusOkay {
 			r := objects.CreateFrame(objects.CmdResponse, replyto)
 			r.AddHeader("status", "okay")
 			send(r)
@@ -483,7 +483,7 @@ func dispatchFrame(bwcl *api.BosswaveClient, f *objects.Frame, send func(f *obje
 		bwcl.Subscribe(p,
 			func(status int, isNew bool, id core.UniqueMessageID, msg string) {
 				log.Infof("Got action CB for sub: %v %v %v", status, isNew, msg)
-				if status == core.BWStatusOkay {
+				if status == util.BWStatusOkay {
 					r := objects.CreateFrame(objects.CmdResponse, replyto)
 					r.AddHeader("status", "okay")
 					r.AddHeader("duplicate", strconv.FormatBool(!isNew))
@@ -660,7 +660,7 @@ func dispatchFrame(bwcl *api.BosswaveClient, f *objects.Frame, send func(f *obje
 			return
 		}
 		ent, status := bwcl.SetEntity(&api.SetEntityParams{Keyfile: po.GetContent()})
-		if status == core.BWStatusOkay {
+		if status == util.BWStatusOkay {
 			r := objects.CreateFrame(objects.CmdResponse, replyto)
 			r.AddHeader("status", "okay")
 			r.AddHeader("vk", crypto.FmtKey(ent.GetVK()))

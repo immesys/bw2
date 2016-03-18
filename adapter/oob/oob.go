@@ -225,6 +225,8 @@ func loadCommonElaborate(f *objects.Frame) (int, bool) {
 			return api.PartialElaboration, true
 		case "full":
 			return api.FullElaboration, true
+		case "none":
+			return api.NoElaboration, true
 		default:
 			return -1, false
 		}

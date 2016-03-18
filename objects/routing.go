@@ -30,7 +30,7 @@ import (
 	"time"
 
 	log "github.com/cihub/seelog"
-	"github.com/immesys/bw2/internal/crypto"
+	"github.com/immesys/bw2/crypto"
 	"github.com/immesys/bw2/internal/util"
 )
 
@@ -63,6 +63,7 @@ var RoutingObjectConstructor = map[int]func(ronum int, content []byte) (RoutingO
 	ROEntity:               NewEntity,
 	ROOriginVK:             NewOriginVK,
 	ROExpiry:               NewExpiry,
+	RORevocation:           NewRevocation,
 }
 
 //LoadRoutingObject takes the ronum and the content and returns the object
@@ -1309,7 +1310,15 @@ func (ro *Entity) Encode() {
 	ro.signature = sig
 }
 
-func NewEntity(ronum int, content []byte) (RoutingObject, error) {
+func NewEntity(ronum int, content []byte) (rv RoutingObject, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Println(r)
+			debug.PrintStack()
+			err = NewObjectError(ronum, "Bad Entity")
+			rv = nil
+		}
+	}()
 	if ronum != ROEntity {
 		panic("Bad RONUM: " + strconv.Itoa(ronum))
 	}
@@ -1446,7 +1455,15 @@ func CreateNewExpiry(expiry time.Time) *Expiry {
 	binary.LittleEndian.PutUint64(rv.content, uint64(expiry.UnixNano()))
 	return &rv
 }
-func NewExpiry(ronum int, content []byte) (RoutingObject, error) {
+func NewExpiry(ronum int, content []byte) (rv RoutingObject, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Println(r)
+			debug.PrintStack()
+			err = NewObjectError(ronum, "Bad Expiry")
+			rv = nil
+		}
+	}()
 	if ronum != ROExpiry {
 		panic("Bad ronum")
 	}
@@ -1454,8 +1471,8 @@ func NewExpiry(ronum int, content []byte) (RoutingObject, error) {
 		return nil, NewObjectError(ronum, "Content is the wrong size")
 	}
 	t := time.Unix(0, int64(binary.LittleEndian.Uint64(content[:8])))
-	rv := Expiry{time: t, content: content}
-	return &rv, nil
+	rv = &Expiry{time: t, content: content}
+	return rv, nil
 }
 func (ro *Expiry) GetRONum() int {
 	return ROExpiry
@@ -1555,4 +1572,147 @@ func (ro *OriginVK) WriteToStream(s io.Writer, fullObjNum bool) error {
 	}
 	_, err := s.Write(ro.vk)
 	return err
+}
+
+type Revocation struct {
+	content   []byte
+	vk        []byte
+	target    []byte
+	signature []byte
+	sigok     sigState
+	created   *time.Time
+	comment   string
+}
+
+func (ro *Revocation) GetVK() []byte {
+	return ro.vk
+}
+func (ro *Revocation) GetTarget() []byte {
+	return ro.target
+}
+func (ro *Revocation) GetRONum() int {
+	return RORevocation
+}
+
+func (ro *Revocation) GetContent() []byte {
+	return ro.content
+}
+
+func (ro *Revocation) IsPayloadObject() bool {
+	return false
+}
+func NewRevocation(ronum int, content []byte) (rv RoutingObject, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Println(r)
+			debug.PrintStack()
+			err = NewObjectError(ronum, "Bad Revocation")
+			rv = nil
+		}
+	}()
+	if ronum != RORevocation {
+		panic("Bad RONUM: " + strconv.Itoa(ronum))
+	}
+	rk := &Revocation{
+		content: content,
+		vk:      content[:32],
+		target:  content[32:64],
+	}
+	idx := 64
+	for {
+		switch content[idx] {
+		case 0x02: //Creation date
+			if content[idx+1] != 8 {
+				return nil, NewObjectError(RORevocation, "Invalid creation date in Revocation")
+			}
+			idx += 2
+			t := time.Unix(0, int64(binary.LittleEndian.Uint64(content[idx:])))
+			rk.created = &t
+			idx += 8
+		case 0x06: //Comment
+			ln := int(content[idx+1])
+			rk.comment = string(content[idx+2 : idx+2+ln])
+			idx += 2 + ln
+		case 0x00: //End
+			idx++
+			goto done
+		default: //Skip unknown header
+			fmt.Println("Unknown Revocation option type: ", content[idx])
+			idx += int(content[idx+1]) + 1
+		}
+	}
+done:
+	rk.signature = content[idx : idx+64]
+	return rk, nil
+}
+
+func (ro *Revocation) WriteToStream(s io.Writer, fullObjNum bool) error {
+	if len(ro.content) == 0 {
+		return NewObjectError(ro.GetRONum(), "Cannot write to stream: no content")
+	}
+	ln := len(ro.content)
+	if fullObjNum {
+		//Little endian
+		_, err := s.Write([]byte{byte(ro.GetRONum()), 0, 0, 0,
+			byte(ln),
+			byte(ln >> 8),
+			byte(ln >> 16),
+			byte(ln >> 24),
+		})
+		if err != nil {
+			return err
+		}
+	} else {
+		_, err := s.Write([]byte{byte(ro.GetRONum()),
+			byte(ln),
+			byte(ln >> 8),
+		})
+		if err != nil {
+			return err
+		}
+	}
+	_, err := s.Write(ro.content)
+	return err
+}
+func (ro *Revocation) Encode(sk []byte) {
+	buf := make([]byte, 64, 256)
+	copy(buf, ro.vk)
+	copy(buf[32:], ro.target)
+	if ro.created != nil {
+		buf = append(buf, 0x02, 8)
+		tmp := make([]byte, 8)
+		binary.LittleEndian.PutUint64(tmp, uint64(ro.created.UnixNano()))
+		buf = append(buf, tmp...)
+	}
+	if ro.comment != "" {
+		if len(ro.comment) > 255 {
+			ro.comment = ro.comment[:255]
+		}
+		buf = append(buf, 0x06, byte(len(ro.comment)))
+		buf = append(buf, []byte(ro.comment)...)
+	}
+	buf = append(buf, 0x00)
+	sig := make([]byte, 64)
+	crypto.SignBlob(sk, ro.vk, sig, buf)
+	buf = append(buf, sig...)
+	ro.content = buf
+	ro.signature = sig
+}
+
+func (ro *Revocation) SigValid() bool {
+	if ro.sigok == sigValid {
+		return true
+	} else if ro.sigok == sigInvalid {
+		return false
+	}
+	if len(ro.signature) != 64 || len(ro.content) == 0 {
+		panic("Revocation in invalid state")
+	}
+	ok := crypto.VerifyBlob(ro.vk, ro.signature, ro.content[:len(ro.content)-64])
+	if ok {
+		ro.sigok = sigValid
+		return true
+	}
+	ro.sigok = sigInvalid
+	return false
 }

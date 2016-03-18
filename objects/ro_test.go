@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/immesys/bw2/internal/crypto"
+	"github.com/immesys/bw2/crypto"
 )
 
 // type DOT struct {

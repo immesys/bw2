@@ -28,6 +28,5 @@ const (
 	ROEntityWKey           = 0x32
 	ROOriginVK             = 0x31
 	ROExpiry               = 0x40
+	RORevocation           = 0x50
 )
-
-const ()

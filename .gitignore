@@ -1,3 +1,4 @@
 .bw.db
 bw2
 lib/*.a
+*.o

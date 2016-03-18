@@ -35,6 +35,7 @@ import (
 	"github.com/immesys/bw2/internal/core"
 	"github.com/immesys/bw2/internal/store"
 	"github.com/immesys/bw2/objects"
+	"github.com/immesys/bw2/util"
 )
 
 //The version of BW2 this is
@@ -325,7 +326,7 @@ func (c *BosswaveClient) Resolve(hash string, ask []string) objects.RoutingObjec
 					URISuffix: uri,
 				},
 					func(status int, msg string) {
-						if status != core.BWStatusOkay {
+						if status != util.BWStatusOkay {
 							log.Warnf("bad peer resolve query: %s", msg)
 							wg.Done()
 						}

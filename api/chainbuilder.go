@@ -10,8 +10,8 @@ import (
 
 	"github.com/immesys/bw2/crypto"
 	"github.com/immesys/bw2/internal/core"
-	"github.com/immesys/bw2/internal/util"
 	"github.com/immesys/bw2/objects"
+	"github.com/immesys/bw2/util"
 )
 
 type ChainBuilder struct {
@@ -139,7 +139,7 @@ func (b *ChainBuilder) getOptions(from []byte) []*objects.DOT {
 				URISuffix: "$/dot/fromto/" + crypto.FmtKey(from)[:43] + "/+/+",
 			},
 				func(status int, msg string) {
-					if status != core.BWStatusOkay {
+					if status != util.BWStatusOkay {
 						b.status <- "opt query error: " + msg
 						wg.Done()
 					}

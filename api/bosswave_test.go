@@ -25,7 +25,7 @@ import (
 
 	"github.com/immesys/bw2/internal/core"
 	"github.com/immesys/bw2/crypto"
-	"github.com/immesys/bw2/internal/util"
+	"github.com/immesys/bw2/util"
 	"github.com/immesys/bw2/objects"
 )
 
@@ -83,7 +83,7 @@ func TestBasicX(t *testing.T) {
 	},
 		func(code int, isnew bool, subid core.UniqueMessageID) {
 			fmt.Println("Got Scode", code)
-			if code != core.BWStatusOkay {
+			if code != util.BWStatusOkay {
 				fmt.Println("FAIL")
 				gm <- false
 			}

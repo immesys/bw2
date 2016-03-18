@@ -33,8 +33,8 @@ import (
 	"github.com/immesys/bw2/crypto"
 	"github.com/immesys/bw2/internal/core"
 	"github.com/immesys/bw2/internal/store"
-	"github.com/immesys/bw2/internal/util"
 	"github.com/immesys/bw2/objects"
+	"github.com/immesys/bw2/util"
 	"github.com/mgutz/ansi"
 	homedir "github.com/mitchellh/go-homedir"
 )

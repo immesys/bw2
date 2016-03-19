@@ -1,0 +1,180 @@
+#!/bin/sh
+set -e
+# This script was largely guided by the docker install script
+# It should be used with:
+#   'curl -sSL https://get.bw2.io/ | sh'
+# or:
+#   'wget -qO- https://get.bw2.io/ | sh'
+#
+
+REL=2.0.3
+command_exists() {
+	command -v "$@" > /dev/null 2>&1
+}
+
+do_install() {
+	cat >&2 <<'EOF'
+ ___    _       _    __
+(  _`\ ( )  _  ( ) /'__`\
+| (_) )| | ( ) | |(_)  ) )
+|  _ <'| | | | | |   /' /
+| (_) )| (_/ \_) | /' /( )
+(____/'`\___x___/'(_____/'
+
+EOF
+
+echo "Automated installer for BOSSWAVE $REL "
+
+	case "$(uname -m)" in
+		x86_64)
+			;;
+		*)
+			cat >&2 <<-'EOF'
+			Error: you are not using an x86_64 platform.
+			The bw2 auto installer does not support 32 bit platforms.
+			EOF
+			exit 1
+			;;
+	esac
+
+	if command_exists bw2; then
+		cat >&2 <<-'EOF'
+			Warning: seems bw2 might already be installed
+		EOF
+	fi
+
+	user="$(id -un 2>/dev/null || true)"
+
+	sh_c='sh -c'
+	if [ "$user" != 'root' ]; then
+		if command_exists sudo; then
+			sh_c='sudo -E sh -c'
+		elif command_exists su; then
+			sh_c='su -c'
+		else
+			cat >&2 <<-'EOF'
+			Error: this installer needs the ability to run commands as root.
+			We are unable to find either "sudo" or "su" available to make this happen.
+			EOF
+			exit 1
+		fi
+	fi
+
+	curl=''
+	if command_exists curl; then
+		curl='curl -sSL'
+	elif command_exists wget; then
+		curl='wget -qO-'
+	fi
+
+	# perform some very rudimentary platform detection
+	lsb_dist=''
+	dist_version=''
+	if command_exists lsb_release; then
+		lsb_dist="$(lsb_release -si)"
+	fi
+	if [ -z "$lsb_dist" ] && [ -r /etc/lsb-release ]; then
+		lsb_dist="$(. /etc/lsb-release && echo "$DISTRIB_ID")"
+	fi
+	if [ -z "$lsb_dist" ] && [ -r /etc/debian_version ]; then
+		lsb_dist='debian'
+	fi
+	if [ -z "$lsb_dist" ] && [ -r /etc/os-release ]; then
+		lsb_dist="$(. /etc/os-release && echo "$ID")"
+	fi
+
+	lsb_dist="$(echo "$lsb_dist" | tr '[:upper:]' '[:lower:]')"
+
+	if [ $lsb_dist != "ubuntu" ]
+	then
+		echo "This install script only supports Ubuntu"
+		exit 1
+	fi
+	 
+	lsb_rel="$(lsb_release -sr)"
+	case "$lsb_rel" in
+		"12.04")
+			use_systemd=0
+			;;
+		"14.04")
+			use_systemd=0
+			;;
+		"14.10")
+			use_systemd=1
+			;;
+		"15.04")
+			use_systemd=1
+			;;
+		"15.10")
+			use_systemd=1
+			;;
+		"16.04")
+			use_systemd=1
+			;;
+		*)
+			echo "This version of ubuntu is unsupported by this script"
+			exit 1
+			;;
+	esac
+	export DEBIAN_FRONTEND=noninteractive
+	set +e
+	getent passwd bw2 > /dev/null
+	if [ $? -ne 0 ]; then
+		( set -x; $sh_c 'useradd -r -s /usr/sbin/nologin bw2' )
+	fi
+	set -e
+	# Configure logrotate
+	$sh_c "cat >/etc/logrotate.d/bw2" <<-'EOF'
+	/var/log/bw2/*.log {
+	weekly
+	rotate 10
+	copytruncate
+	delaycompress
+	compress
+	notifempty
+	missingok
+	}
+	EOF
+	# Configure default for upstart
+	$sh_c "cat >/etc/default/bw2" <<-'EOF'
+	NAME=bw2
+	CONF=/etc/bw2/bw2.ini
+	RUNDIR=/var/run/bw2
+	PIDFILE=$RUNDIR/$NAME.pid
+	ENABLE_ROUTER=yes
+	BW_USER=bw2
+	EOF
+	$sh_c "mkdir -p /var/log/bw2"
+	$sh_c "chown bw2:bw2 /var/log/bw2"
+	$sh_c "mkdir -p /var/run/bw2"
+	$sh_c "chown bw2:bw2 /var/run/bw2"
+	$sh_c "mkdir -p /var/lib/bw2"
+	$sh_c "chown bw2:bw2 /var/lib/bw2"
+	$sh_c "$curl http://get.bw2.io/support/$REL/sysvlsb > /etc/init.d/bw2"
+	$sh_c "chmod a+x /etc/init.d/bw2"
+	$sh_c "$curl http://get.bw2.io/linux/amd64/bw2_lv_$REL > /usr/local/bin/bw2"
+	$sh_c "chmod a+x /usr/local/bin/bw2"
+	if [ $use_systemd -eq 1 ]
+	then
+		$sh_c "systemctl enable bw2"
+	else
+		$sh_c "update-rc.d -f bw2 defaults"
+	fi
+	if [ -e "/etc/bw2/bw2.ini" ]
+	then
+		$sh_c "/usr/local/bin/bw2 --conf /etc/bw2/bw2.ini.default makeconf --logfile /var/log/bw2/bw2.log --dbpath /var/lib/bw2/"
+		$sh_c "chown bw2:bw2 /etc/bw2/bw2.ini"
+		echo "Not overwiting existing bw2.ini file, saving default as /etc/bw2/bw2.ini.default"
+		echo "Double check your config then do 'service bw2 restart'"
+	else
+		$sh_c "mkdir -p /etc/bw2"
+		$sh_c "/usr/local/bin/bw2 --conf /etc/bw2/bw2.ini makeconf --logfile /var/log/bw2/bw2.log --dbpath /var/lib/bw2/"
+		$sh_c "chown bw2:bw2 /etc/bw2/bw2.ini"
+		$sh_c "service bw2 start"
+	fi
+
+	echo "Bosswave $REL installed successfully"
+	exit 0
+}
+
+do_install

@@ -109,10 +109,10 @@ func main() {
 					Value: &cli.StringSlice{},
 					Usage: "add a delegated revoker to this entity",
 				},
-				cli.DurationFlag{
+				cli.StringFlag{
 					Name:  "expiry, e",
-					Value: 30 * 24 * time.Hour,
-					Usage: "set the expiry measured from now e.g. 300h",
+					Value: "30d",
+					Usage: "set the expiry measured from now e.g. 10d5h10s",
 				},
 				cli.BoolFlag{
 					Name:  "omitcreationdate",
@@ -142,10 +142,10 @@ func main() {
 					Value: &cli.StringSlice{},
 					Usage: "add a delegated revoker to this entity",
 				},
-				cli.DurationFlag{
+				cli.StringFlag{
 					Name:  "expiry, e",
-					Value: 30 * 24 * time.Hour,
-					Usage: "set the expiry measured from now e.g. 300h",
+					Value: "30d",
+					Usage: "set the expiry measured from now e.g. 10d5h10s",
 				},
 				cli.BoolFlag{
 					Name:  "omitcreationdate",
@@ -350,9 +350,12 @@ func actionMkEntity(c *cli.Context) {
 			doExit(bw, 1, "could not parse revoker key")
 		}
 	}
-	dur := c.Duration("expiry")
+	dur, err := util.ParseDuration(c.String("expiry"))
+	if err != nil {
+		doExit(bw, 1, "Bad expiry: "+err.Error())
+	}
 	ent := cl.CreateEntity(&api.CreateEntityParams{
-		ExpiryDelta:      &dur,
+		ExpiryDelta:      dur,
 		Contact:          c.String("contact"),
 		Comment:          c.String("comment"),
 		Revokers:         revokers,
@@ -380,7 +383,7 @@ func actionMkEntity(c *cli.Context) {
 	wrapped := make([]byte, len(ent.GetSigningBlob())+1)
 	copy(wrapped[1:], ent.GetSigningBlob())
 	wrapped[0] = objects.ROEntityWKey
-	err := ioutil.WriteFile(fname, wrapped, 0600)
+	err = ioutil.WriteFile(fname, wrapped, 0600)
 	if err != nil {
 		doExit(bw, 1, "could not write key to: "+fname)
 	}
@@ -446,11 +449,14 @@ func actionMkDOT(c *cli.Context) {
 	if !valid {
 		doExit(bw, 1, "This URI is invalid")
 	}
-	edelta := c.Duration("expiry")
+	edelta, err := util.ParseDuration(c.String("expiry"))
+	if err != nil {
+		doExit(bw, 1, "Bad expiry: "+err.Error())
+	}
 	dot := cl.CreateDOT(&api.CreateDOTParams{
 		To:                tovk,
 		TTL:               uint8(ttl),
-		ExpiryDelta:       &edelta,
+		ExpiryDelta:       edelta,
 		Contact:           c.String("contact"),
 		Comment:           c.String("comment"),
 		Revokers:          revokers,
@@ -776,35 +782,3 @@ func actionResolve(c *cli.Context) {
 	}
 
 }
-
-/*
-func actionMkEntity(c *cli.Context) {
-	if !c.IsSet("output") {
-		fmt.Println("you need to specify the output file")
-		os.Exit(-1)
-	}
-	if !c.IsSet("expiry") {
-		fmt.Println("warning: using default expiry of 1 month")
-	}
-	var revokers [][]byte
-	rparam := c.StringSlice("revoker")
-	if rparam != nil {
-		for _, v := range rparam {
-			key, err := crypto.UnFmtKey(v)
-			if err != nil {
-				fmt.Printf("Bad delegated revoker key: '%s'\n", v)
-				os.Exit(-1)
-			}
-			revokers = append(revokers, key)
-		}
-	}
-	entity, err := api.CreateNewSigningKeyFile(c.String("output"), c.String("contact"),
-		c.String("comment"), revokers, c.Duration("expiry"))
-	if err != nil {
-		fmt.Printf("An error occured: %v\n", err)
-		os.Exit(-1)
-	}
-	fmt.Println("Created:")
-	fmt.Println(entity.FullString())
-}
-*/

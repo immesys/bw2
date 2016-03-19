@@ -17,7 +17,13 @@
 
 package util
 
-import "strings"
+import (
+	"fmt"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+)
 
 //A URI looks like
 // a/b/c/d ..
@@ -181,4 +187,31 @@ func RestrictBy(from string, by string) (string, bool) {
 		return emit()
 	}
 	return "", false
+}
+
+//ParseDuration is a little like the existing time.ParseDuration
+//but adds days and years because its really annoying not having that
+func ParseDuration(s string) (*time.Duration, error) {
+	if s == "" {
+		return nil, nil
+	}
+	pat := regexp.MustCompile(`^(\d+y)?(\d+d)?(\d+h)?(\d+m)?(\d+s)?$`)
+	res := pat.FindStringSubmatch(s)
+	if res == nil {
+		return nil, fmt.Errorf("Invalid duration")
+	}
+	res = res[1:]
+	sec := int64(0)
+	for idx, mul := range []int64{365 * 24 * 60 * 60, 24 * 60 * 60, 60 * 60, 60, 1} {
+		if res[idx] != "" {
+			key := res[idx][:len(res[idx])-1]
+			v, e := strconv.ParseInt(key, 10, 64)
+			if e != nil { //unlikely
+				return nil, e
+			}
+			sec += v * mul
+		}
+	}
+	rv := time.Duration(sec) * time.Second
+	return &rv, nil
 }

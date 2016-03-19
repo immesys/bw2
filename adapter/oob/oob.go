@@ -155,6 +155,9 @@ type BuildChainParams struct {
 
 func loadCommonPAC(f *objects.Frame, c *api.BosswaveClient, autochain bool, perms string) (*objects.DChain, bool, string) {
 	if autochain {
+		if c.GetUs() == nil {
+			return nil, false, "entity not set"
+		}
 		log.Info("autochaining")
 		mvk, suffix, _ := loadCommonURI(f, c.BW())
 		ch, err := c.BuildChain(&api.BuildChainParams{

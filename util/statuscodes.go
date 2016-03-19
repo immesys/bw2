@@ -43,4 +43,6 @@ const (
 	BWStatusBadLink = 421
 	//Returned when a URI is invalid after being constrained by DOTs
 	BWStatusOverconstrainedURI = 422
+	//Returned if you attempt to send a message without having an entity
+	BWStatusNoEntity = 423
 )

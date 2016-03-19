@@ -633,6 +633,9 @@ func (c *BosswaveClient) getMid() uint64 {
 }
 
 func (c *BosswaveClient) newMessage(mtype int, mvk []byte, urisuffix string) (*core.Message, int, string) {
+	if c.GetUs() == nil {
+		return nil, util.BWStatusNoEntity, "entity not set"
+	}
 	ovk := c.GetUs().GetVK()
 	m := core.Message{Type: uint8(mtype),
 		TopicSuffix:    urisuffix,

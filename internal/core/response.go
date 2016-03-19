@@ -22,6 +22,7 @@ import (
 	"encoding/binary"
 
 	"github.com/immesys/bw2/objects"
+	"github.com/immesys/bw2/util"
 )
 
 type UniqueMessageID struct {
@@ -58,5 +59,5 @@ type ObjectResponse struct {
 }
 
 func (s *StatusMessage) Ok() bool {
-	return s.Code == BWStatusOkay
+	return s.Code == util.BWStatusOkay
 }

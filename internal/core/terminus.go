@@ -185,11 +185,11 @@ func CreateTerminus() *Terminus {
 		for {
 			time.Sleep(5 * time.Second)
 			fmt.Println("terminus map:")
-			for k := range rv.cmap {
+			for _, k := range rv.cmap {
 				fmt.Printf("[%v]\n", k)
 			}
 			fmt.Println("rsmap:")
-			for k := range rv.rstree {
+			for _, k := range rv.rstree {
 				fmt.Printf("[%v]\n", k)
 			}
 		}

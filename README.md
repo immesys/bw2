@@ -104,6 +104,3 @@ Inspecting:  michaelsDOT
 ┃┣ Expires: 2016-04-18T11:38:17-07:00
 ```
 
-
-You may want to consult your distribution's manual to determine how to run `bw2 router` on startup. Note that by default it checks the current directory for the bw2.ini file that has the options for the router.
-

@@ -27,7 +27,11 @@ import (
 )
 
 func makeConf(c *cli.Context) {
-	conf, err := os.Create("bw2.ini")
+	fname := "bw2.ini"
+	if c.GlobalString("conf") != "" {
+		fname = c.GlobalString("conf")
+	}
+	conf, err := os.Create(fname)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
@@ -40,12 +44,21 @@ func makeConf(c *cli.Context) {
 	sk, vk := crypto.GenerateKeypair()
 	tsk := crypto.FmtKey(sk)
 	tvk := crypto.FmtKey(vk)
+	lpath := "bw2.log"
+	if c.String("logfile") != "" {
+		lpath = c.String("logfile")
+	}
+	dbpath := ".bw.db"
+	if c.String("dbpath") != "" {
+		dbpath = c.String("dbpath")
+	}
 	file := []string{
 		("# generated for " + api.BW2Version + "\n"),
 		("[router]\n"),
 		("VK=" + tvk + "\n"),
 		("SK=" + tsk + "\n"),
-		("DB=.bw.db\n"),
+		("DB=" + dbpath + "\n"),
+		("LogPath=" + lpath + "\n"),
 		("[native]\n"),
 		("ListenOn=:4514\n"),
 		("[oob]\n"),

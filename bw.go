@@ -75,6 +75,18 @@ func main() {
 			Name:   "makeconf",
 			Usage:  "create a new bw2.ini file",
 			Action: makeConf,
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name:  "logfile",
+					Value: "",
+					Usage: "The logfile to put in the config",
+				},
+				cli.StringFlag{
+					Name:  "dbpath",
+					Value: "",
+					Usage: "The dbpath to put in the config",
+				},
+			},
 		},
 		{
 			Name:    "mkentity",
@@ -240,12 +252,18 @@ func main() {
 	app.Run(os.Args)
 }
 
-func actionRouter(c *cli.Context) {
-	cfg := c.String("conf")
-	var config *core.BWConfig
-	if len(cfg) != 0 {
-		config = core.LoadConfig(cfg)
+func confLog(cfg *core.BWConfig) {
+	if cfg == nil {
+		api.InitLog("bw2.log")
+	} else {
+		api.InitLog(cfg.Router.LogPath)
 	}
+}
+func actionRouter(c *cli.Context) {
+	cfg := c.GlobalString("conf")
+	var config *core.BWConfig
+	config = core.LoadConfig(cfg)
+	confLog(config)
 	bw := api.OpenBWContext(config)
 
 	if bw.Config.Native.ListenOn != "" {
@@ -280,6 +298,7 @@ func getTempBW(c *cli.Context) *api.BW {
 		//router keys are irrelevant, save generation entropy by hardcoding
 		cfg.Router.SK = "NmSf-XwX0rtbaIVUhnxMoL_pBkRdUWyfX6nf4zpR8Rk="
 		cfg.Router.VK = "g_DLjUQ-16JECSuMGMe779RpAuEgsNC5W8c7siGEAME="
+		cfg.Router.LogPath = "/tmp/bw.log"
 	}
 	rv := api.OpenBWContext(cfg)
 	return rv

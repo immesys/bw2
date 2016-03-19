@@ -41,13 +41,13 @@ const (
 	FullElaboration    = 2
 )
 
-func init() {
+func InitLog(logfile string) {
 	cfg := `
 	<seelog>
     <outputs>
         <splitter formatid="common">
             <console/>
-            <file path="bw.log"/>
+            <file path="` + logfile + `"/>
         </splitter>
     </outputs>
 		<formats>

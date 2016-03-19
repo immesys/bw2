@@ -29,9 +29,10 @@ import (
 // BWConfig is the configuration for a router
 type BWConfig struct {
 	Router struct {
-		VK string
-		SK string
-		DB string
+		VK      string
+		SK      string
+		DB      string
+		LogPath string
 	}
 	Affinity struct {
 		MVK []string

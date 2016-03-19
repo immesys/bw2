@@ -27,8 +27,8 @@
 # Should-Stop:
 # Default-Start:     2 3 4 5
 # Default-Stop:      0 1 6
-# Short-Description: A secure IoT interconnect
-# Description:       A secure IoT interconnect
+# Short-Description: BOSSWAVE local router
+# Description:       BOSSWAVE is a secure IoT interconnect
 ### END INIT INFO
 
 if [ `id -u` -ne 0 ]; then
@@ -102,15 +102,10 @@ running() {
 start_server() {
             test -e "$RUNDIR" || install -m 755 -o bw2 -g bw2 -d "$RUNDIR"
 # Start the process using the wrapper
-echo "starting" --background --start --quiet --pidfile $PIDFILE \
-            --make-pidfile --chuid $DAEMONUSER \
-            --exec $DAEMON -- $DAEMON_OPTS
-
             start-stop-daemon --background --start --quiet --pidfile $PIDFILE \
                         --make-pidfile --chuid $DAEMONUSER \
                         --exec $DAEMON -- $DAEMON_OPTS
             errcode=$?
-echo "emding"
 	return $errcode
 }
 

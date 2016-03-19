@@ -85,72 +85,96 @@ echo "Automated installer for BOSSWAVE $REL "
 
 	lsb_dist="$(echo "$lsb_dist" | tr '[:upper:]' '[:lower:]')"
 
-	# Run setup for each distro accordingly
-	case "$lsb_dist" in
-		ubuntu)
-			export DEBIAN_FRONTEND=noninteractive
-			set +e
-			getent passwd bw2 > /dev/null
-			if [ $? -ne 0 ]; then
-				( set -x; $sh_c 'useradd -r -s /usr/sbin/nologin bw2' )
-			fi
-			set -e
-			# Configure logrotate
-			$sh_c "cat >/etc/logrotate.d/bw2" <<-'EOF'
-			/var/log/bw2/*.log {
-			weekly
-			rotate 10
-			copytruncate
-			delaycompress
-			compress
-			notifempty
-			missingok
-			}
-			EOF
-			# Configure default for upstart
-			$sh_c "cat >/etc/default/bw2" <<-'EOF'
-			NAME=bw2
-			CONF=/etc/bw2/bw2.ini
-			RUNDIR=/var/run/bw2
-			PIDFILE=$RUNDIR/$NAME.pid
-			ENABLE_ROUTER=yes
-			BW_USER=bw2
-			EOF
-			$sh_c "mkdir -p /var/log/bw2"
-			$sh_c "chown bw2:bw2 /var/log/bw2"
-			$sh_c "mkdir -p /var/run/bw2"
-			$sh_c "chown bw2:bw2 /var/run/bw2"
-			$sh_c "mkdir -p /var/lib/bw2"
-			$sh_c "chown bw2:bw2 /var/lib/bw2"
-			$sh_c "$curl http://get.bw2.io/support/$REL/upstart > /etc/init.d/bw2"
-			$sh_c "chmod a+x /etc/init.d/bw2"
-			$sh_c "$curl http://get.bw2.io/linux/amd64/bw2_lv_$REL > /usr/local/bin/bw2"
-			$sh_c "chmod a+x /usr/local/bin/bw2"
-			if [ -e "/etc/bw2/bw2.ini" ]
-			then
-				$sh_c "/usr/local/bin/bw2 --conf /etc/bw2/bw2.ini.default makeconf --logfile /var/log/bw2/bw2.log --dbpath /var/lib/bw2/"
-				$sh_c "chown bw2:bw2 /etc/bw2/bw2.ini"
-				echo "Not overwiting existing bw2.ini file, saving default as /etc/bw2/bw2.ini.default"
-				echo "Double check your config then do 'service bw2 restart'"
-			else
-				$sh_c "mkdir -p /etc/bw2"
-				$sh_c "/usr/local/bin/bw2 --conf /etc/bw2/bw2.ini makeconf --logfile /var/log/bw2/bw2.log --dbpath /var/lib/bw2/"
-				$sh_c "chown bw2:bw2 /etc/bw2/bw2.ini"
-				$sh_c "service bw2 start"
-			fi
-			echo "Bosswave $REL installed successfully"
-			exit 0
+	if [ $lsb_dist != "ubuntu" ]
+	then
+		echo "This install script only supports Ubuntu"
+		exit 1
+	fi
+	 
+	lsb_rel="$(lsb_release -sr)"
+	case "$lsb_rel" in
+		"12.04")
+			use_systemd=0
 			;;
-  # TODO add support for debian, it's practically the same
+		"14.04")
+			use_systemd=0
+			;;
+		"14.10")
+			use_systemd=1
+			;;
+		"15.04")
+			use_systemd=1
+			;;
+		"15.10")
+			use_systemd=1
+			;;
+		"16.04")
+			use_systemd=1
+			;;
+		*)
+			echo "This version of ubuntu is unsupported by this script"
+			exit 1
+			;;
 	esac
-
-	cat >&2 <<-'EOF'
-
-	  It does not appear like you are running a supported platform. Please
-    install bw2 manually.
-
+	export DEBIAN_FRONTEND=noninteractive
+	set +e
+	getent passwd bw2 > /dev/null
+	if [ $? -ne 0 ]; then
+		( set -x; $sh_c 'useradd -r -s /usr/sbin/nologin bw2' )
+	fi
+	set -e
+	# Configure logrotate
+	$sh_c "cat >/etc/logrotate.d/bw2" <<-'EOF'
+	/var/log/bw2/*.log {
+	weekly
+	rotate 10
+	copytruncate
+	delaycompress
+	compress
+	notifempty
+	missingok
+	}
 	EOF
-	exit 1
+	# Configure default for upstart
+	$sh_c "cat >/etc/default/bw2" <<-'EOF'
+	NAME=bw2
+	CONF=/etc/bw2/bw2.ini
+	RUNDIR=/var/run/bw2
+	PIDFILE=$RUNDIR/$NAME.pid
+	ENABLE_ROUTER=yes
+	BW_USER=bw2
+	EOF
+	$sh_c "mkdir -p /var/log/bw2"
+	$sh_c "chown bw2:bw2 /var/log/bw2"
+	$sh_c "mkdir -p /var/run/bw2"
+	$sh_c "chown bw2:bw2 /var/run/bw2"
+	$sh_c "mkdir -p /var/lib/bw2"
+	$sh_c "chown bw2:bw2 /var/lib/bw2"
+	$sh_c "$curl http://get.bw2.io/support/$REL/upstart > /etc/init.d/bw2"
+	$sh_c "chmod a+x /etc/init.d/bw2"
+	$sh_c "$curl http://get.bw2.io/linux/amd64/bw2_lv_$REL > /usr/local/bin/bw2"
+	$sh_c "chmod a+x /usr/local/bin/bw2"
+	if [ $use_systemd -eq 1 ]
+	then
+		$sh_c "systemctl enable bw2"
+	else
+		$sh_c "update-rc.d -f bw2 defaults"
+	fi
+	if [ -e "/etc/bw2/bw2.ini" ]
+	then
+		$sh_c "/usr/local/bin/bw2 --conf /etc/bw2/bw2.ini.default makeconf --logfile /var/log/bw2/bw2.log --dbpath /var/lib/bw2/"
+		$sh_c "chown bw2:bw2 /etc/bw2/bw2.ini"
+		echo "Not overwiting existing bw2.ini file, saving default as /etc/bw2/bw2.ini.default"
+		echo "Double check your config then do 'service bw2 restart'"
+	else
+		$sh_c "mkdir -p /etc/bw2"
+		$sh_c "/usr/local/bin/bw2 --conf /etc/bw2/bw2.ini makeconf --logfile /var/log/bw2/bw2.log --dbpath /var/lib/bw2/"
+		$sh_c "chown bw2:bw2 /etc/bw2/bw2.ini"
+		$sh_c "service bw2 start"
+	fi
+
+	echo "Bosswave $REL installed successfully"
+	exit 0
 }
 
 do_install

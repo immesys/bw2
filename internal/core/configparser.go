@@ -21,9 +21,9 @@ import (
 	"os"
 	"strings"
 
-	"code.google.com/p/gcfg"
 	log "github.com/cihub/seelog"
 	"github.com/immesys/bw2/crypto"
+	"github.com/scalingdata/gcfg"
 )
 
 // BWConfig is the configuration for a router

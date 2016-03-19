@@ -1,3 +1,4 @@
+# The ed25519-donna commit hash is 8757bd4cd209cb032853ece0ce413f122eef212
 [ed25519](http://ed25519.cr.yp.to/) is an 
 [Elliptic Curve Digital Signature Algortithm](http://en.wikipedia.org/wiki/Elliptic_Curve_DSA), 
 developed by [Dan Bernstein](http://cr.yp.to/djb.html), 

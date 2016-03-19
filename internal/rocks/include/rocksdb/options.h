@@ -1,4 +1,4 @@
-// Copyright (c) 2013, Facebook, Inc.  All rights reserved.
+// Copyright (c) 2011-present, Facebook, Inc.  All rights reserved.
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree. An additional grant
 // of patent rights can be found in the PATENTS file in the same directory.
@@ -15,22 +15,25 @@
 #include <memory>
 #include <vector>
 #include <limits>
-#include <stdint.h>
 #include <unordered_map>
 
 #include "rocksdb/version.h"
 #include "rocksdb/listener.h"
 #include "rocksdb/universal_compaction.h"
 
+#ifdef max
+#undef max
+#endif
+
 namespace rocksdb {
 
 class Cache;
 class CompactionFilter;
 class CompactionFilterFactory;
-class CompactionFilterFactoryV2;
 class Comparator;
 class Env;
 enum InfoLogLevel : unsigned char;
+class SstFileManager;
 class FilterPolicy;
 class Logger;
 class MergeOperator;
@@ -43,6 +46,7 @@ class Slice;
 class SliceTransform;
 class Statistics;
 class InternalKeyComparator;
+class WalFilter;
 
 // DB contents are stored in a set of blocks, each of which holds a
 // sequence of key,value pairs.  Each block may be compressed before
@@ -51,15 +55,15 @@ class InternalKeyComparator;
 enum CompressionType : char {
   // NOTE: do not change the values of existing entries, as these are
   // part of the persistent format on disk.
-  kNoCompression = 0x0, kSnappyCompression = 0x1, kZlibCompression = 0x2,
-  kBZip2Compression = 0x3, kLZ4Compression = 0x4, kLZ4HCCompression = 0x5
+  kNoCompression = 0x0,
+  kSnappyCompression = 0x1,
+  kZlibCompression = 0x2,
+  kBZip2Compression = 0x3,
+  kLZ4Compression = 0x4,
+  kLZ4HCCompression = 0x5,
+  // zstd format is not finalized yet so it's subject to changes.
+  kZSTDNotFinalCompression = 0x40,
 };
-
-// returns true if RocksDB was correctly linked with compression library and
-// supports the compression type
-extern bool CompressionTypeSupported(CompressionType compression_type);
-// Returns a human-readable name of the compression type
-extern const char* CompressionTypeToString(CompressionType compression_type);
 
 enum CompactionStyle : char {
   // level based compaction style
@@ -74,6 +78,48 @@ enum CompactionStyle : char {
   // via CompactFiles().
   // Not supported in ROCKSDB_LITE
   kCompactionStyleNone = 0x3,
+};
+
+// In Level-based comapction, it Determines which file from a level to be
+// picked to merge to the next level. We suggest people try
+// kMinOverlappingRatio first when you tune your database.
+enum CompactionPri : char {
+  // Slightly Priotize larger files by size compensated by #deletes
+  kByCompensatedSize = 0x0,
+  // First compact files whose data's latest update time is oldest.
+  // Try this if you only update some hot keys in small ranges.
+  kOldestLargestSeqFirst = 0x1,
+  // First compact files whose range hasn't been compacted to the next level
+  // for the longest. If your updates are random across the key space,
+  // write amplification is slightly better with this option.
+  kOldestSmallestSeqFirst = 0x2,
+  // First compact files whose ratio between overlapping size in next level
+  // and its size is the smallest. It in many cases can optimize write
+  // amplification.
+  kMinOverlappingRatio = 0x3,
+};
+
+enum class WALRecoveryMode : char {
+  // Original levelDB recovery
+  // We tolerate incomplete record in trailing data on all logs
+  // Use case : This is legacy behavior (default)
+  kTolerateCorruptedTailRecords = 0x00,
+  // Recover from clean shutdown
+  // We don't expect to find any corruption in the WAL
+  // Use case : This is ideal for unit tests and rare applications that
+  // can require high consistency guarantee
+  kAbsoluteConsistency = 0x01,
+  // Recover to point-in-time consistency
+  // We stop the WAL playback on discovering WAL inconsistency
+  // Use case : Ideal for systems that have disk controller cache like
+  // hard disk, SSD without super capacitor that store related data
+  kPointInTimeRecovery = 0x02,
+  // Recovery after a disaster
+  // We ignore any corruption in the WAL and try to salvage as much data as
+  // possible
+  // Use case : Ideal for last ditch effort to recover data or systems that
+  // operate with low grade unrelated data
+  kSkipAnyCorruptedRecords = 0x03,
 };
 
 struct CompactionOptionsFIFO {
@@ -189,14 +235,8 @@ struct ColumnFamilyOptions {
   // compaction is being used, each created CompactionFilter will only be used
   // from a single thread and so does not need to be thread-safe.
   //
-  // Default: a factory that doesn't provide any object
+  // Default: nullptr
   std::shared_ptr<CompactionFilterFactory> compaction_filter_factory;
-
-  // Version TWO of the compaction_filter_factory
-  // It supports rolling compaction
-  //
-  // Default: a factory that doesn't provide any object
-  std::shared_ptr<CompactionFilterFactoryV2> compaction_filter_factory_v2;
 
   // -------------------
   // Parameters that affect performance
@@ -223,6 +263,9 @@ struct ColumnFamilyOptions {
   // The default and the minimum number is 2, so that when 1 write buffer
   // is being flushed to storage, new writes can continue to the other
   // write buffer.
+  // If max_write_buffer_number > 3, writing will be slowed down to
+  // options.delayed_write_rate if we are writing to the last write buffer
+  // allowed.
   //
   // Default: 2
   //
@@ -238,11 +281,37 @@ struct ColumnFamilyOptions {
   // individual write buffers.  Default: 1
   int min_write_buffer_number_to_merge;
 
+  // The total maximum number of write buffers to maintain in memory including
+  // copies of buffers that have already been flushed.  Unlike
+  // max_write_buffer_number, this parameter does not affect flushing.
+  // This controls the minimum amount of write history that will be available
+  // in memory for conflict checking when Transactions are used.
+  //
+  // When using an OptimisticTransactionDB:
+  // If this value is too low, some transactions may fail at commit time due
+  // to not being able to determine whether there were any write conflicts.
+  //
+  // When using a TransactionDB:
+  // If Transaction::SetSnapshot is used, TransactionDB will read either
+  // in-memory write buffers or SST files to do write-conflict checking.
+  // Increasing this value can reduce the number of reads to SST files
+  // done for conflict detection.
+  //
+  // Setting this value to 0 will cause write buffers to be freed immediately
+  // after they are flushed.
+  // If this value is set to -1, 'max_write_buffer_number' will be used.
+  //
+  // Default:
+  // If using a TransactionDB/OptimisticTransactionDB, the default value will
+  // be set to the value of 'max_write_buffer_number' if it is not explicitly
+  // set by the user.  Otherwise, the default is 0.
+  int max_write_buffer_number_to_maintain;
+
   // Compress blocks using the specified compression algorithm.  This
   // parameter can be changed dynamically.
   //
-  // Default: kSnappyCompression, which gives lightweight but fast
-  // compression.
+  // Default: kSnappyCompression, if it's supported. If snappy is not linked
+  // with the library, the default is kNoCompression.
   //
   // Typical speeds of kSnappyCompression on an Intel(R) Core(TM)2 2.4GHz:
   //    ~200-500MB/s compression
@@ -319,14 +388,7 @@ struct ColumnFamilyOptions {
   // Dynamically changeable through SetOptions() API
   int level0_stop_writes_trigger;
 
-  // Maximum level to which a new compacted memtable is pushed if it
-  // does not create overlap.  We try to push to level 2 to avoid the
-  // relatively expensive level 0=>1 compactions and to avoid some
-  // expensive manifest file operations.  We do not push all the way to
-  // the largest level since that can generate a lot of wasted disk
-  // space if the same key space is being repeatedly overwritten.
-  //
-  // Dynamically changeable through SetOptions() API
+  // This does not do anything anymore. Deprecated.
   int max_mem_compaction_level;
 
   // Target file size for compaction.
@@ -461,32 +523,38 @@ struct ColumnFamilyOptions {
   // Dynamically changeable through SetOptions() API
   int max_grandparent_overlap_factor;
 
-  // Puts are delayed 0-1 ms when any level has a compaction score that exceeds
-  // soft_rate_limit. This is ignored when == 0.0.
-  // CONSTRAINT: soft_rate_limit <= hard_rate_limit. If this constraint does not
-  // hold, RocksDB will set soft_rate_limit = hard_rate_limit
+  // DEPRECATED -- this options is no longer used
+  // Puts are delayed to options.delayed_write_rate when any level has a
+  // compaction score that exceeds soft_rate_limit. This is ignored when == 0.0.
   //
   // Default: 0 (disabled)
   //
   // Dynamically changeable through SetOptions() API
   double soft_rate_limit;
 
-  // Puts are delayed 1ms at a time when any level has a compaction score that
-  // exceeds hard_rate_limit. This is ignored when <= 1.0.
+  // DEPRECATED -- this options is no longer used
+  double hard_rate_limit;
+
+  // All writes will be slowed down to at least delayed_write_rate if estimated
+  // bytes needed to be compaction exceed this threshold.
   //
   // Default: 0 (disabled)
+  uint64_t soft_pending_compaction_bytes_limit;
+
+  // All writes are stopped if estimated bytes needed to be compaction exceed
+  // this threshold.
   //
-  // Dynamically changeable through SetOptions() API
-  double hard_rate_limit;
+  // Default: 0 (disabled)
+  uint64_t hard_pending_compaction_bytes_limit;
 
   // DEPRECATED -- this options is no longer used
   unsigned int rate_limit_delay_max_milliseconds;
 
   // size of one block in arena memory allocation.
-  // If <= 0, a proper value is automatically calculated (usually 1/10 of
-  // writer_buffer_size).
+  // If <= 0, a proper value is automatically calculated (usually 1/8 of
+  // writer_buffer_size, rounded up to a multiple of 4KB).
   //
-  // There are two additonal restriction of the The specified size:
+  // There are two additional restriction of the The specified size:
   // (1) size should be in the range of [4096, 2 << 30] and
   // (2) be the multiple of the CPU word (which helps with the memory
   // alignment).
@@ -505,12 +573,17 @@ struct ColumnFamilyOptions {
   // Dynamically changeable through SetOptions() API
   bool disable_auto_compactions;
 
-  // Purge duplicate/deleted keys when a memtable is flushed to storage.
-  // Default: true
+  // DEPREACTED
+  // Does not have any effect.
   bool purge_redundant_kvs_while_flush;
 
   // The compaction style. Default: kCompactionStyleLevel
   CompactionStyle compaction_style;
+
+  // If level compaction_style = kCompactionStyleLevel, for each level,
+  // which files are prioritized to be picked to compact.
+  // Default: kCompactionPriByCompensatedSize
+  CompactionPri compaction_pri;
 
   // If true, compaction will verify checksum on every read that happens
   // as part of compaction
@@ -709,11 +782,9 @@ struct ColumnFamilyOptions {
   // Default: false
   bool paranoid_file_checks;
 
-#ifndef ROCKSDB_LITE
-  // A vector of EventListeners which call-back functions will be called
-  // when specific RocksDB event happens.
-  std::vector<std::shared_ptr<EventListener>> listeners;
-#endif  // ROCKSDB_LITE
+  // Measure IO stats in compactions, if true.
+  // Default: false
+  bool compaction_measure_io_stats;
 
   // Create ColumnFamilyOptions with default values for all fields
   ColumnFamilyOptions();
@@ -766,6 +837,13 @@ struct DBOptions {
   // Default: nullptr
   std::shared_ptr<RateLimiter> rate_limiter;
 
+  // Use to track SST files and control their file deletion rate, can be used
+  // among multiple RocksDB instances, sst_file_manager only track and throttle
+  // deletes of SST files in first db_path (db_name if db_paths is empty), other
+  // files and other db_paths wont be tracked or affected by sst_file_manager.
+  // Default: nullptr
+  std::shared_ptr<SstFileManager> sst_file_manager;
+
   // Any internal progress/error information generated by the db will
   // be written to info_log if it is non-nullptr, or to a file stored
   // in the same directory as the DB contents if info_log is nullptr.
@@ -779,8 +857,13 @@ struct DBOptions {
   // files opened are always kept open. You can estimate number of files based
   // on target_file_size_base and target_file_size_multiplier for level-based
   // compaction. For universal-style compaction, you can usually set it to -1.
-  // Default: 5000
+  // Default: 5000 or ulimit value of max open files (whichever is smaller)
   int max_open_files;
+
+  // If max_open_files is -1, DB will open all files on DB::Open(). You can
+  // use this option to increase the number of threads used to open the files.
+  // Default: 1
+  int max_file_opening_threads;
 
   // Once write-ahead logs exceed this size, we will start forcing the flush of
   // column families whose memtables are backed by the oldest live WAL file
@@ -828,7 +911,7 @@ struct DBOptions {
   // If none of the paths has sufficient room to place a file, the file will
   // be placed to the last path anyway, despite to the target size.
   //
-  // Placing newer data to ealier paths is also best-efforts. User should
+  // Placing newer data to earlier paths is also best-efforts. User should
   // expect user files to be placed in higher levels in some extreme cases.
   //
   // If left empty, only one path will be used, which is db_name passed when
@@ -857,13 +940,30 @@ struct DBOptions {
   // regardless of this setting
   uint64_t delete_obsolete_files_period_micros;
 
+  // Suggested number of concurrent background compaction jobs, submitted to
+  // the default LOW priority thread pool.
+  //
+  // Default: max_background_compactions
+  int base_background_compactions;
+
   // Maximum number of concurrent background compaction jobs, submitted to
   // the default LOW priority thread pool.
+  // We first try to schedule compactions based on
+  // `base_background_compactions`. If the compaction cannot catch up , we
+  // will increase number of compaction threads up to
+  // `max_background_compactions`.
+  //
   // If you're increasing this, also consider increasing number of threads in
   // LOW priority thread pool. For more information, see
   // Env::SetBackgroundThreads
   // Default: 1
   int max_background_compactions;
+
+  // This value represents the maximum number of threads that will
+  // concurrently perform a compaction job by breaking it into multiple,
+  // smaller ones that are run simultaneously.
+  // Default: 1 (i.e. no subcompactions)
+  uint32_t max_subcompactions;
 
   // Maximum number of concurrent background memtable flush jobs, submitted to
   // the HIGH priority thread pool.
@@ -899,6 +999,16 @@ struct DBOptions {
   // Default: 1000
   size_t keep_log_file_num;
 
+  // Recycle log files.
+  // If non-zero, we will reuse previously written log files for new
+  // logs, overwriting the old data.  The value indicates how many
+  // such files we will keep around at any point in time for later
+  // use.  This is more efficient because the blocks are already
+  // allocated and fdatasync does not need to update the inode after
+  // each write.
+  // Default: 0
+  size_t recycle_log_file_num;
+
   // manifest file is rolled over on reaching this limit.
   // The older manifest file be deleted.
   // The default value is MAX_INT so that roll-over does not take place.
@@ -931,15 +1041,36 @@ struct DBOptions {
   // large amounts of data (such as xfs's allocsize option).
   size_t manifest_preallocation_size;
 
-  // Data being read from file storage may be buffered in the OS
+  // Hint the OS that it should not buffer disk I/O. Enabling this
+  // parameter may improve performance but increases pressure on the
+  // system cache.
+  //
+  // The exact behavior of this parameter is platform dependent.
+  //
+  // On POSIX systems, after RocksDB reads data from disk it will
+  // mark the pages as "unneeded". The operating system may - or may not
+  // - evict these pages from memory, reducing pressure on the system
+  // cache. If the disk block is requested again this can result in
+  // additional disk I/O.
+  //
+  // On WINDOWS system, files will be opened in "unbuffered I/O" mode
+  // which means that data read from the disk will not be cached or
+  // bufferized. The hardware buffer of the devices may however still
+  // be used. Memory mapped files are not impacted by this parameter.
+  //
   // Default: true
   bool allow_os_buffer;
 
   // Allow the OS to mmap file for reading sst tables. Default: false
   bool allow_mmap_reads;
 
-  // Allow the OS to mmap file for writing. Default: false
+  // Allow the OS to mmap file for writing.
+  // DB::SyncWAL() only works if this is set to false.
+  // Default: false
   bool allow_mmap_writes;
+
+  // If false, fallocate() calls are bypassed
+  bool allow_fallocate;
 
   // Disable child process inherit open files. Default: true
   bool is_fd_close_on_exec;
@@ -948,7 +1079,7 @@ struct DBOptions {
   bool skip_log_error_on_recovery;
 
   // if not zero, dump rocksdb.stats to LOG every stats_dump_period_sec
-  // Default: 3600 (1 hour)
+  // Default: 600 (10 min)
   unsigned int stats_dump_period_sec;
 
   // If set true, will hint the underlying file system that the file
@@ -979,6 +1110,53 @@ struct DBOptions {
   };
   AccessHint access_hint_on_compaction_start;
 
+  // If true, always create a new file descriptor and new table reader
+  // for compaction inputs. Turn this parameter on may introduce extra
+  // memory usage in the table reader, if it allocates extra memory
+  // for indexes. This will allow file descriptor prefetch options
+  // to be set for compaction input files and not to impact file
+  // descriptors for the same file used by user queries.
+  // Suggest to enable BlockBasedTableOptions.cache_index_and_filter_blocks
+  // for this mode if using block-based table.
+  //
+  // Default: false
+  bool new_table_reader_for_compaction_inputs;
+
+  // If non-zero, we perform bigger reads when doing compaction. If you're
+  // running RocksDB on spinning disks, you should set this to at least 2MB.
+  // That way RocksDB's compaction is doing sequential instead of random reads.
+  //
+  // When non-zero, we also force new_table_reader_for_compaction_inputs to
+  // true.
+  //
+  // Default: 0
+  size_t compaction_readahead_size;
+
+  // This is a maximum buffer size that is used by WinMmapReadableFile in
+  // unbuffered disk I/O mode. We need to maintain an aligned buffer for
+  // reads. We allow the buffer to grow until the specified value and then
+  // for bigger requests allocate one shot buffers. In unbuffered mode we
+  // always bypass read-ahead buffer at ReadaheadRandomAccessFile
+  // When read-ahead is required we then make use of compaction_readahead_size
+  // value and always try to read ahead. With read-ahead we always
+  // pre-allocate buffer to the size instead of growing it up to a limit.
+  //
+  // This option is currently honored only on Windows
+  //
+  // Default: 1 Mb
+  //
+  // Special value: 0 - means do not maintain per instance buffer. Allocate
+  //                per request buffer and avoid locking.
+  size_t random_access_max_buffer_size;
+
+  // This is the maximum buffer size that is used by WritableFileWriter.
+  // On Windows, we need to maintain an aligned buffer for writes.
+  // We allow the buffer to grow until it's size hits the limit.
+  //
+  // Default: 1024 * 1024 (1 MB)
+  size_t writable_file_max_buffer_size;
+
+
   // Use adaptive mutex, which spins in the user space before resorting
   // to kernel. This could reduce context switch when the mutex is not
   // heavily contended. However, if the mutex is hot, we could end up
@@ -994,34 +1172,131 @@ struct DBOptions {
   void Dump(Logger* log) const;
 
   // Allows OS to incrementally sync files to disk while they are being
-  // written, asynchronously, in the background.
+  // written, asynchronously, in the background. This operation can be used
+  // to smooth out write I/Os over time. Users shouldn't reply on it for
+  // persistency guarantee.
   // Issue one request for every bytes_per_sync written. 0 turns it off.
   // Default: 0
   //
   // You may consider using rate_limiter to regulate write rate to device.
   // When rate limiter is enabled, it automatically enables bytes_per_sync
   // to 1MB.
+  //
+  // This option applies to table files
   uint64_t bytes_per_sync;
+
+  // Same as bytes_per_sync, but applies to WAL files
+  // Default: 0, turned off
+  uint64_t wal_bytes_per_sync;
+
+  // A vector of EventListeners which call-back functions will be called
+  // when specific RocksDB event happens.
+  std::vector<std::shared_ptr<EventListener>> listeners;
 
   // If true, then the status of the threads involved in this DB will
   // be tracked and available via GetThreadList() API.
   //
   // Default: false
   bool enable_thread_tracking;
+
+  // The limited write rate to DB if soft_pending_compaction_bytes_limit or
+  // level0_slowdown_writes_trigger is triggered, or we are writing to the
+  // last mem table allowed and we allow more than 3 mem tables. It is
+  // calculated using size of user write requests before compression.
+  // RocksDB may decide to slow down more if the compaction still
+  // gets behind further.
+  // Unit: byte per second.
+  //
+  // Default: 2MB/s
+  uint64_t delayed_write_rate;
+
+  // If true, allow multi-writers to update mem tables in parallel.
+  // Only some memtable_factory-s support concurrent writes; currently it
+  // is implemented only for SkipListFactory.  Concurrent memtable writes
+  // are not compatible with inplace_update_support or filter_deletes.
+  // It is strongly recommended to set enable_write_thread_adaptive_yield
+  // if you are going to use this feature.
+  //
+  // THIS FEATURE IS NOT STABLE YET.
+  //
+  // Default: false
+  bool allow_concurrent_memtable_write;
+
+  // If true, threads synchronizing with the write batch group leader will
+  // wait for up to write_thread_max_yield_usec before blocking on a mutex.
+  // This can substantially improve throughput for concurrent workloads,
+  // regardless of whether allow_concurrent_memtable_write is enabled.
+  //
+  // THIS FEATURE IS NOT STABLE YET.
+  //
+  // Default: false
+  bool enable_write_thread_adaptive_yield;
+
+  // The maximum number of microseconds that a write operation will use
+  // a yielding spin loop to coordinate with other write threads before
+  // blocking on a mutex.  (Assuming write_thread_slow_yield_usec is
+  // set properly) increasing this value is likely to increase RocksDB
+  // throughput at the expense of increased CPU usage.
+  //
+  // Default: 100
+  uint64_t write_thread_max_yield_usec;
+
+  // The latency in microseconds after which a std::this_thread::yield
+  // call (sched_yield on Linux) is considered to be a signal that
+  // other processes or threads would like to use the current core.
+  // Increasing this makes writer threads more likely to take CPU
+  // by spinning, which will show up as an increase in the number of
+  // involuntary context switches.
+  //
+  // Default: 3
+  uint64_t write_thread_slow_yield_usec;
+
+  // If true, then DB::Open() will not update the statistics used to optimize
+  // compaction decision by loading table properties from many files.
+  // Turning off this feature will improve DBOpen time especially in
+  // disk environment.
+  //
+  // Default: false
+  bool skip_stats_update_on_db_open;
+
+  // Recovery mode to control the consistency while replaying WAL
+  // Default: kTolerateCorruptedTailRecords
+  WALRecoveryMode wal_recovery_mode;
+
+  // A global cache for table-level rows.
+  // Default: nullptr (disabled)
+  // Not supported in ROCKSDB_LITE mode!
+  std::shared_ptr<Cache> row_cache;
+
+#ifndef ROCKSDB_LITE
+  // A filter object supplied to be invoked while processing write-ahead-logs
+  // (WALs) during recovery. The filter provides a way to inspect log
+  // records, ignoring a particular record or skipping replay.
+  // The filter is invoked at startup and is invoked from a single-thread
+  // currently.
+  const WalFilter* wal_filter;
+#endif  // ROCKSDB_LITE
+
+  // If true, then DB::Open / CreateColumnFamily / DropColumnFamily
+  // / SetOptions will fail if options file is not detected or properly
+  // persisted.
+  //
+  // DEFAULT: false
+  bool fail_if_options_file_error;
 };
 
 // Options to control the behavior of a database (passed to DB::Open)
 struct Options : public DBOptions, public ColumnFamilyOptions {
   // Create an Options object with default values for all fields.
-  Options() :
-    DBOptions(),
-    ColumnFamilyOptions() {}
+  Options() : DBOptions(), ColumnFamilyOptions() {}
 
   Options(const DBOptions& db_options,
           const ColumnFamilyOptions& column_family_options)
       : DBOptions(db_options), ColumnFamilyOptions(column_family_options) {}
 
   void Dump(Logger* log) const;
+
+  void DumpCFOptions(Logger* log) const;
 
   // Set appropriate parameters for bulk loading.
   // The reason that this is a function that returns "this" instead of a
@@ -1042,8 +1317,12 @@ struct Options : public DBOptions, public ColumnFamilyOptions {
 // the block cache. It will not page in data from the OS cache or data that
 // resides in storage.
 enum ReadTier {
-  kReadAllTier = 0x0,    // data in memtable, block cache, OS cache or storage
-  kBlockCacheTier = 0x1  // data in memtable or block cache
+  kReadAllTier = 0x0,     // data in memtable, block cache, OS cache or storage
+  kBlockCacheTier = 0x1,  // data in memtable or block cache
+  kPersistedTier = 0x2    // persisted data.  When WAL is disabled, this option
+                          // will skip data in memtable.
+                          // Note that this ReadTier currently only supports
+                          // Get and MultiGet and does not support iterators.
 };
 
 // Options that control read operations
@@ -1126,6 +1405,22 @@ struct ReadOptions {
   // this option.
   bool total_order_seek;
 
+  // Enforce that the iterator only iterates over the same prefix as the seek.
+  // This option is effective only for prefix seeks, i.e. prefix_extractor is
+  // non-null for the column family and total_order_seek is false.  Unlike
+  // iterate_upper_bound, prefix_same_as_start only works within a prefix
+  // but in both directions.
+  // Default: false
+  bool prefix_same_as_start;
+
+  // Keep the blocks loaded by the iterator pinned in memory as long as the
+  // iterator is not deleted, If used when reading from tables created with
+  // BlockBasedTableOptions::use_delta_encoding = false,
+  // Iterator's property "rocksdb.iterator.is-key-pinned" is guaranteed to
+  // return 1.
+  // Default: false
+  bool pin_data;
+
   ReadOptions();
   ReadOptions(bool cksum, bool cache);
 };
@@ -1154,15 +1449,7 @@ struct WriteOptions {
   // and the write may got lost after a crash.
   bool disableWAL;
 
-  // If non-zero, then associated write waiting longer than the specified
-  // time MAY be aborted and returns Status::TimedOut. A write that takes
-  // less than the specified time is guaranteed to not fail with
-  // Status::TimedOut.
-  //
-  // The number of times a write call encounters a timeout is recorded in
-  // Statistics.WRITE_TIMEDOUT
-  //
-  // Default: 0
+  // The option is deprecated. It's not used anymore.
   uint64_t timeout_hint_us;
 
   // If true and if user is trying to write to column families that don't exist
@@ -1198,6 +1485,11 @@ extern Options GetOptions(size_t total_write_buffer_limit,
                           int write_amplification_threshold = 32,
                           uint64_t target_db_size = 68719476736 /* 64GB */);
 
+// Create a Logger from provided DBOptions
+extern Status CreateLoggerFromOptions(const std::string& dbname,
+                                      const DBOptions& options,
+                                      std::shared_ptr<Logger>* logger);
+
 // CompactionOptions are used in CompactFiles() call.
 struct CompactionOptions {
   // Compaction output compression type
@@ -1210,6 +1502,38 @@ struct CompactionOptions {
   CompactionOptions()
       : compression(kSnappyCompression),
         output_file_size_limit(std::numeric_limits<uint64_t>::max()) {}
+};
+
+// For level based compaction, we can configure if we want to skip/force
+// bottommost level compaction.
+enum class BottommostLevelCompaction {
+  // Skip bottommost level compaction
+  kSkip,
+  // Only compact bottommost level if there is a compaction filter
+  // This is the default option
+  kIfHaveCompactionFilter,
+  // Always compact bottommost level
+  kForce,
+};
+
+// CompactRangeOptions is used by CompactRange() call.
+struct CompactRangeOptions {
+  // If true, no other compaction will run at the same time as this
+  // manual compaction
+  bool exclusive_manual_compaction = true;
+  // If true, compacted files will be moved to the minimum level capable
+  // of holding the data or given level (specified non-negative target_level).
+  bool change_level = false;
+  // If change_level is true and target_level have non-negative value, compacted
+  // files will be moved to target_level.
+  int target_level = -1;
+  // Compaction outputs will be placed in options.db_paths[target_path_id].
+  // Behavior is undefined if target_path_id is out of range.
+  uint32_t target_path_id = 0;
+  // By default level based compaction will only compact the bottommost level
+  // if there is a compaction filter
+  BottommostLevelCompaction bottommost_level_compaction =
+      BottommostLevelCompaction::kIfHaveCompactionFilter;
 };
 }  // namespace rocksdb
 

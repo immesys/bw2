@@ -45,7 +45,7 @@ type Adapter struct {
 }
 
 func (a *Adapter) Start(bw *api.BW) {
-	fmt.Println("oob starting")
+	log.Infof("OOB starting")
 	a.bw = bw
 	if len(bw.Config.OOB.ListenOn) == 0 {
 		log.Warnf("No specified OOB listening port, listening on 127.0.0.1:28589")
@@ -73,7 +73,7 @@ func mkSeqNo() int {
 }
 
 func (a *Adapter) handleClient(conn net.Conn) {
-	bwcl := a.bw.CreateClient()
+	bwcl := a.bw.CreateClient("OOB:" + conn.RemoteAddr().String())
 	out := bufio.NewWriter(conn)
 	in := bufio.NewReader(conn)
 	olock := sync.Mutex{}

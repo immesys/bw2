@@ -106,17 +106,17 @@ func (b *ChainBuilder) AddPeerMVK(mvk []byte) {
 
 func (b *ChainBuilder) dotUseful(d *objects.DOT) bool {
 	adps := d.GetPermissionSet()
-	if !b.desperms.IsSubsetOf(adps) {
-		fmt.Println("rejecting DOT(", crypto.FmtHash(d.GetHash()), "): perms")
+	if !bytes.Equal(d.GetAccessURIMVK(), b.urimvk) {
+		b.status <- fmt.Sprintf("rejecting DOT(%s) - incorrect namespace", crypto.FmtHash(d.GetHash()))
 		return false
 	}
-	if !bytes.Equal(d.GetAccessURIMVK(), b.urimvk) {
-		fmt.Println("rejecting DOT: ", crypto.FmtHash(d.GetHash()), "mvk")
+	if !b.desperms.IsSubsetOf(adps) {
+		b.status <- fmt.Sprintf("rejecting DOT(%s) - insufficient ADPS", crypto.FmtHash(d.GetHash()))
 		return false
 	}
 	nu, ok := util.RestrictBy(b.urisuffix, d.GetAccessURISuffix())
 	if !ok || nu != b.urisuffix {
-		fmt.Println("rejecting DOT: ", crypto.FmtHash(d.GetHash()), "3")
+		b.status <- fmt.Sprintf("rejecting DOT(%s) - DOT URI is too restrictive", crypto.FmtHash(d.GetHash()))
 		return false
 	}
 	return true
@@ -140,23 +140,21 @@ func (b *ChainBuilder) getOptions(from []byte) []*objects.DOT {
 			},
 				func(status int, msg string) {
 					if status != util.BWStatusOkay {
-						b.status <- "opt query error: " + msg
+						b.status <- "edge discovery query error: " + msg
 						wg.Done()
 					}
 				},
 				func(m *core.Message) {
 					if m == nil {
-						b.status <- "finished options query"
 						wg.Done()
 						return
 					}
-					b.status <- "got options query rv"
 					for _, ro := range m.RoutingObjects {
 						dot, ok := ro.(*objects.DOT)
 						if ok {
 							core.DistributeRO(b.cl.BW().Entity, dot, b.cl.CL())
 							if b.dotUseful(dot) {
-								b.status <- "useful dot: " + crypto.FmtHash(dot.GetHash())
+								b.status <- "possible edge DOT: " + crypto.FmtHash(dot.GetHash())
 								rc <- dot
 							}
 						}
@@ -175,7 +173,7 @@ func (b *ChainBuilder) getOptions(from []byte) []*objects.DOT {
 			seen[k] = true
 		}
 	}
-	b.status <- fmt.Sprintf("options len %d", len(rv))
+	b.status <- fmt.Sprintf("graph walk found %d possible edges", len(rv))
 	return rv
 }
 func (b *ChainBuilder) Build() ([]*objects.DChain, error) {
@@ -217,7 +215,7 @@ func (b *ChainBuilder) Build() ([]*objects.DChain, error) {
 				continue
 			}
 			if bytes.Equal(newscenario.GetTerminalVK(), b.target) {
-				b.status <- "found valid scenario"
+				b.status <- "graph walk found a valid scenario!"
 				validscenarios.PushBack(newscenario)
 			} else {
 				evals.PushBack(newscenario)
@@ -225,7 +223,6 @@ func (b *ChainBuilder) Build() ([]*objects.DChain, error) {
 		}
 		evals.Remove(le)
 	}
-	fmt.Println("uh")
 	seen := make(map[string]bool)
 	rv := make([]*objects.DChain, 0, validscenarios.Len())
 	e := validscenarios.Front()
@@ -238,7 +235,7 @@ func (b *ChainBuilder) Build() ([]*objects.DChain, error) {
 		}
 		e = e.Next()
 	}
+	b.status <- "chain build operation complete"
 	close(b.status)
-	fmt.Println("chain build complete")
 	return rv, nil
 }

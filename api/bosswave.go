@@ -165,12 +165,12 @@ func (cl *BosswaveClient) GetUs() *objects.Entity {
 // a message appears for them. If a queueChanged function is specified, this
 // behaviour is supressed, and the caller needs to work out how to dispatch
 // messages when the queue has changed.
-func (bw *BW) CreateClient() *BosswaveClient {
+func (bw *BW) CreateClient(name string) *BosswaveClient {
 	rv := &BosswaveClient{bw: bw,
 		mid:   uint64(rand.Int63() << 16),
 		peers: make(map[string]*PeerClient),
 	}
-	rv.cl = bw.tm.CreateClient()
+	rv.cl = bw.tm.CreateClient(name)
 	return rv
 }
 

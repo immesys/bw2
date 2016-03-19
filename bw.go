@@ -321,7 +321,7 @@ func getRandomEntity(cl *api.BosswaveClient) *objects.Entity {
 }
 func actionMkEntity(c *cli.Context) {
 	bw := getTempBW(c)
-	cl := bw.CreateClient()
+	cl := bw.CreateClient("cli")
 	srevokers := c.StringSlice("revokers")
 	revokers := make([][]byte, len(srevokers))
 	for i, rvk := range srevokers {
@@ -370,7 +370,7 @@ func actionMkEntity(c *cli.Context) {
 }
 func actionMkDOT(c *cli.Context) {
 	bw := getTempBW(c)
-	cl := bw.CreateClient()
+	cl := bw.CreateClient("cli")
 	if len(c.String("from")) == 0 {
 		doExit(bw, 1, "could not load FROM keyfile")
 	}
@@ -518,7 +518,7 @@ func scanLocal(ctx *cli.Context, cl *api.BosswaveClient) *string {
 }
 func actionInspect(c *cli.Context) {
 	bw := getTempBW(c)
-	cl := bw.CreateClient()
+	cl := bw.CreateClient("cli")
 	rent := getRandomEntity(cl)
 	cl.SetEntityObj(rent)
 
@@ -626,7 +626,7 @@ func actionInspect(c *cli.Context) {
 }
 func actionBuildChain(c *cli.Context) {
 	bw := getTempBW(c)
-	cl := bw.CreateClient()
+	cl := bw.CreateClient("cli")
 	rent := getRandomEntity(cl)
 	fmt.Println("RENT VK:", crypto.FmtKey(rent.GetVK()))
 	cl.SetEntityObj(rent)
@@ -697,7 +697,7 @@ func actionBuildChain(c *cli.Context) {
 
 func actionResolve(c *cli.Context) {
 	bw := getTempBW(c)
-	cl := bw.CreateClient()
+	cl := bw.CreateClient("cli")
 	rent := getRandomEntity(cl)
 	cl.SetEntityObj(rent)
 	lname := scanLocal(c, cl)

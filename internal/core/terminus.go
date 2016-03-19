@@ -50,6 +50,7 @@ type Client struct {
 	cid  clientid
 	subs []UniqueMessageID
 	tm   *Terminus
+	name string
 }
 
 type clientid uint32
@@ -184,22 +185,22 @@ func CreateTerminus() *Terminus {
 	go func() {
 		for {
 			time.Sleep(5 * time.Second)
-			fmt.Println("terminus map:")
-			for _, k := range rv.cmap {
-				fmt.Printf("[%v]\n", k)
+			fmt.Println("active clients:")
+			for k, v := range rv.cmap {
+				fmt.Printf("[%d->%s]\n", k, v.name)
 			}
 			fmt.Println("rsmap:")
-			for _, k := range rv.rstree {
-				fmt.Printf("[%v]\n", k)
+			for k, v := range rv.rstree {
+				fmt.Printf("[%v->%+v]\n", k, v)
 			}
 		}
 	}()
 	return rv
 }
 
-func (tm *Terminus) CreateClient() *Client {
+func (tm *Terminus) CreateClient(name string) *Client {
 	cid := clientid(atomic.AddUint32(&tm.cid_head, 1))
-	c := Client{cid: cid, tm: tm}
+	c := Client{cid: cid, tm: tm, name: name}
 	tm.c_maplock.Lock()
 	tm.cmap[cid] = &c
 	tm.c_maplock.Unlock()

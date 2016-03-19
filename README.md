@@ -69,7 +69,8 @@ Voila. Now remember that anyone can put anything in the contact and comment sect
 Now, assuming you trust the person to do the action they are asking permission for, you can codify that trust in a Declaration Of Trust (DOT). Read the command help `bw2 mkdot -h` and then:
 
 ```
-bw2 mkdot --uri "castle.bw2.io/example/uri/*" -x P \
+bw2 mkdot --uri "castle.bw2.io/example/uri/*" \
+ --permissions P \
  --from ~/.ssh/id_bw2 \
  --to ca2zbPNtHtyKrB-4KEBPaSUUc_SVTRa5xAiSj8QWVLQ= \
  --comment "Permission to example subtree" 

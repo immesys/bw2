@@ -4,10 +4,9 @@ set -e
 # It should be used with:
 #   'curl -sSL https://get.bw2.io/ | sh'
 # or:
-#   'wget -qO- https://get.docker.com/ | sh'
+#   'wget -qO- https://get.bw2.io/ | sh'
 #
 
-url='https://get.docker.com/'
 REL=2.0.3
 command_exists() {
 	command -v "$@" > /dev/null 2>&1
@@ -27,11 +26,11 @@ EOF
 echo "Automated installer for BOSSWAVE $REL "
 
 	case "$(uname -m)" in
-		*64)
+		x86_64)
 			;;
 		*)
 			cat >&2 <<-'EOF'
-			Error: you are not using a 64bit platform.
+			Error: you are not using an x86_64 platform.
 			The bw2 auto installer does not support 32 bit platforms.
 			EOF
 			exit 1
@@ -90,11 +89,12 @@ echo "Automated installer for BOSSWAVE $REL "
 	case "$lsb_dist" in
 		ubuntu)
 			export DEBIAN_FRONTEND=noninteractive
+			set +e
 			getent passwd bw2 > /dev/null
 			if [ $? -ne 0 ]; then
 				( set -x; $sh_c 'useradd -r -s /usr/sbin/nologin bw2' )
 			fi
-
+			set -e
 			# Configure logrotate
 			$sh_c "cat >/etc/logrotate.d/bw2" <<-'EOF'
 			/var/log/bw2/*.log {
@@ -131,11 +131,14 @@ echo "Automated installer for BOSSWAVE $REL "
 				$sh_c "/usr/local/bin/bw2 --conf /etc/bw2/bw2.ini.default makeconf --logfile /var/log/bw2/bw2.log --dbpath /var/lib/bw2/"
 				$sh_c "chown bw2:bw2 /etc/bw2/bw2.ini"
 				echo "Not overwiting existing bw2.ini file, saving default as /etc/bw2/bw2.ini.default"
+				echo "Double check your config then do 'service bw2 restart'"
 			else
 				$sh_c "mkdir -p /etc/bw2"
 				$sh_c "/usr/local/bin/bw2 --conf /etc/bw2/bw2.ini makeconf --logfile /var/log/bw2/bw2.log --dbpath /var/lib/bw2/"
 				$sh_c "chown bw2:bw2 /etc/bw2/bw2.ini"
+				$sh_c "service bw2 start"
 			fi
+			echo "Bosswave $REL installed successfully"
 			exit 0
 			;;
   # TODO add support for debian, it's practically the same

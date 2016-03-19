@@ -37,7 +37,7 @@ You should see an output like:
 ```
 Entity created
 SK:  xlI_Hq1EG0hpwwq7sSoan_YrP909vBnbal8tnze-LFQ=
-VK:  fYInYfoVYCP-yZlIuSsOJkZ_pSgyDC5CxgqyA87UeCw=
+VK:  ac0FZkgOrmWSZw5qpmm8YclvvIDM3rrcVxQpFN2jbAg=
 Wrote key to file:  /home/user/.ssh/id_bw2
 ```
 The SK is your Signing Key (private key). Do not share that with anyone. VK is your Verifying Key (public key) you can share that and make it as public as you like. For example, perhaps you receive an email from a colleague saying

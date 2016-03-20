@@ -341,7 +341,7 @@ func getRandomEntity(cl *api.BosswaveClient) *objects.Entity {
 func actionMkEntity(c *cli.Context) {
 	bw := getTempBW(c)
 	cl := bw.CreateClient("cli")
-	srevokers := c.StringSlice("revokers")
+	srevokers := c.StringSlice("revoker")
 	revokers := make([][]byte, len(srevokers))
 	for i, rvk := range srevokers {
 		var err error
@@ -416,7 +416,7 @@ func actionMkDOT(c *cli.Context) {
 	if len(c.String("permissions")) == 0 {
 		doExit(bw, 1, "missing permission string")
 	}
-	srevokers := c.StringSlice("revokers")
+	srevokers := c.StringSlice("revoker")
 	revokers := make([][]byte, len(srevokers))
 	for i, rvk := range srevokers {
 		var err error

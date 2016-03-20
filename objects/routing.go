@@ -764,7 +764,7 @@ func NewDOT(ronum int, content []byte) (rv RoutingObject, err error) {
 			ro.expires = &t
 			idx += 8
 		case 0x04: //Delegated revoker
-			if content[idx+1] != 8 {
+			if content[idx+1] != 32 {
 				return nil, NewObjectError(ronum, "Invalid delegated revoker in DoT")
 			}
 			idx += 2
@@ -1541,8 +1541,8 @@ func NewEntity(ronum int, content []byte) (rv RoutingObject, err error) {
 			e.expires = &t
 			idx += 8
 		case 0x04: //Delegated revoker
-			if content[idx+1] != 8 {
-				return nil, NewObjectError(ROEntity, "Invalid delegated revoker in DoT")
+			if content[idx+1] != 32 {
+				return nil, NewObjectError(ROEntity, "Invalid delegated revoker in Entity")
 			}
 			idx += 2
 			e.revokers = append(e.revokers, content[idx:idx+32])

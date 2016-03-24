@@ -30,7 +30,7 @@ bw2 mkentity \
   --contact "Your Name <your@email.com>" \
   --comment "Description of entity e.g 'test' " \
   --expiry "24h" \
-  --outfile "~/.ssh/id_bw2"
+  --outfile ~/.ssh/id_bw2
 ```
 
 You should see an output like:

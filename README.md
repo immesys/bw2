@@ -73,7 +73,7 @@ bw2 mkdot --uri "castle.bw2.io/example/uri/*" \
  --permissions P \
  --from ~/.ssh/id_bw2 \
  --to ca2zbPNtHtyKrB-4KEBPaSUUc_SVTRa5xAiSj8QWVLQ= \
- --comment "Permission to example subtree" 
+ --comment "Permission to example subtree"  \
  --outfile michaelsDOT
 ```
 

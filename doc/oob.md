@@ -53,14 +53,15 @@ the same frame format:
 
 ## Overview
 
-The frame header line is exactly 27 bytes, which enables reading it without parsing.
-Once read, the length field can be used to read the whole frame, or the frame can be
-parsed field by field. The router does not use the length field in reading the
-frames it receives, so it may be set to zero for frames originating from the client.
+The frame header line is exactly 27 bytes, which enables reading it without
+parsing. Once read, the length field can be used to read the whole frame, or the
+frame can be parsed field by field. The router does not use the length field in
+reading the frames it receives, so it may be set to zero for frames originating
+from the client.
 
-The sequence number is a random unique 31 bit number that is used to connect replies
-to commands. Any response or result attached to the command will have the same
-sequence number, so it can be used to demultiplex on the client side.
+The sequence number is a random unique 31 bit number that is used to connect
+replies to commands. Any response or result attached to the command will have
+the same sequence number, so it can be used to demultiplex on the client side.
 
 ## Commands
 
@@ -155,9 +156,9 @@ Fields:
 * MULTIPLE kv(revoker) - the verifying key of an entity authorized to revoke this entity
 * kv(omitcreationdate) - bool: if true, do not include the creation date in this entity
 
-This creates a new entity, generating the keypair. It returns a `resp` frame with an error
-if something went wrong, otherwise it returns a `rslt` frame with kv(vk) and po(1.0.1.2) for
-the created entity.
+This creates a new entity, generating the keypair. It returns a `resp` frame
+with an error if something went wrong, otherwise it returns a `rslt` frame with
+kv(vk) and po(1.0.1.2) for the created entity.
 
 ### makd - MakeDOT
 Fields:
@@ -183,24 +184,33 @@ Fields:
 * kv(unelaborate) - bool: if true, return the RO of the unelaborated chain. Defaults to false
 * MULTIPLE kv(dot) - the hash of a DOT to include in the chain, must appear in order
 
-This creates a new DOT chain made of the given dots. It returns a `resp` frame with an error
-if something went wrong, otherwise it returns a `rslt` frame with kv(hash) and a po for the
-created DChain.
+This creates a new DOT chain made of the given dots. It returns a `resp` frame
+with an error if something went wrong, otherwise it returns a `rslt` frame with
+kv(hash) and a po for the created DChain.
 
 # New commands for 2.1.x
 
 ### ebal - Entity balances
 No fields are required.
 
-Get the balances for the currently set entity's accounts. It returns a `resp` frame with an error
-if something went wrong, otherwise it returns a `rslt` frame with at least sixteen accounts. Each account will generate two kv's. kv(address) contains the account address in hex. kv(balance) contains rawbalance,humanreadable where the raw balance is in decimal wei and humanreadable is an imprecise but easy to understand string. Be careful decoding rawbalance, as balances of >1 Mether are possible, which equates to >10^24 wei, more than fits in a 64 bit number.
+Get the balances for the currently set entity's accounts. It returns a `resp`
+frame with an error if something went wrong, otherwise it returns a `rslt` frame
+with at least sixteen accounts. Each account will generate two kv's. kv(address)
+contains the account address in hex. kv(balance)  contains
+rawbalance,humanreadable where the raw balance is in decimal wei and
+humanreadable  is an imprecise but easy to understand string. Be careful
+decoding rawbalance, as  balances of >1 Mether are possible, which equates to
+>10^24 wei, more than fits  in a 64 bit number.
 
 ### abal - Address balance
 Fields:
 * kv(address) - 40 characters of hex address
 
-Get the balance for the given address (not necessarily one you own). It returns a `resp` frame with an error
-if something went wrong, otherwise it returns a `rslt` frame with kv(balance) of the same form as `ebal`. For some addresses, there may be a mapping from account address to the owner's VK. If this is the case, there will be kv(vk) containing the owner's VK.
+Get the balance for the given address (not necessarily one you own). It returns
+a `resp` frame with an error if something went wrong, otherwise it returns a
+`rslt` frame with kv(balance) of the same form as `ebal`. For some addresses,
+there may be a mapping from account address to the owner's VK. If this is the
+case, there will be kv(vk) containing the owner's VK.
 
 ### bcip - Block Chain Interaction Parameters
 Fields:
@@ -219,4 +229,5 @@ Fields
 * OPTIONAL kv(gasprice) - The gas price. This generally does not need to be specified
 * OPTIONAL kv(data) - The binary data to include in the transaction. This generally does not need to be specified
 
-Make a transfer from the active account to the given address. This is an on-chain operation, so the chain interaction parameters come into play.
+Make a transfer from the active account to the given address. This is an
+on-chain operation, so the chain interaction parameters come into play.

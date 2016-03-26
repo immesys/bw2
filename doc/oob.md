@@ -92,8 +92,8 @@ Fields:
 * kv(primary_access_chain) - the hash of the primary access DOT chain to use
 * kv(expiry) - the date in RFC3339 format for the subscribe request to expire
 * kv(expirydelta) - the duration after now for the subscribe request to expire. Allowable suffixes include ms,s,m,h
-* kv(elaborate_pac) - the elaboration level for the PAC. Allowable values are "partial" or "full". Omitting results in no elaboration.
-* kv(autochain) - automatically build the PAC on the router
+* kv(elaborate_pac) - the elaboration level for the PAC. Allowable values are "partial", "full" or "none". Omitting results in no elaboration ("none").
+* kv(autochain) - boolean: automatically build the PAC on the router
 * kv(unpack) - boolean: should the matching messages be unpacked
 * ro(*) - will be included
 
@@ -111,9 +111,9 @@ Fields:
 * REQUIRED kv(uri) - the URI to list. Can be given split as kv(mvk) and kv(uri_suffix)
 * kv(primary_access_chain) - the hash of the primary access DOT chain to use
 * kv(expiry) - the date in RFC3339 format for the list request to expire
-* kv(autochain) - automatically build the PAC on the router
+* kv(autochain) - boolean: automatically build the PAC on the router
 * kv(expirydelta) - the duration after now for the list request to expire. Allowable suffixes include ms,s,m,h
-* kv(elaborate_pac) - the elaboration level for the PAC. Allowable values are "partial" or "full". Omitting results in no elaboration.
+* kv(elaborate_pac) - the elaboration level for the PAC. Allowable values are "partial", "full" or "none". Omitting results in no elaboration ("none").
 * ro(*) - will be included
 
 This lists the children of the given URI. A single `resp` frame will be delivered
@@ -129,8 +129,8 @@ Fields:
 * kv(primary_access_chain) - the hash of the primary access DOT chain to use
 * kv(expiry) - the date in RFC3339 format for the query request to expire
 * kv(expirydelta) - the duration after now for the query request to expire. Allowable suffixes include ms,s,m,h
-* kv(autochain) - automatically build the PAC on the router
-* kv(elaborate_pac) - the elaboration level for the PAC. Allowable values are "partial" or "full". Omitting results in no elaboration.
+* kv(autochain) - boolean: automatically build the PAC on the router
+* kv(elaborate_pac) - the elaboration level for the PAC. Allowable values are "partial", "full" or "none". Omitting results in no elaboration ("none").
 * kv(unpack) - boolean: should the matching messages be unpacked
 * ro(*) - will be included
 
@@ -186,3 +186,37 @@ Fields:
 This creates a new DOT chain made of the given dots. It returns a `resp` frame with an error
 if something went wrong, otherwise it returns a `rslt` frame with kv(hash) and a po for the
 created DChain.
+
+# New commands for 2.1.x
+
+### ebal - Entity balances
+No fields are required.
+
+Get the balances for the currently set entity's accounts. It returns a `resp` frame with an error
+if something went wrong, otherwise it returns a `rslt` frame with at least sixteen accounts. Each account will generate two kv's. kv(address) contains the account address in hex. kv(balance) contains rawbalance,humanreadable where the raw balance is in decimal wei and humanreadable is an imprecise but easy to understand string. Be careful decoding rawbalance, as balances of >1 Mether are possible, which equates to >10^24 wei, more than fits in a 64 bit number.
+
+### abal - Address balance
+Fields:
+* kv(address) - 40 characters of hex address
+
+Get the balance for the given address (not necessarily one you own). It returns a `resp` frame with an error
+if something went wrong, otherwise it returns a `rslt` frame with kv(balance) of the same form as `ebal`. For some addresses, there may be a mapping from account address to the owner's VK. If this is the case, there will be kv(vk) containing the owner's VK.
+
+### bcip - Block Chain Interaction Parameters
+Fields:
+* OPTIONAL kv(confirmations) - The minimum number of confirmations for on-chain operations
+* OPTIONAL kv(timeout) - The maximum number of blocks to wait for a transaction to occur
+* OPTIONAL kv(account) - The default entity account idx to use
+* OPTIONAL kv(maxage) - The maximum age of the block chain to permit before erroring
+
+All of the current values are returned.
+
+### xfer - Transfer
+Fields
+* kv(address) - The address to transfer to (40 characters of hex)
+* kv(value) - The how much to transfer (in wei)
+* OPTIONAL kv(gas) - The transaction gas. This generally does not need to be specified
+* OPTIONAL kv(gasprice) - The gas price. This generally does not need to be specified
+* OPTIONAL kv(data) - The binary data to include in the transaction. This generally does not need to be specified
+
+Make a transfer from the active account to the given address. This is an on-chain operation, so the chain interaction parameters come into play.

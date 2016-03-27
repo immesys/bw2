@@ -231,3 +231,32 @@ Fields
 
 Make a transfer from the active account to the given address. This is an
 on-chain operation, so the chain interaction parameters come into play.
+
+### mksa - Make short alias
+Fields
+ * kv(content) - The content, in binary. If the content is longer than 32 bytes, it will be truncated.
+
+Create a short alias. This is an on-chain operation (see `bcip`). If there was no error, the `rslt` frame will contain kv(hexkey) the key, in hex.
+
+### mkla - Make long alias
+Fields
+ * kv(content) - The content, in binary. If the content is longer than 32 bytes, it will be truncated.
+ * kv(keystr) - The key, as a string. If the key is longer than 32 bytes it will be truncated. If the key is shorter
+                it will be padded on the right with zeroes.
+OR 
+ * kv(keyhex) - Same as keystr but interpreted as hex.
+
+Create a long alias. This is an on-chain operation (see `bcip`). Note that it is not allowed to create a long alias
+that collides with the short alias reservation (they are in the same namespace). Check the contract implementation for
+details.
+
+### resa - Resolve alias
+Fields
+ * kv(binkey) - A long key in binary. If it is shorter than 32 bytes it will be padded on the right with zeroes
+ OR
+ * kv(shortkey) - A hex encoded short key.
+ OR
+ * kv(alias) - A full alias specification, so @F36D> for short alias or @myLongAlias< for long alias. The difference
+               is that short aliases are interpreted as hex, whereas long aliases are interpeted as strings. It is 
+               the last character that distinguishes between the two.
+ * kv(embedded) - A string with one or more full aliases in it, for example @longAlias</my/uri/@5BA3>/foo

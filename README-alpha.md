@@ -214,12 +214,13 @@ Congratulations, you are now the proud owner of your very own namespace. All per
 
 ### Granting permissions
 
-For the sake of example, let us create a few entities that will represent colleagues.
+For the sake of example, let us create a few entities that will represent colleagues. We defer the publish to the end to avoid multiple waits for confirmations
 
 ```
-bw2 mke -o alice.ent
-bw2 mke -o bob.ent
-bw2 mke -o carol.ent
+bw2 mke -o alice.ent --nopublish
+bw2 mke -o bob.ent --nopublish
+bw2 mke -o carol.ent --nopublish
+bw2 i --publish *.ent
 ```
 
 To keep things simple, we are going to use some dummy URIs. Later, we will see how URIs are structured and how to deploy BW services.
@@ -238,14 +239,21 @@ Let us say that Bob is in charge of making reports, so Alice wants him to be abl
 bw2 mkdot --from alice.ent --to bob.ent --uri "oski.demo/engineering/projects/epic/*" --permissions "C*"
 ```
 
-Now let us see how this chain of trust is working. Let's ask bw2 to try find a chain of trust that allows bob to subscribe to some sensor data:
+Now let us see how this chain of trust is working. Let's ask bw2 to try find a chain of trust that allows bob to subscribe to some sensor data. As a small note, if you are following along extremely fast, the client BCIP of 2 confirmations is less strict than the code that validates permissions, which requires 5 confirmations, so you may need to wait 3 blocks (a minute or two) after executing the previous mkdot command and the following builchain command.
 
 ```
-bw2 buildchain
-Let us also say that our namespace is pretty small, and so our "namespace specific permission heirarchy" simply looks like:
+bw2 buildchain -t bob.ent --uri "oski.demo/engineering/projects/epic/sensorobj/interface" -x "C"
+```
 
-oski.demo/devteam/...
-oski.demo/production/westcoast/...
-oski.demo/production/eastcost/...
+You should see something similar to:
 
-Where the ellipsis represents the object and interface portion of the resource names. In our example, Alice is in charge of development
+```
+┣┳ DChain hash= bBrkiAnbIYafEMjYk0jwDVybgcOXUhSSZFztTh0uwEQ=
+┃┣ Registry: UNKNOWN
+┃┣ Elaborated: True
+┃┣ Grants: C*
+┃┣ On: yDrnmqzJd6C7DF0c575upjQl3vOeCPSS9y4UVlKK8SY=/engineering/projects/epic/*
+┃┣ End TTL: 0
+```
+
+You can also publish the chain by adding --publish to your command, but that is not necessary. If you want to see more information about the chain, try adding --verbose to the build chain command.

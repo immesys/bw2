@@ -230,11 +230,14 @@ func LoadMessage(b []byte) (m *Message, err error) {
 func ElaborateDChain(dc *objects.DChain, res Resolver) *objects.DChain {
 	if !dc.IsElaborated() {
 		//We need to elaborate it ourselves
+		fmt.Println("!!!! chain is not elaborated !!!!")
 		nchain, _, err := res.ResolveAccessDChain(dc.GetChainHash())
 		if err != nil { //Not in our DB
 			return nil
 		}
 		return nchain
+	} else {
+		fmt.Println("!!!! PAC chain was elaborated is not elaborated !!!!")
 	}
 	return dc
 }

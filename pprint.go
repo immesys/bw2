@@ -197,11 +197,11 @@ func dochain(hash []byte, indent int, verbose bool, cl *bw2bind.BW2Client) {
 	}
 	dochainobj(c, indent, verbose, regnote, cl)
 }
-func dochainfile(dc *objects.DChain, cl *bw2bind.BW2Client) {
+func dochainfile(dc *objects.DChain, cl *bw2bind.BW2Client, verbose bool) {
 	//Do this so you can get registry messages even for files
 	_, status, xerr := cl.ResolveRegistry(crypto.FmtKey(dc.GetChainHash()))
 	regnote := cl.ValidityToString(status, xerr)
-	dochainobj(dc, 2, true, regnote, cl)
+	dochainobj(dc, 2, verbose, regnote, cl)
 }
 func dochainobj(dc *objects.DChain, indent int, verbose bool, regnote string, cl *bw2bind.BW2Client) {
 	fmt.Println(ifstring(indent)+" DChain hash=", crypto.FmtHash(dc.GetChainHash()))

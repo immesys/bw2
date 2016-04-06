@@ -30,8 +30,8 @@ import (
 
 func makeConf(c *cli.Context) {
 	fname := "bw2.ini"
-	if c.GlobalString("conf") != "" {
-		fname = c.GlobalString("conf")
+	if c.String("conf") != "" {
+		fname = c.String("conf")
 	}
 	conf, err := os.Create(fname)
 	if err != nil {

@@ -14,6 +14,7 @@ type Lagger struct {
 	onReset      []func()
 	smu          sync.Mutex
 	bchain       bc.BlockChainProvider
+	caughtup     bool
 }
 
 const LagConfirmations = 3
@@ -25,6 +26,11 @@ func NewLagger(bchain bc.BlockChainProvider) *Lagger {
 	}
 	rv.beginLoop()
 	return rv
+}
+
+//Returns true if initial replay is complete
+func (lag *Lagger) CaughtUp() bool {
+	return lag.caughtup
 }
 func (lag *Lagger) Subscribe(onConfirmedBlock func(b *bc.Block), onReset func()) {
 	lag.smu.Lock()
@@ -54,15 +60,14 @@ func (lag *Lagger) onBlock(b *bc.Block) {
 	}
 }
 func (lag *Lagger) beginLoop() {
-	firstblockdone := false
 	lag.bchain.CallOnNewBlocks(func(b *bc.Block) bool {
-		if !firstblockdone {
+		if !lag.caughtup {
 			lag.bchain.CallOnBlocksBetween(0, b.Number, func(oldb *bc.Block) {
 				if oldb != nil {
 					lag.onBlock(oldb)
 				}
 			})
-			firstblockdone = true
+			lag.caughtup = true
 		}
 		fmt.Printf("received block %d\n", b.Number)
 		lag.onBlock(b)

@@ -71,7 +71,7 @@ DIETIME=10                  # Time to wait for the server to die, in seconds
                             # 'restart' will not work
 
 DAEMONUSER=$BW_USER
-DAEMON_OPTS=${DAEMON_OPTS:-"--conf $CONF router"}
+DAEMON_OPTS=${DAEMON_OPTS:-"router --conf $CONF"}
 
 set -e
 

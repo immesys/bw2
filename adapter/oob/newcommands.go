@@ -157,11 +157,26 @@ func (bf *boundFrame) cmdBCInteractionParams() {
 		bf.bwcl.SetMaxChainAge(uint64(maxa))
 	}
 	r := bf.mkFinalResponseOkayFrame()
-	r.AddHeader("confirmations", strconv.FormatUint(bf.bwcl.BCC().GetDefaultConfirmations(), 10))
-	r.AddHeader("timeout", strconv.FormatUint(bf.bwcl.BCC().GetDefaultTimeout(), 10))
+	fmt.Printf("here: %v %v %v %v\n", bf, bf.bwcl, bf.bwcl.BC(), bf.bwcl.BCC())
+	if bf.bwcl.BCC() != nil {
+		r.AddHeader("confirmations", strconv.FormatUint(bf.bwcl.BCC().GetDefaultConfirmations(), 10))
+		r.AddHeader("timeout", strconv.FormatUint(bf.bwcl.BCC().GetDefaultTimeout(), 10))
+	} else {
+		r.AddHeader("confirmations", strconv.FormatUint(bc.DefaultConfirmations, 10))
+		r.AddHeader("timeout", strconv.FormatUint(bc.DefaultTimeout, 10))
+	}
+
 	r.AddHeader("maxage", strconv.FormatUint(bf.bwcl.GetMaxChainAge(), 10))
 	r.AddHeader("currentage", strconv.FormatInt(bf.bwcl.BC().HeadBlockAge(), 10))
 	r.AddHeader("currentblock", strconv.FormatInt(int64(bf.bwcl.BC().CurrentBlock()), 10))
+	peercount, _, _, highest := bf.bwcl.BC().SyncProgress()
+	if highest < bf.bwcl.BC().CurrentBlock() {
+		highest = bf.bwcl.BC().CurrentBlock()
+	}
+	r.AddHeader("peers", strconv.FormatInt(int64(peercount), 10))
+	r.AddHeader("highest", strconv.FormatInt(int64(highest), 10))
+	diff := bf.bwcl.BC().GetBlock(bf.bwcl.BC().CurrentBlock()).Difficulty
+	r.AddHeader("difficulty", strconv.FormatInt(int64(diff), 10))
 	bf.send(r)
 }
 func (bf *boundFrame) cmdTransfer() {

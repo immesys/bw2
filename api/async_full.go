@@ -18,6 +18,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
@@ -162,17 +163,15 @@ func (c *BosswaveClient) Publish(params *PublishParams,
 }
 
 func (c *BosswaveClient) VerifyAffinity(m *core.Message) error {
-	panic("We have not implemented this in 2.1.0 lolwut?")
-	/*
-		mvk := m.MVK
-		for _, ourMVK := range c.bw.MVKs {
-			if bytes.Equal(mvk, ourMVK) {
-				return nil
-			}
-		}
-		return errors.New("we are not the designated router for this MVK")
-	*/
-
+	drvk, err := c.BW().LookupDesignatedRouter(m.MVK)
+	if err != nil {
+		return bwe.WrapM(bwe.AffinityMismatch, "error verifying affinity", err)
+	}
+	if bytes.Equal(c.BW().Entity.GetVK(), drvk) {
+		return nil
+	} else {
+		return bwe.M(bwe.AffinityMismatch, "we are not the DR for this namespace")
+	}
 }
 
 type SubscribeParams struct {

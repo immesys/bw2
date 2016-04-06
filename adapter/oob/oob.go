@@ -219,7 +219,7 @@ func (bf *boundFrame) loadCommonPAC(autochain bool, perms string) *objects.DChai
 }
 func (bf *boundFrame) checkChainAge() {
 	bf.checkHaveChain()
-	if bf.bwcl.BC().HeadBlockAge() > int64(bf.bwcl.GetMaxChainAge()) {
+	if bf.bwcl.ChainStale() {
 		panic(bwe.M(bwe.ChainStale, "Chain is too stale"))
 	}
 }

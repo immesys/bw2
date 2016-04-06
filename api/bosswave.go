@@ -136,6 +136,9 @@ func (cl *BosswaveClient) GetMaxChainAge() uint64 {
 func (cl *BosswaveClient) SetMaxChainAge(age uint64) {
 	cl.maxage = age
 }
+func (cl *BosswaveClient) ChainStale() bool {
+	return (cl.bchain.HeadBlockAge() > int64(cl.GetMaxChainAge()) || !cl.bw.lag.CaughtUp())
+}
 func (cl *BosswaveClient) GetUs() *objects.Entity {
 	return cl.ourvk
 }

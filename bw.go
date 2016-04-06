@@ -82,6 +82,10 @@ func main() {
 					Value: "",
 					Usage: "The dbpath to put in the config",
 				},
+				cli.StringFlag{
+					Name:  "conf",
+					Usage: "override the default config file",
+				},
 			},
 		},
 		{
@@ -128,6 +132,43 @@ func main() {
 					Usage: "the account to transfer the coldstore to",
 				},
 			},
+		},
+		{
+			Name:   "xfer",
+			Usage:  "transfer Ether to an address",
+			Action: actionXfer,
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name:  "to, t",
+					Value: "",
+					Usage: "the account to transfer to",
+				},
+				cli.IntFlag{
+					Name:  "accountnum",
+					Value: 0,
+					Usage: "the account number to transfer from",
+				},
+				cli.StringFlag{
+					Name:  "ether",
+					Value: "",
+					Usage: "an amount in ether",
+				},
+				cli.StringFlag{
+					Name:  "milli",
+					Value: "",
+					Usage: "an amount in milliEther",
+				},
+				cli.StringFlag{
+					Name:  "micro",
+					Value: "",
+					Usage: "an amount in microEther",
+				}, bflag,
+			},
+		},
+		{
+			Name:   "status",
+			Usage:  "get the local router status",
+			Action: actionStatus,
 		},
 		{
 			Name:    "mkdot",
@@ -311,7 +352,7 @@ func main() {
 				cli.StringFlag{
 					Name:  "permissions, x",
 					Usage: "the permissions to try build",
-					Value: "LPC",
+					Value: "PC",
 				},
 				cli.StringFlag{
 					Name:  "to, t",
@@ -320,38 +361,15 @@ func main() {
 				},
 				cli.BoolFlag{
 					Name:  "verbose, v",
-					Usage: "dump the verbose details of all chains",
+					Usage: "print out the contents of the chains",
 				},
+				cli.BoolFlag{
+					Name:  "publish, p",
+					Usage: "publish inspected objects to the registry",
+				},
+				bflag,
 			},
 		},
-		// {
-		// 	Name:    "resolve",
-		// 	Aliases: []string{"r"},
-		// 	Usage:   "resolve a hash or VK",
-		// 	Action:  actionResolve,
-		// 	Flags: []cli.Flag{
-		// 		cli.StringSliceFlag{
-		// 			Name:  "router, r",
-		// 			Usage: "a router to query for DOTs (given as an MVK / DNS alias)",
-		// 			Value: &cli.StringSlice{},
-		// 		},
-		// 		cli.StringFlag{
-		// 			Name:  "id, i",
-		// 			Usage: "the hash or VK to resolve",
-		// 			Value: "",
-		// 		},
-		// 		cli.BoolFlag{
-		// 			Name:  "extended, x",
-		// 			Usage: "recursively resolve objects referenced by the primary",
-		// 		},
-		// 		cli.StringFlag{
-		// 			Name:  "uri, u",
-		// 			Usage: "A URI or DNS alias",
-		// 			Value: "",
-		// 		},
-		// 		oflag, pflag,
-		// 	},
-		// },
 	}
 	app.Run(os.Args)
 }

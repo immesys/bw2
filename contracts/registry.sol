@@ -242,9 +242,9 @@ contract Registry {
 
       /* And put it in */
       if (rv == 200) {
-        DChains[dothash] = content;
-        DChainState[dothash] = Validity.Valid;
-        NewDChain(dothash, content);
+        DChains[chainhash] = content;
+        DChainState[chainhash] = Validity.Valid;
+        NewDChain(chainhash, content);
       }
     }
 

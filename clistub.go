@@ -9,6 +9,7 @@ import (
 	"math/big"
 	"os"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -62,6 +63,7 @@ func loadSigningEntityFile(fpath string) *objects.Entity {
 	ent.Encode()
 	return ent
 }
+
 func getAvailableEntity(c *cli.Context, param string) *objects.Entity {
 	//Try it first as a file
 	se := loadSigningEntityFile(param)
@@ -104,6 +106,44 @@ func getBankroll(c *cli.Context, bwcl *bw2bind.BW2Client) []byte {
 		os.Exit(1)
 	}
 	return enti.(*objects.Entity).GetSigningBlob()
+}
+
+func getAccountParam(bwcl *bw2bind.BW2Client, c *cli.Context, param string) string {
+	if param == "" {
+		fmt.Printf("Account parameter missing\n")
+		os.Exit(1)
+	}
+	//First try it as an entity file:
+	se := loadSigningEntityFile(param)
+	if se != nil {
+		rv, _ := se.GetAccountHex(0)
+		return rv
+	}
+	//Then try it as hex directly
+	hparam := param
+	if hparam[0:2] == "0x" {
+		hparam = hparam[2:]
+	}
+	if len(hparam) == 40 {
+		return "0x" + hparam
+	}
+	//Then try it as an alias
+	res, zero, err := bwcl.ResolveLongAlias(param)
+	if err != nil {
+		fmt.Printf("Could not resolve alias '%s': %s\n", param, err.Error())
+		os.Exit(1)
+	}
+	if zero {
+		fmt.Printf("Could not decode '%s' as a keyfile, hex or alias\n", param)
+		os.Exit(1)
+	}
+	for i := 20; i < 32; i++ {
+		if res[i] != 0 {
+			fmt.Printf("Alias '%s' is not an account address\n", param)
+			os.Exit(1)
+		}
+	}
+	return "0x" + hex.EncodeToString(res[:20])
 }
 
 func getEntityParamVK(bwcl *bw2bind.BW2Client, c *cli.Context, param string) (string, bool) {
@@ -205,8 +245,9 @@ func actionColdStore(c *cli.Context) {
 		f = f.Quo(f, big.NewFloat(1000000000000000000.0))
 		fmt.Println(fmt.Sprintf(" (%s) %.6f \u039e", bal.Addr, f))
 	}
-	toacc := c.String("to")
-	if toacc != "" {
+
+	if c.String("to") != "" {
+		toacc := getAccountParam(cl, c, c.String("to"))
 		amt := bal.Int
 		amt = amt.Sub(amt, big.NewInt(100000000000000000)) //100 finney
 		if amt.Sign() <= 0 {
@@ -596,55 +637,65 @@ func inspectInterface(ro objects.RoutingObject, cl *bw2bind.BW2Client) {
 		dodotfile(ro.(*objects.DOT), cl)
 	case objects.ROPermissionDChain:
 		fmt.Println("\u2533 Type: Permission DCHain")
-		dochainfile(ro.(*objects.DChain), cl)
+		dochainfile(ro.(*objects.DChain), cl, true)
 	case objects.ROPermissionDChainHash:
 		fmt.Println("\u2533 Type: Permission DChain hash")
-		dochainfile(ro.(*objects.DChain), cl)
+		dochainfile(ro.(*objects.DChain), cl, true)
 	case objects.ROAccessDChain:
 		fmt.Println("\u250f Type: Access DChain")
-		dochainfile(ro.(*objects.DChain), cl)
+		dochainfile(ro.(*objects.DChain), cl, true)
 	case objects.ROAccessDChainHash:
 		fmt.Println("\u2533 Type: Access DChain hash")
-		dochainfile(ro.(*objects.DChain), cl)
+		dochainfile(ro.(*objects.DChain), cl, true)
 	default:
 		fmt.Println("ERR: not a Routing Object file")
 	}
 	resetTerm()
 }
-func pubObj(topub objects.RoutingObject, cl *bw2bind.BW2Client, c *cli.Context) {
-	cl.SetEntity(getBankroll(c, cl))
-	/*	cip, err := cl.GetBCInteractionParams()
-		if err != nil {
-			fmt.Printf("Could not get BCIP: %s\n", err)
-			os.Exit(1)
-		}*/
-	//fmt.Printf("Current BCIP set to %d confirmation blocks or %d block timeout\n", cip.Confirmations, cip.Timeout)
-	dmsg := make(chan string, 1)
 
+func pubObj(topub objects.RoutingObject, cl *bw2bind.BW2Client, c *cli.Context) {
+	pubObjs([]objects.RoutingObject{topub}, cl, c)
+}
+func pubObjs(topubz []objects.RoutingObject, cl *bw2bind.BW2Client, c *cli.Context) {
+	cl.SetEntity(getBankroll(c, cl))
+	dmsg := make(chan string, 1)
+	wg := sync.WaitGroup{}
+	wg.Add(len(topubz))
+	problem := false
 	go func() {
-		var desc string
-		var err error
-		switch t := topub.(type) {
-		case *objects.Entity:
-			dmsg <- fmt.Sprintf("Waiting for entity %s\n", crypto.FmtKey(t.GetVK()))
-			desc, err = cl.PublishEntity(t.GetContent())
-			desc = "Entity " + desc
-		case *objects.DOT:
-			dmsg <- fmt.Sprintf("Waiting for DOT %s\n", crypto.FmtKey(t.GetHash()))
-			desc, err = cl.PublishDOT(t.GetContent())
-			desc = "DOT " + desc
-		case *objects.DChain:
-			dmsg <- fmt.Sprintf("Waiting for Chain %s\n", crypto.FmtKey(t.GetChainHash()))
-			desc, err = cl.PublishChain(t.GetContent())
-			desc = "DChain " + desc
-		}
-		if err == nil {
-			dmsg <- fmt.Sprintf("Successfully published %s", desc)
+		wg.Wait()
+		if problem {
+			dmsg <- "Some objects failed to publish"
 		} else {
-			dmsg <- fmt.Sprintf("Failed to publish: %s", err.Error())
+			dmsg <- "All objects published"
 		}
 	}()
-	fmt.Println(<-dmsg)
+
+	fmt.Printf("Waiting for %d object(s) to publish\n", len(topubz))
+	for _, vv := range topubz {
+		go func(topub objects.RoutingObject) {
+			var desc string
+			var err error
+			switch t := topub.(type) {
+			case *objects.Entity:
+				desc, err = cl.PublishEntity(t.GetContent())
+				desc = "Entity " + desc
+			case *objects.DOT:
+				desc, err = cl.PublishDOT(t.GetContent())
+				desc = "DOT " + desc
+			case *objects.DChain:
+				desc, err = cl.PublishChain(t.GetContent())
+				desc = "DChain " + desc
+			}
+			if err == nil {
+				fmt.Printf("\rSuccessfully published %s\n", desc)
+			} else {
+				problem = true
+				fmt.Printf("\rFailed to publish object: %s\n", err.Error())
+			}
+			wg.Done()
+		}(vv)
+	}
 	doChainOp(cl, dmsg)
 }
 func doChainOp(cl *bw2bind.BW2Client, done chan string) {
@@ -652,6 +703,15 @@ func doChainOp(cl *bw2bind.BW2Client, done chan string) {
 	if err != nil {
 		fmt.Printf("Could not get BCIP: %s\n", err)
 		os.Exit(1)
+	}
+	//This is so we don't print the confirmation status for super short
+	//things (already published etc)
+	time.Sleep(500 * time.Millisecond)
+	select {
+	case m := <-done:
+		fmt.Println(m)
+		return
+	default:
 	}
 	sblock := cip.CurrentBlock
 	fmt.Printf("Current BCIP set to %d confirmation blocks or %d block timeout\n", cip.Confirmations, cip.Timeout)
@@ -673,7 +733,6 @@ func doChainOp(cl *bw2bind.BW2Client, done chan string) {
 		case <-time.After(500 * time.Millisecond):
 			printChain()
 		case m := <-done:
-			printChain()
 			fmt.Println("\n" + m)
 			return
 		}
@@ -782,9 +841,7 @@ func actionInspect(c *cli.Context) {
 	}
 	//We need to re-set our entity because pprint modifies it to get balances
 	if pub {
-		for _, p := range topub {
-			pubObj(p, cl, c)
-		}
+		pubObjs(topub, cl, c)
 	}
 
 }
@@ -816,9 +873,12 @@ func actionBuildChain(c *cli.Context) {
 		os.Exit(1)
 	}
 
+	verbose := c.Bool("verbose")
+
 	ch, err := cl.BuildChain(uri, perms, toVK)
 	if err != nil {
 		fmt.Println("DOT Chain build failed: ", err)
+		os.Exit(1)
 	}
 	got := false
 	topub := []objects.RoutingObject{}
@@ -830,12 +890,88 @@ func actionBuildChain(c *cli.Context) {
 		}
 		dc := roi.(*objects.DChain)
 		topub = append(topub, roi)
-		dochainfile(dc, cl)
+		dochainfile(dc, cl, verbose)
 		resetTerm()
 	}
 	if !got {
 		fmt.Println("No chains found")
 		os.Exit(1)
 	}
+	if c.Bool("publish") {
+		pubObjs(topub, cl, c)
+	}
+}
+func actionXfer(c *cli.Context) {
+	if c.String("bankroll") == "" {
+		fmt.Println("Need bankroll to transfer from")
+		os.Exit(1)
+	}
+	cl := bw2bind.ConnectOrExit("")
+	cl.SetEntity(getBankroll(c, cl))
+	eth := c.String("ether")
+	milli := c.String("milli")
+	micro := c.String("micro")
+	total := big.NewFloat(0)
+	total = total.SetPrec(256)
+	toacc := getAccountParam(cl, c, c.String("to"))
+	if eth != "" {
+		incr, _, err := big.ParseFloat(eth, 10, 256, big.ToNearestEven)
+		if err != nil {
+			fmt.Println("Problem parsing --ether:", err)
+			os.Exit(1)
+		}
+		incr.Mul(incr, big.NewFloat(1e18))
+		total.Add(total, incr)
+	}
+	if milli != "" {
+		incr, _, err := big.ParseFloat(eth, 10, 256, big.ToNearestEven)
+		if err != nil {
+			fmt.Println("Problem parsing --ether:", err)
+			os.Exit(1)
+		}
+		incr.Mul(incr, big.NewFloat(1e15))
+		total.Add(total, incr)
+	}
+	if micro != "" {
+		incr, _, err := big.ParseFloat(eth, 10, 256, big.ToNearestEven)
+		if err != nil {
+			fmt.Println("Problem parsing --ether:", err)
+			os.Exit(1)
+		}
+		incr.Mul(incr, big.NewFloat(1e12))
+		total.Add(total, incr)
+	}
+	asEth := big.NewFloat(0)
+	asEth = asEth.Quo(total, big.NewFloat(1000000000000000000.0))
+	if total.Sign() == 0 {
+		fmt.Println("You need to specify a nonzero amount to transfer")
+		os.Exit(1)
+	}
+	wei, _ := total.Int(nil)
+	dchan := make(chan string, 1)
+	fmt.Printf("Transferring %.6f \u039ether\n  to: %s\n wei: %d\n", asEth, toacc, wei)
+	go func() {
+		err := cl.TransferWei(c.Int("accountnum"), toacc, wei)
+		if err == nil {
+			dchan <- "Transfer completed successfully"
+		} else {
+			dchan <- fmt.Sprintf("Transfer failed: %s", err)
+		}
+	}()
+	doChainOp(cl, dchan)
 
+}
+func actionStatus(c *cli.Context) {
+	cl := bw2bind.ConnectOrExit("")
+	cip, err := cl.GetBCInteractionParams()
+	if err != nil {
+		fmt.Printf("Could not get BCIP: %s\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("BW2 Local Router status:")
+	fmt.Printf("    Peer count: %d\n", cip.Peers)
+	fmt.Printf(" Current block: %d\n", cip.CurrentBlock)
+	fmt.Printf("    Seen block: %d\n", cip.HighestBlock)
+	fmt.Printf("   Current age: %s\n", cip.CurrentAge.String())
+	fmt.Printf("    Difficulty: %d\n", cip.Difficulty)
 }

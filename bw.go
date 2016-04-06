@@ -370,6 +370,32 @@ func main() {
 				bflag,
 			},
 		},
+		{
+			Name:    "subscribe",
+			Aliases: []string{"sub", "s"},
+			Action:  actionSubscribe,
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name:   "entity, e",
+					Usage:  "the entity to subscribe as",
+					Value:  "",
+					EnvVar: "BW2_DEFAULT_ENTITY",
+				},
+			},
+		},
+		{
+			Name:    "query",
+			Aliases: []string{"q"},
+			Action:  actionQuery,
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name:   "entity, e",
+					Usage:  "the entity to query as",
+					Value:  "",
+					EnvVar: "BW2_DEFAULT_ENTITY",
+				},
+			},
+		},
 	}
 	app.Run(os.Args)
 }

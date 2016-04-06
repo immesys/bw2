@@ -802,7 +802,7 @@ func actionInspect(c *cli.Context) {
 		} else {
 			data, zero, err := cl.ResolveLongAlias(par)
 			if err != nil {
-				fmt.Printf("'%s' is not an existing file, but failed to resolve as a long alias: %s\n", par, err.Error())
+				fmt.Printf("'%s' is not an existing file, published RO or long alias: %s\n", par, err.Error())
 				goto nextparam
 			}
 			if zero {
@@ -974,4 +974,63 @@ func actionStatus(c *cli.Context) {
 	fmt.Printf("    Seen block: %d\n", cip.HighestBlock)
 	fmt.Printf("   Current age: %s\n", cip.CurrentAge.String())
 	fmt.Printf("    Difficulty: %d\n", cip.Difficulty)
+}
+
+//sub -e entity uri uri uri
+func actionSubscribe(c *cli.Context) {
+	cl := bw2bind.ConnectOrExit("")
+	if c.String("entity") == "" {
+		fmt.Println("You need to specify an entity to be (-e)")
+		os.Exit(1)
+	}
+	e := getAvailableEntity(c, c.String("entity"))
+	if e == nil {
+		fmt.Println("Could not load entity")
+		os.Exit(1)
+	}
+	cl.SetEntity(e.GetSigningBlob())
+	for _, uri := range c.Args() {
+		ch := cl.SubscribeOrExit(&bw2bind.SubscribeParams{
+			URI:       uri,
+			AutoChain: true,
+		})
+		go func() {
+			for m := range ch {
+				m.Dump()
+			}
+		}()
+	}
+	for {
+		time.Sleep(10 * time.Second)
+	}
+}
+
+func actionQuery(c *cli.Context) {
+	cl := bw2bind.ConnectOrExit("")
+	if c.String("entity") == "" {
+		fmt.Println("You need to specify an entity to be (-e)")
+		os.Exit(1)
+	}
+	e := getAvailableEntity(c, c.String("entity"))
+	if e == nil {
+		fmt.Println("Could not load entity")
+		os.Exit(1)
+	}
+	cl.SetEntity(e.GetSigningBlob())
+	for _, uri := range c.Args() {
+		ch := cl.QueryOrExit(&bw2bind.QueryParams{
+			URI:       uri,
+			AutoChain: true,
+		})
+		go func() {
+			for m := range ch {
+				if m != nil {
+					m.Dump()
+				}
+			}
+		}()
+	}
+	for {
+		time.Sleep(10 * time.Second)
+	}
 }

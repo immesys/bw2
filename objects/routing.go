@@ -32,6 +32,7 @@ import (
 	log "github.com/cihub/seelog"
 	"github.com/immesys/bw2/crypto"
 	"github.com/immesys/bw2/util"
+	"github.com/immesys/bw2/util/bwe"
 )
 
 //RoutingObject is the interface that is common among all objects that
@@ -61,6 +62,7 @@ var RoutingObjectConstructor = map[int]func(ronum int, content []byte) (RoutingO
 	ROAccessDOT:            NewDOT,
 	ROPermissionDOT:        NewDOT,
 	ROEntity:               NewEntity,
+	ROEntityWKey:           NewEntity,
 	ROOriginVK:             NewOriginVK,
 	ROExpiry:               NewExpiry,
 	RORevocation:           NewRevocation,
@@ -214,11 +216,11 @@ func (ro *DChain) NumHashes() int {
 //  - dots are tail-to-tail
 //  - dot expiry against curTimeNs
 //  - TTL
-//  - all dots grant on MVK
-//  - final chain gives superset of ADPS and Suffix
+//  - all dots grant on MVK (if mvk is zero, fill from first DOT)
+//  - final chain gives superset of ADPS and Suffix(if present)
 //  - all entity sigs
 //  - entity expiry against curTimeNs
-//  - given URI suffix is well formed
+//  - given URI suffix is well formed(if present)
 //  - the origin of the dchain is the mvk - this might be contentious
 // it is my hope that if this method gives the okay, there is nothing
 // (save for unknown revocations) that could be wrong
@@ -235,124 +237,168 @@ func (ro *DChain) CheckAccessGrants(curTime *time.Time,
 	getDOT func([]byte) *DOT, getEntity func([]byte) *Entity,
 	getRevocations func([]byte) []*Revocation) int {
 
+	//fmt.Println("ATAG 1")
 	if curTime == nil {
 		t := time.Now()
 		curTime = &t
 	}
+	//fmt.Println("ATAG 2")
+	zero := true
+	for _, b := range mvk {
+		if b != 0 {
+			zero = false
+		}
+	}
+	if zero {
+		mvkdot := getDOT(ro.GetDotHash(0))
+		if mvkdot == nil {
+			return bwe.Unresolvable
+		}
+		mvk = mvkdot.GetGiverVK()
+	}
+	//fmt.Println("ATAG 3")
 	// First augment the chain, checking all DOTs are individually ok
 	for i := 0; i < ro.NumHashes(); i++ {
+		//fmt.Println("ATAG 4", i)
 		dt := getDOT(ro.GetDotHash(i))
 		if dt == nil {
-			return util.BWStatusUnresolvable
+			return bwe.Unresolvable
 		}
+		//fmt.Println("ATAG 5", i)
 		// Check DOT signature
 		if !dt.SigValid() {
-			return util.BWStatusInvalidDOT
+			return bwe.InvalidDOT
 		}
+		//fmt.Println("ATAG 6", i)
 		// Check is access
 		if !dt.IsAccess() {
-			return util.BWStatusNotAccessRO
+			return bwe.NotAccessRO
 		}
+		//fmt.Println("ATAG 7", i)
 		// Check is unexpired
 		if dt.GetExpiry() != nil && dt.GetExpiry().Before(*curTime) {
-			return util.BWStatusExpiredDOT
+			return bwe.ExpiredDOT
 		}
+		//fmt.Println("ATAG 8", i)
 		// Check grants on MVK
 		if !bytes.Equal(dt.GetAccessURIMVK(), mvk) {
-			return util.BWStatusMVKMismatch
+			return bwe.MVKMismatch
 		}
+		//fmt.Println("ATAG 9", i)
+		//fmt.Println("ATAG 9.2", i, dt.GetHash())
 		// Check for DOT revocation
 		for _, r := range getRevocations(dt.GetHash()) {
+			//fmt.Println("ATAG 10", i)
 			if r.IsValidFor(dt) {
-				return util.BWStatusRevokedDOT
+				return bwe.RevokedDOT
 			}
 		}
+		ro.AugmentBy(dt)
 	}
+	//fmt.Println("ATAG 10.5")
 	ovk := ro.GetDOT(0).GetGiverVK()
-
+	//fmt.Println("ATAG 11")
 	// Check OVK is MVK
 	if !bytes.Equal(ovk, mvk) {
-		return util.BWStatusChainOriginNotMVK
+		return bwe.ChainOriginNotMVK
 	}
 	tail := ro.GetDOT(0).GetReceiverVK()
-
+	//fmt.Println("ATAG 12")
 	entitiesToCheck := [][]byte{ro.GetDOT(0).GetGiverVK(), ro.GetDOT(0).GetReceiverVK()}
-
+	//fmt.Println("ATAG 13")
 	// Then check all DOTs are end-to-end and rest of entities are ok
 	for i := 1; i < ro.NumHashes(); i++ {
+		//fmt.Println("ATAG 14", i, crypto.FmtKey(ro.GetDOT(i).GetGiverVK()), crypto.FmtKey(ro.GetDOT(i).GetReceiverVK()))
 		if !bytes.Equal(tail, ro.GetDOT(i).GetGiverVK()) {
-			return util.BWStatusBadLink
+			//fmt.Println("ATAG 15")
+			return bwe.BadLink
 		}
+		//fmt.Println("ATAG 15", i
 		entitiesToCheck = append(entitiesToCheck, ro.GetDOT(i).GetReceiverVK())
+		tail = ro.GetDOT(i).GetReceiverVK()
 	}
 
 	// Check entities
 	unresolvedEntities := false
+	//fmt.Println("ATAG 16")
 	for _, vk := range entitiesToCheck {
+		//fmt.Println("ATAG 17", i)
 		e := getEntity(vk)
 		if e == nil {
 			unresolvedEntities = true
 			continue
 		}
+		//fmt.Println("ATAG 18", i)
 		if !e.SigValid() {
-			return util.BWStatusInvalidEntity
+			return bwe.InvalidEntity
 		}
+		//fmt.Println("ATAG 18", i)
 		if e.GetExpiry() != nil {
 			if e.GetExpiry().Before(*curTime) {
-				return util.BWStatusExpiredEntity
+				return bwe.ExpiredEntity
 			}
 		}
 		for _, r := range getRevocations(e.GetVK()) {
 			if r.IsValidFor(e) {
-				return util.BWStatusRevokedEntity
+				return bwe.RevokedEntity
 			}
 		}
 	}
+	//fmt.Println("ATAG 25")
 	// Check TTL
 	ttl := 255
 	for i := 0; i < ro.NumHashes(); i++ {
 		if ttl == 0 {
-			return util.BWStatusTTLExpired
+			return bwe.TTLExpired
 		}
 		ttl--
 		if ro.GetDOT(i).GetTTL() < ttl {
 			ttl = ro.GetDOT(i).GetTTL()
 		}
 	}
-
+	//fmt.Println("ATAG 26")
 	// Calc ADPS
 	for i := 0; i < ro.NumHashes(); i++ {
 		ADPS.ReduceBy(ro.GetDOT(i).GetPermissionSet())
 	}
 
+	nosuffix := suffix == ""
+	if nosuffix {
+		//fmt.Println("ATAG 27")
+		suffix = "*"
+	}
+	//fmt.Println("ATAG 28")
+	//fmt.Println("nosuffix %v suffix %v\n", nosuffix, suffix)
 	// Chcek suffix well formed
 	// Note that the stars/plusses etc in the URI are NOT
 	// relevant to the ADPS because this is about granting.
 	// granting foo/* has nothing to do with P*C*
 	valid, _, _, _, _ := util.AnalyzeSuffix(suffix)
 	if !valid {
-		return util.BWStatusBadURI
+		//fmt.Println("Analysis disliked")
+		return bwe.BadURI
 	}
 	uri := suffix
-
+	//fmt.Println("ATAG 30")
 	// Calc URI
 	for i := 0; i < ro.NumHashes(); i++ {
 		nuri, ok := util.RestrictBy(uri, ro.GetDOT(i).GetAccessURISuffix())
 		if !ok {
-			return util.BWStatusOverconstrainedURI
+			//fmt.Println("ATAG 31")
+			return bwe.OverconstrainedURI
 		}
 		uri = nuri
 	}
-
+	//fmt.Println("ATAG 32")
 	// The suffix will not have gotten MORE permissive, so any change is bad
-	if suffix != uri {
-		return util.BWStatusBadPermissions
+	if !nosuffix && suffix != uri {
+		return bwe.BadPermissions
 	}
-
+	//fmt.Println("ATAG 33")
 	if unresolvedEntities {
-		return util.BWStatusOkayAsResolved
+		return bwe.OkayAsResolved
 	}
-	return util.BWStatusOkay
+	return bwe.Okay
 }
 
 //AugmentBy fills the given dot into the right position in the chain
@@ -554,6 +600,11 @@ type DOT struct {
 
 	//Only for Permission dot
 	kv map[string]string
+
+	//This is for users to cache, none of the code here
+	//populates these nor are they guaranteed to be correct
+	GiverEntity    *Entity
+	ReceiverEntity *Entity
 }
 
 type AccessDOTPermissionSet struct {
@@ -1365,11 +1416,19 @@ type Entity struct {
 }
 
 func CreateLightEntity(vk, sk []byte) *Entity {
+	if len(vk) != 32 || len(sk) != 32 {
+		panic("Bad keypairs")
+	}
 	return &Entity{vk: vk, sk: sk}
 }
 func CreateNewEntity(contact, comment string, revokers [][]byte) *Entity {
 	if revokers == nil {
 		revokers = make([][]byte, 0)
+	}
+	for _, v := range revokers {
+		if len(v) != 32 {
+			panic("I told you we need to check this...")
+		}
 	}
 	rv := &Entity{contact: contact, comment: comment, revokers: revokers}
 	rv.sk, rv.vk = crypto.GenerateKeypair()
@@ -1397,6 +1456,9 @@ func (ro *Entity) GetComment() string {
 
 //GetSigningBlob returns the full entity, including the private key
 func (ro *Entity) GetSigningBlob() []byte {
+	if len(ro.content) == 0 {
+		ro.Encode()
+	}
 	if len(ro.GetSK()) == 0 || len(ro.content) == 0 {
 		return nil
 	}
@@ -1507,12 +1569,16 @@ func (ro *Entity) Encode() {
 func NewEntity(ronum int, content []byte) (rv RoutingObject, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			fmt.Println(r)
-			debug.PrintStack()
 			err = NewObjectError(ronum, "Bad Entity")
 			rv = nil
 		}
 	}()
+	var sk []byte
+	if ronum == ROEntityWKey {
+		sk = content[:32]
+		content = content[32:]
+		ronum = ROEntity
+	}
 	if ronum != ROEntity {
 		panic("Bad RONUM: " + strconv.Itoa(ronum))
 	}
@@ -1565,6 +1631,9 @@ func NewEntity(ronum int, content []byte) (rv RoutingObject, err error) {
 	}
 done:
 	e.signature = content[idx : idx+64]
+	if sk != nil {
+		e.SetSK(sk)
+	}
 	return e, nil
 }
 
@@ -1602,6 +1671,9 @@ func (ro *Entity) GetRONum() int {
 }
 
 func (ro *Entity) GetContent() []byte {
+	if len(ro.content) == 0 {
+		ro.Encode()
+	}
 	return ro.content
 }
 

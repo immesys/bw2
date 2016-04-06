@@ -140,6 +140,13 @@ func VerifyBlob(vk []byte, sig []byte, blob []byte) bool {
 	return rv == 0
 }
 
+func VKforSK(sk []byte) []byte {
+	vk := make([]byte, 32)
+	C.ed25519_publickey((*C.uchar)(unsafe.Pointer(&sk[0])),
+		(*C.uchar)(unsafe.Pointer(&vk[0])))
+	return vk
+}
+
 func GenerateKeypair() (sk []byte, vk []byte) {
 	sk = make([]byte, 32)
 	vk = make([]byte, 32)

@@ -19,32 +19,23 @@ package core
 
 import (
 	"os"
-	"strings"
 
 	log "github.com/cihub/seelog"
-	"github.com/immesys/bw2/crypto"
 	"github.com/scalingdata/gcfg"
 )
 
 // BWConfig is the configuration for a router
 type BWConfig struct {
 	Router struct {
-		VK      string
-		SK      string
+		Entity  string
 		DB      string
 		LogPath string
-	}
-	Affinity struct {
-		MVK []string
 	}
 	Native struct {
 		ListenOn string
 	}
 	OOB struct {
 		ListenOn string
-	}
-	DNSOverride struct {
-		Set []string
 	}
 }
 
@@ -63,53 +54,6 @@ func LoadConfig(filename string) *BWConfig {
 		if err != nil {
 			log.Criticalf("Could not load default config file: %v", err)
 			os.Exit(1)
-		}
-	}
-	return rv
-}
-
-//DNS override should allow
-// name : mvk
-// mvk : dr
-// dr : host
-func (c *BWConfig) GetNamecache() map[string][]byte {
-	rv := make(map[string][]byte)
-	for _, e := range c.DNSOverride.Set {
-		parts := strings.Split(e, " ")
-		if parts[0] == "mvk" {
-			v, err := crypto.UnFmtKey(parts[2])
-			if err != nil {
-				log.Critical("Could not parse DNS override line: ", e)
-				continue
-			}
-			rv[parts[1]] = v
-		}
-	}
-	return rv
-}
-
-func (c *BWConfig) GetDRVKcache() map[string][]byte {
-	rv := make(map[string][]byte)
-	for _, e := range c.DNSOverride.Set {
-		parts := strings.Split(e, " ")
-		if parts[0] == "dr" {
-			v, err := crypto.UnFmtKey(parts[2])
-			if err != nil {
-				log.Critical("Could not parse DNS override line: ", e)
-				continue
-			}
-			rv[parts[1]] = v
-		}
-	}
-	return rv
-}
-
-func (c *BWConfig) GetTargetcache() map[string]string {
-	rv := make(map[string]string)
-	for _, e := range c.DNSOverride.Set {
-		parts := strings.Split(e, " ")
-		if parts[0] == "srv" {
-			rv[parts[1]] = parts[2]
 		}
 	}
 	return rv

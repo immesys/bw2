@@ -29,4 +29,5 @@ const (
 	ROOriginVK             = 0x31
 	ROExpiry               = 0x40
 	RORevocation           = 0x50
+	RODesignatedRouterVK   = 0x33
 )

@@ -19,11 +19,13 @@ package main
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
+	"path/filepath"
 
 	"github.com/codegangsta/cli"
-	"github.com/immesys/bw2/api"
-	"github.com/immesys/bw2/crypto"
+	"github.com/immesys/bw2/objects"
+	"github.com/immesys/bw2/util"
 )
 
 func makeConf(c *cli.Context) {
@@ -41,9 +43,22 @@ func makeConf(c *cli.Context) {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-	sk, vk := crypto.GenerateKeypair()
-	tsk := crypto.FmtKey(sk)
-	tvk := crypto.FmtKey(vk)
+	abs, err := filepath.Abs(fname)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	configdir := filepath.Dir(abs)
+	ent := objects.CreateNewEntity("", "", nil)
+	wrapped := make([]byte, len(ent.GetSigningBlob())+1)
+	copy(wrapped[1:], ent.GetSigningBlob())
+	wrapped[0] = objects.ROEntityWKey
+	entfile := configdir + "/" + "router.ent"
+	err = ioutil.WriteFile(entfile, wrapped, 0600)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
 	lpath := "bw2.log"
 	if c.String("logfile") != "" {
 		lpath = c.String("logfile")
@@ -53,18 +68,15 @@ func makeConf(c *cli.Context) {
 		dbpath = c.String("dbpath")
 	}
 	file := []string{
-		("# generated for " + api.BW2Version + "\n"),
+		("# generated for " + util.BW2Version + "\n"),
 		("[router]\n"),
-		("VK=" + tvk + "\n"),
-		("SK=" + tsk + "\n"),
+		("Entity=" + entfile + "\n"),
 		("DB=" + dbpath + "\n"),
 		("LogPath=" + lpath + "\n"),
 		("[native]\n"),
 		("ListenOn=:4514\n"),
 		("[oob]\n"),
-		("ListenOn=:28589\n"),
-		("[affinity]\n"),
-		("# add MVK=<key>,<cert> lines\n"),
+		("ListenOn=127.0.0.1:28589\n"),
 	}
 	for _, s := range file {
 		_, err := conf.WriteString(s)

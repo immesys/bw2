@@ -31,8 +31,8 @@ import (
 // each cell must look like:
 // [!a-zA-Z0-9-_.\(\),]?[a-zA-Z0-9-_.\(\),]+
 // or "+", "$", "*"
-// Note that a cell starting with an exclamation point denotes the start of a
-// metadata tree. It is an error to have more than one exclamation point in
+// Note that a cell starting with an exclamation point denotes the xattr listing
+// tree. It is an error to have more than one exclamation point in
 // a URI or for it to occur not at the first character of a cell
 // A "$" cell denotes the start of a read-only free-path. It may be accessed
 // even if the person does not have permissions for the tree above it, although

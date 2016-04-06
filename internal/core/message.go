@@ -27,9 +27,9 @@ import (
 
 	log "github.com/cihub/seelog"
 	"github.com/immesys/bw2/crypto"
-	"github.com/immesys/bw2/internal/store"
 	"github.com/immesys/bw2/objects"
 	"github.com/immesys/bw2/util"
+	"github.com/immesys/bw2/util/bwe"
 )
 
 const (
@@ -41,6 +41,13 @@ const (
 	TypeTapQuery  = 0x06
 	TypeLS        = 0x07
 )
+
+// This is used for verifying messages
+type Resolver interface {
+	ResolveDOT(dothash []byte) (*objects.DOT, int, error)
+	ResolveEntity(vk []byte) (*objects.Entity, int, error)
+	ResolveAccessDChain(chainhash []byte) (*objects.DChain, int, error)
+}
 
 type VerifyState struct {
 	Code   uint8
@@ -220,11 +227,11 @@ func LoadMessage(b []byte) (m *Message, err error) {
 	return m, nil
 }
 
-func ElaborateDChain(dc *objects.DChain) *objects.DChain {
+func ElaborateDChain(dc *objects.DChain, res Resolver) *objects.DChain {
 	if !dc.IsElaborated() {
 		//We need to elaborate it ourselves
-		nchain, ok := store.GetDChain(dc.GetChainHash())
-		if !ok { //Not in our DB
+		nchain, _, err := res.ResolveAccessDChain(dc.GetChainHash())
+		if err != nil { //Not in our DB
 			return nil
 		}
 		return nchain
@@ -232,7 +239,7 @@ func ElaborateDChain(dc *objects.DChain) *objects.DChain {
 	return dc
 }
 
-func ResolveDotsInDChain(dc *objects.DChain, cache []objects.RoutingObject) bool {
+func ResolveDotsInDChain(dc *objects.DChain, cache []objects.RoutingObject, res Resolver) bool {
 	if !dc.IsElaborated() {
 		return false
 	}
@@ -245,8 +252,8 @@ func ResolveDotsInDChain(dc *objects.DChain, cache []objects.RoutingObject) bool
 	//Next, resolve any dots that did not exist in the chain
 	for i := 0; i < dc.NumHashes(); i++ {
 		if dc.GetDOT(i) == nil {
-			dot, ok := store.GetDOT(dc.GetDotHash(i))
-			if !ok {
+			dot, _, err := res.ResolveDOT(dc.GetDotHash(i))
+			if err != nil {
 				return false
 			}
 			dc.SetDOT(i, dot)
@@ -256,7 +263,7 @@ func ResolveDotsInDChain(dc *objects.DChain, cache []objects.RoutingObject) bool
 }
 
 //AnalyzeAccessDotChain does what it says.
-func AnalyzeAccessDOTChain(mtype int, targetURI string, dc *objects.DChain) (code int,
+func AnalyzeAccessDOTChain(mtype int, targetURI string, dc *objects.DChain) (err error,
 	mvk []byte, mergeduri *string, star, plus bool,
 	ps *objects.AccessDOTPermissionSet, originVK []byte) {
 
@@ -275,22 +282,19 @@ func AnalyzeAccessDOTChain(mtype int, targetURI string, dc *objects.DChain) (cod
 	ttl := firstdot.GetTTL()
 	uri, uriok := util.RestrictBy(targetURI, firstdot.GetAccessURISuffix())
 	if !uriok {
-		code = util.BWStatusBadURI
-		log.Infof("AZ: BadURI %v", uri)
+		err = bwe.M(bwe.BadURI, "Bad URI "+uri)
 		return
 	}
 	mvk = firstdot.GetAccessURIMVK()
 	ps = firstdot.GetPermissionSet()
 	if !bytes.Equal(head, mvk) {
-		code = util.BWStatusChainOriginNotMVK
-		log.Infof("AZ: BadPermissions (mvk) %v != %v", crypto.FmtKey(head), crypto.FmtKey(mvk))
+		err = bwe.M(bwe.ChainOriginNotMVK, fmt.Sprintf("BadPermissions (mvk) %v != %v", crypto.FmtKey(head), crypto.FmtKey(mvk)))
 		return
 	}
 	for i := 1; i < dc.NumHashes(); i++ {
 		d := dc.GetDOT(i)
 		if ttl == 0 {
-			log.Infof("AZ: TTLExpired")
-			code = util.BWStatusTTLExpired
+			err = bwe.C(bwe.TTLExpired)
 			return
 		}
 		ttl--
@@ -300,15 +304,13 @@ func AnalyzeAccessDOTChain(mtype int, targetURI string, dc *objects.DChain) (cod
 		}
 		if !bytes.Equal(tail, d.GetGiverVK()) ||
 			!bytes.Equal(mvk, d.GetAccessURIMVK()) {
-			log.Infof("AZ: InvalidDot (chain link mismatch)")
-			code = util.BWStatusBadLink
+			err = bwe.C(bwe.BadLink)
 			return
 		}
 		var okay bool
 		uri, okay = util.RestrictBy(uri, d.GetAccessURISuffix())
 		if !okay {
-			log.Infof("AZ: BadPermissions (merging URI)")
-			code = util.BWStatusOverconstrainedURI
+			err = bwe.M(bwe.OverconstrainedURI, "overconstrained URI while merging")
 			return
 		}
 		tail = d.GetReceiverVK()
@@ -318,8 +320,7 @@ func AnalyzeAccessDOTChain(mtype int, targetURI string, dc *objects.DChain) (cod
 	tValid, star, plus, _, _ := util.AnalyzeSuffix(uri)
 
 	if !tValid {
-		log.Infof("AZ: BadURI (merged URI)")
-		code = util.BWStatusOverconstrainedURI
+		err = bwe.M(bwe.OverconstrainedURI, "overconstrained URI after merging")
 		return
 	}
 
@@ -329,59 +330,51 @@ func AnalyzeAccessDOTChain(mtype int, targetURI string, dc *objects.DChain) (cod
 	//(and resource groups too)
 	case TypePublish, TypePersist:
 		if !ps.CanPublish {
-			log.Infof("AZ: BadPermissions (ps.pub)")
-			code = util.BWStatusBadPermissions
+			err = bwe.M(bwe.BadPermissions, "require P")
 			return
 		}
 	case TypeQuery, TypeSubscribe:
 		if !ps.CanConsume || (plus && !ps.CanConsumePlus) || (star && !ps.CanConsumeStar) {
-			log.Infof("AZ: BadPermissions (ps.consume...)")
-			code = util.BWStatusBadPermissions
+			err = bwe.M(bwe.BadPermissions, "require C")
 			return
 		}
 	case TypeTapQuery, TypeTap:
 		if !ps.CanTap || (plus && !ps.CanTapPlus) || (star && !ps.CanTapStar) {
-			log.Infof("AZ: BadPermissions (ps.tap...)")
-			code = util.BWStatusBadPermissions
+			err = bwe.M(bwe.BadPermissions, "require T")
 			return
 		}
 	case TypeLS:
 		if !ps.CanList {
-			log.Infof("AZ: BadPermissions (ps.list)")
-			code = util.BWStatusBadPermissions
+			err = bwe.M(bwe.BadPermissions, "require L")
 			return
 		}
 	default:
-		log.Infof("AZ: BadOperation (typecode)")
-		code = util.BWStatusBadOperation
+		err = bwe.M(bwe.BadOperation, "invalid message type code")
 		return
 	}
 
-	code = util.BWStatusOkay
+	err = nil
 	return
 }
 
 //TODO remove the damn status message thing and just use an int
 //A piece of critical documentation:
 //There are a few "exceptions" to the obvious rules.
-// a) A DOT granting a VK of all zeroes applies to anyone
+// a) A DOT granting a VK of all 0xFF applies to anyone
 // b) Any message concerning a topic of mvk/*/$/* is allowed as read only
 //    without a DChain. This is used so that clients can discover "free"
 //    DOTs or means of acquiring DOTs.
-// c) A router exposes its DOTs and entities as
-//		  00..00/$/dot/to/<vk>/<hashes>
-//      00..00/$/dot/from/<vk>/<hash>
-//			00..00/$/dot/from/to/<vk>/<hash>
-//		  00..00/$/dot/<hash>
-//      00..00/$/entity/<hash>
 //    these can be queried or subscribed to.
-func (m *Message) Verify() *StatusMessage {
+func (m *Message) Verify(res Resolver) *StatusMessage {
 	//Return cached code if you can
-	if m.status.Code != util.BWStatusUnchecked {
+	if m.status.Code != bwe.Unchecked {
 		return &m.status
 	}
-	//This is used as the EVERYONE vk (all zeroes) or the router MVK (all zeroes)
-	allzeroes := make([]byte, 32) //ALL vk (zeroes)
+	//This is used as the EVERYONE vk (all 0xFF) or the router MVK (all 0xFF)
+	allgrant := make([]byte, 32)
+	for i := range allgrant {
+		allgrant[i] = 0xFF
+	}
 	pac := m.PrimaryAccessChain
 	//First thing: check the uri for validity
 	//the presence of a dollar complicates everything because it
@@ -390,12 +383,12 @@ func (m *Message) Verify() *StatusMessage {
 	urivalid, star, plus, uridollar, _ := util.AnalyzeSuffix(m.TopicSuffix)
 	//Can't publish to wildcards
 	if (star || plus) && (m.Type == TypePublish || m.Type == TypePersist || m.Type == TypeLS) {
-		m.status.Code = util.BWStatusBadOperation
+		m.status.Code = bwe.BadOperation
 		log.Infof("V: BadOperation (bad wild)")
 		return &m.status
 	}
 	if !urivalid {
-		m.status.Code = util.BWStatusBadURI
+		m.status.Code = bwe.BadURI
 		return &m.status
 	}
 
@@ -403,7 +396,7 @@ func (m *Message) Verify() *StatusMessage {
 	//If message is from MVK it can do whatever it wants
 	if m.OriginVK != nil && bytes.Equal(*m.OriginVK, m.MVK) {
 		fromMVK = true
-		m.status.Code = util.BWStatusOkay
+		m.status.Code = bwe.Okay
 		goto endperm
 	}
 
@@ -413,19 +406,19 @@ func (m *Message) Verify() *StatusMessage {
 	//Can't get permissions if there is no access chain
 	if pac == nil {
 		log.Infof("V: BadPermissions (no PAC)")
-		m.status.Code = util.BWStatusBadPermissions
+		m.status.Code = bwe.BadPermissions
 		goto endperm
 	} else {
-		pac = ElaborateDChain(pac)
+		pac = ElaborateDChain(pac, res)
 		if pac == nil {
-			m.status.Code = util.BWStatusUnresolvable
+			m.status.Code = bwe.Unresolvable
 			log.Infof("V: Unresolvable (elaborating chain)")
 			goto endperm
 		}
 
-		ok := ResolveDotsInDChain(pac, m.RoutingObjects)
+		ok := ResolveDotsInDChain(pac, m.RoutingObjects, res)
 		if !ok {
-			m.status.Code = util.BWStatusUnresolvable
+			m.status.Code = bwe.Unresolvable
 			log.Infof("V: Unresolvable (dots in chain)")
 			goto endperm
 		}
@@ -433,25 +426,27 @@ func (m *Message) Verify() *StatusMessage {
 		//Check the signature of all the dots. This also checks that their topics are
 		//well formed
 		if !pac.CheckAllSigs() {
-			m.status.Code = util.BWStatusInvalidSig
+			m.status.Code = bwe.InvalidSig
 			log.Infof("V: InvalidDOT (dot signature)")
 			goto endperm
 		}
 
 		//Next check the chain is connected end to end, check the TTL and construct
 		//the merged topic
-		azCode, azMVK, azURI, _, _, _, azOVK := AnalyzeAccessDOTChain(int(m.Type), m.TopicSuffix, pac)
+		azErr, azMVK, azURI, _, _, _, azOVK := AnalyzeAccessDOTChain(int(m.Type), m.TopicSuffix, pac)
 		//fmt.Println("AZDC says OVK is ", crypto.FmtKey(azOVK))
-		m.status.Code = azCode
-		if azCode != util.BWStatusOkay {
+		if azErr == nil {
+			m.status.Code = bwe.Okay
+		} else {
+			m.status.Code = azErr.(*bwe.BWStatus).Code
 			goto endperm
 		}
 		m.MergedTopic = azURI
 
 		//Check if this is an ALL grant and we don't have an origin VK
-		if bytes.Equal(azOVK, allzeroes) {
+		if bytes.Equal(azOVK, allgrant) {
 			if m.OriginVK == nil {
-				m.status.Code = util.BWStatusNoOrigin
+				m.status.Code = bwe.NoOrigin
 				log.Infof("V: NoOrigin (allgrant, no OVK ro)")
 				goto endperm
 			}
@@ -462,7 +457,7 @@ func (m *Message) Verify() *StatusMessage {
 		}
 		//Also check chain MVK matches message
 		if !bytes.Equal(m.MVK, azMVK) {
-			m.status.Code = util.BWStatusMVKMismatch
+			m.status.Code = bwe.MVKMismatch
 			log.Infof("V: MVKMismatch %v != %v", crypto.FmtKey(m.MVK), crypto.FmtKey(azMVK))
 			goto endperm
 		}
@@ -474,13 +469,13 @@ func (m *Message) Verify() *StatusMessage {
 endperm:
 
 	//No dollar, and we hit an error, bail
-	if !uridollar && m.status.Code != util.BWStatusOkay {
+	if !uridollar && m.status.Code != bwe.Okay {
 		return &m.status
 	}
 
 	if m.OriginVK == nil {
 		log.Criticalf("V: no origin VK on message")
-		m.status.Code = util.BWStatusNoOrigin
+		m.status.Code = bwe.NoOrigin
 		return &m.status
 	}
 
@@ -489,24 +484,24 @@ endperm:
 	//fmt.Println("Signature: ", crypto.FmtSig(m.Signature))
 	//fmt.Println("VK: ", crypto.FmtKey(*m.OriginVK))
 	if !crypto.VerifyBlob(*m.OriginVK, m.Signature, m.Encoded[:m.SigCoverEnd]) {
-		m.status.Code = util.BWStatusInvalidSig
+		m.status.Code = bwe.InvalidSig
 		log.Infof("V: InvalidSig (whole sig)")
 		//Not even a dollar can save you
 		return &m.status
 	}
 
 	if fromMVK {
-		m.status.Code = util.BWStatusOkay
+		m.status.Code = bwe.Okay
 		return &m.status
 	}
 
-	dollarpath := uridollar && m.status.Code != util.BWStatusOkay
+	dollarpath := uridollar && m.status.Code != bwe.Okay
 
 	//Now check type vs dollar
 	switch m.Type {
 	case TypePublish, TypePersist:
 		if dollarpath {
-			m.status.Code = util.BWStatusBadPermissions
+			m.status.Code = bwe.BadPermissions
 			log.Infof("V: BadPermissions (dollarpath pub)")
 			return &m.status
 		}
@@ -517,7 +512,7 @@ endperm:
 		}
 	case TypeTapQuery, TypeTap:
 		if dollarpath {
-			m.status.Code = util.BWStatusBadPermissions
+			m.status.Code = bwe.BadPermissions
 			log.Infof("V: BadPermissions (dollarpath tap)")
 			return &m.status
 		}
@@ -527,12 +522,12 @@ endperm:
 			m.MergedTopic = &m.TopicSuffix
 		}
 	default:
-		m.status.Code = util.BWStatusBadOperation
+		m.status.Code = bwe.BadOperation
 		log.Infof("V: BadOperation (type)")
 		return &m.status
 	}
 
 	//log.Infof("V: OK")
-	m.status.Code = util.BWStatusOkay
+	m.status.Code = bwe.Okay
 	return &m.status
 }

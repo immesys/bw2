@@ -6,22 +6,20 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 
 	"github.com/immesys/bw2/crypto"
-	"github.com/immesys/bw2/internal/core"
 	"github.com/immesys/bw2/objects"
 	"github.com/immesys/bw2/util"
 )
 
 type ChainBuilder struct {
-	cl        *BosswaveClient
-	status    chan string
-	uri       string
-	perms     string
-	target    []byte
-	peers     [][]byte
-	urimvk    []byte
+	cl     *BosswaveClient
+	status chan string
+	uri    string
+	perms  string
+	target []byte
+	//	fulluri   []byte
+	nsvk      []byte
 	urisuffix string
 	desperms  *objects.AccessDOTPermissionSet
 }
@@ -64,7 +62,11 @@ func (s *scenario) AddAndClone(d *objects.DOT) (*scenario, bool) {
 	if !okay {
 		return nil, false
 	}
-	return &scenario{chain: cc, suffix: nuri}, true
+	rv := &scenario{chain: cc, suffix: nuri}
+	if rv.TTL() < 0 {
+		return nil, false
+	}
+	return rv, true
 }
 
 func (s *scenario) GetTerminalVK() []byte {
@@ -83,7 +85,6 @@ func NewChainBuilder(cl *BosswaveClient, uri, perms string, target []byte, statu
 		uri:      uri,
 		target:   target,
 		perms:    perms,
-		peers:    make([][]byte, 0),
 		status:   status,
 		desperms: objects.GetADPSFromPermString(perms)}
 	if rv.desperms == nil {
@@ -91,22 +92,18 @@ func NewChainBuilder(cl *BosswaveClient, uri, perms string, target []byte, statu
 		return nil
 	}
 	uriparts := strings.SplitN(uri, "/", 2)
-	urimvk, err := crypto.UnFmtKey(uriparts[0])
+	nsvk, err := cl.BW().ResolveKey(uriparts[0])
 	if err != nil {
 		panic("need to fix this")
 	}
 	rv.urisuffix = uriparts[1]
-	rv.urimvk = urimvk
+	rv.nsvk = nsvk
 	return &rv
-}
-
-func (b *ChainBuilder) AddPeerMVK(mvk []byte) {
-	b.peers = append(b.peers, mvk)
 }
 
 func (b *ChainBuilder) dotUseful(d *objects.DOT) bool {
 	adps := d.GetPermissionSet()
-	if !bytes.Equal(d.GetAccessURIMVK(), b.urimvk) {
+	if !bytes.Equal(d.GetAccessURIMVK(), b.nsvk) {
 		b.status <- fmt.Sprintf("rejecting DOT(%s) - incorrect namespace", crypto.FmtHash(d.GetHash()))
 		return false
 	}
@@ -121,13 +118,34 @@ func (b *ChainBuilder) dotUseful(d *objects.DOT) bool {
 	}
 	return true
 }
+
+func (b *ChainBuilder) getOptions(from []byte) []*objects.DOT {
+	dlz, err := b.cl.BW().GetDOTsFrom(from)
+	if err != nil {
+		panic(err)
+	}
+	rv := []*objects.DOT{}
+	for _, dl := range dlz {
+		if dl.S != StateValid {
+			b.status <- fmt.Sprintf("rejecting DOT(%s) - Status is %d", crypto.FmtHash(dl.D.GetHash()), dl.S)
+			continue
+		}
+		if b.dotUseful(dl.D) {
+			b.status <- "possible edge DOT: " + crypto.FmtHash(dl.D.GetHash())
+			rv = append(rv, dl.D)
+		}
+	}
+	return rv
+}
+
+/*
 func (b *ChainBuilder) getOptions(from []byte) []*objects.DOT {
 	rv := make([]*objects.DOT, 0)
 	rc := make(chan *objects.DOT, 10)
 	wg := sync.WaitGroup{}
 	go func() {
 		for _, peerMVK := range b.peers {
-			drVK, err := b.cl.BW().GetDRVK(crypto.FmtKey(peerMVK))
+			drVK, err := b.cl.BW().LookupDesignatedRouter(peerMVK)
 			if err != nil {
 				b.status <- "could not get DRVK for peer " + crypto.FmtKey(peerMVK)
 				continue
@@ -138,9 +156,9 @@ func (b *ChainBuilder) getOptions(from []byte) []*objects.DOT {
 				MVK:       drVK,
 				URISuffix: "$/dot/fromto/" + crypto.FmtKey(from)[:43] + "/+/+",
 			},
-				func(status int, msg string) {
-					if status != util.BWStatusOkay {
-						b.status <- "edge discovery query error: " + msg
+				func(err error) {
+					if err != nil {
+						b.status <- "edge discovery query error: " + err.Error()
 						wg.Done()
 					}
 				},
@@ -152,7 +170,6 @@ func (b *ChainBuilder) getOptions(from []byte) []*objects.DOT {
 					for _, ro := range m.RoutingObjects {
 						dot, ok := ro.(*objects.DOT)
 						if ok {
-							core.DistributeRO(b.cl.BW().Entity, dot, b.cl.CL())
 							if b.dotUseful(dot) {
 								b.status <- "possible edge DOT: " + crypto.FmtHash(dot.GetHash())
 								rc <- dot
@@ -175,7 +192,7 @@ func (b *ChainBuilder) getOptions(from []byte) []*objects.DOT {
 	}
 	b.status <- fmt.Sprintf("graph walk found %d possible edges", len(rv))
 	return rv
-}
+}*/
 func (b *ChainBuilder) Build() ([]*objects.DChain, error) {
 	parts := strings.SplitN(b.uri, "/", 2)
 	if len(parts) != 2 {
@@ -185,7 +202,7 @@ func (b *ChainBuilder) Build() ([]*objects.DChain, error) {
 	if !valid {
 		return nil, errors.New("Invalid URI")
 	}
-	mvk, err := b.cl.BW().ResolveName(parts[0])
+	mvk, err := b.cl.BW().ResolveKey(parts[0])
 	if err != nil {
 		return nil, err
 	}

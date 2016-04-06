@@ -23,10 +23,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/immesys/bw2/internal/core"
 	"github.com/immesys/bw2/crypto"
-	"github.com/immesys/bw2/util"
+	"github.com/immesys/bw2/internal/core"
 	"github.com/immesys/bw2/objects"
+	"github.com/immesys/bw2/util"
 )
 
 func TestBasicX(t *testing.T) {
@@ -117,10 +117,6 @@ func TestBasicX(t *testing.T) {
 	}
 }
 
-func TestAPI2(t *testing.T) {
-	bw := OpenBWContext(nil)
-	c1 := bw.
-}
 func TestMatchTopic(t *testing.T) {
 	TV := []struct {
 		T string

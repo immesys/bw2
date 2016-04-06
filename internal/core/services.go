@@ -20,8 +20,6 @@ package core
 import (
 	"encoding/base64"
 
-	"github.com/immesys/bw2/crypto"
-	"github.com/immesys/bw2/internal/store"
 	"github.com/immesys/bw2/objects"
 )
 
@@ -38,6 +36,7 @@ func makeROMessage(e *objects.Entity, ro objects.RoutingObject, uriSuffix string
 	return &m
 }
 
+/*
 //DistributeRO will store an RO in the various
 //correct places, as well as publish it on the router's
 //uri. NOTE: will need to make terminus treat this uri specially
@@ -76,3 +75,4 @@ func DistributeRO(routerEntity *objects.Entity,
 		}
 	}
 }
+*/

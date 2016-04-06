@@ -27,9 +27,7 @@ import (
 	"strings"
 	"sync"
 
-	log "github.com/cihub/seelog"
 	"github.com/immesys/bw2/internal/db"
-	"github.com/immesys/bw2/objects"
 )
 
 //These constants are used to differentiate blocks of keys in the DB.
@@ -47,6 +45,7 @@ func Initialize(dbname string) {
 	dbi_RawInitialize(dbname)
 }
 
+/*
 //StoreDOT puts a DOT into the DB
 func PutDOT(v *objects.DOT) {
 	//We assume all DOTs in the DB are valid, so we should make sure it has
@@ -140,7 +139,7 @@ func GetEntity(vk []byte) (*objects.Entity, bool) {
 	entity.OverrideSetSignatureValid()
 	return entity, true
 }
-
+*/
 func InterlaceURI(uri []string) []string {
 	rv := make([]string, len(uri))
 	for i := 0; i < len(uri); i += 2 {

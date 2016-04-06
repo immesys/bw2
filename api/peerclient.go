@@ -31,7 +31,7 @@ import (
 	log "github.com/cihub/seelog"
 	"github.com/immesys/bw2/crypto"
 	"github.com/immesys/bw2/internal/core"
-	"github.com/immesys/bw2/util"
+	"github.com/immesys/bw2/util/bwe"
 )
 
 type PeerClient struct {
@@ -41,9 +41,10 @@ type PeerClient struct {
 	replyCB  map[uint64]func(*nativeFrame)
 	remoteVK []byte
 	target   string
+	bwcl     *BosswaveClient
 }
 
-func ConnectToPeer(vk []byte, target string, skipauth bool) (*PeerClient, error) {
+func (cl *BosswaveClient) ConnectToPeer(vk []byte, target string, skipauth bool) (*PeerClient, error) {
 	roots := x509.NewCertPool()
 	conn, err := tls.Dial("tcp", target, &tls.Config{
 		InsecureSkipVerify: true,
@@ -77,6 +78,7 @@ func ConnectToPeer(vk []byte, target string, skipauth bool) (*PeerClient, error)
 		replyCB:  make(map[uint64]func(*nativeFrame)),
 		remoteVK: proof[:32],
 		target:   target,
+		bwcl:     cl,
 	}
 	go rv.rxloop()
 	return &rv, nil
@@ -149,7 +151,7 @@ func (pc *PeerClient) transact(f *nativeFrame, onRX func(f *nativeFrame)) {
 		pc.conn.Close()
 	}
 }
-func (pc *PeerClient) PublishPersist(m *core.Message, actionCB func(code int, msg string)) {
+func (pc *PeerClient) PublishPersist(m *core.Message, actionCB func(err error)) {
 	nf := nativeFrame{
 		cmd:   nCmdMessage,
 		body:  m.Encoded,
@@ -158,18 +160,18 @@ func (pc *PeerClient) PublishPersist(m *core.Message, actionCB func(code int, ms
 	pc.transact(&nf, func(f *nativeFrame) {
 		defer pc.removeCB(nf.seqno)
 		if len(f.body) < 2 {
-			actionCB(util.BWStatusPeerError, "short response frame")
+			actionCB(bwe.M(bwe.PeerError, "short response frame"))
 			return
 		}
 		code := int(binary.LittleEndian.Uint16(f.body))
 		msg := string(f.body[2:])
-		actionCB(code, msg)
+		actionCB(bwe.M(code, msg))
 		return
 	})
 }
 
 func (pc *PeerClient) Subscribe(m *core.Message,
-	actionCB func(status int, isNew bool, id core.UniqueMessageID, msg string),
+	actionCB func(err error, isNew bool, id core.UniqueMessageID),
 	messageCB func(m *core.Message)) {
 	nf := nativeFrame{
 		cmd:   nCmdMessage,
@@ -184,18 +186,18 @@ func (pc *PeerClient) Subscribe(m *core.Message,
 		case nCmdRSub:
 			log.Infof("Got subscribe status response")
 			if len(f.body) < 2 {
-				actionCB(util.BWStatusPeerError, false, core.UniqueMessageID{}, "short response frame")
+				actionCB(bwe.M(bwe.PeerError, "short response frame"), false, core.UniqueMessageID{})
 				return
 			}
 			code := int(binary.LittleEndian.Uint16(f.body))
-			if code != util.BWStatusOkay {
-				actionCB(code, false, core.UniqueMessageID{}, string(f.body[2:]))
+			if code != bwe.Okay {
+				actionCB(bwe.M(code, string(f.body[2:])), false, core.UniqueMessageID{})
 			} else {
 				mid := binary.LittleEndian.Uint64(f.body[2:])
 				sig := binary.LittleEndian.Uint64(f.body[10:])
 				umid := core.UniqueMessageID{Mid: mid, Sig: sig}
 				isnew := m.UMid == umid
-				actionCB(util.BWStatusOkay, isnew, umid, "")
+				actionCB(nil, isnew, umid)
 			}
 			return
 		case nCmdResult:
@@ -205,8 +207,8 @@ func (pc *PeerClient) Subscribe(m *core.Message,
 				log.Info("dropping incoming subscription result (malformed message)")
 				return
 			}
-			s := nm.Verify()
-			if s.Code != util.BWStatusOkay {
+			s := nm.Verify(pc.bwcl.BW())
+			if s.Code != bwe.Okay {
 				log.Infof("dropping incoming subscription result on uri=%s (failed local validation)", nm.Topic)
 				return
 			}
@@ -220,7 +222,7 @@ func (pc *PeerClient) Subscribe(m *core.Message,
 }
 
 func (pc *PeerClient) List(m *core.Message,
-	actionCB func(code int, msg string),
+	actionCB func(err error),
 	resultCB func(uri string, ok bool)) {
 	nf := nativeFrame{
 		cmd:   nCmdMessage,
@@ -231,11 +233,11 @@ func (pc *PeerClient) List(m *core.Message,
 		switch f.cmd {
 		case nCmdRStatus:
 			if len(f.body) < 2 {
-				actionCB(util.BWStatusPeerError, "short response frame")
+				actionCB(bwe.M(bwe.PeerError, "short response frame"))
 				return
 			}
 			code := int(binary.LittleEndian.Uint16(f.body))
-			actionCB(code, string(f.body[2:]))
+			actionCB(bwe.M(code, string(f.body[2:])))
 			return
 		case nCmdResult:
 			resultCB(string(f.body), true)
@@ -249,7 +251,7 @@ func (pc *PeerClient) List(m *core.Message,
 }
 
 func (pc *PeerClient) Query(m *core.Message,
-	actionCB func(code int, msg string),
+	actionCB func(err error),
 	resultCB func(m *core.Message)) {
 	nf := nativeFrame{
 		cmd:   nCmdMessage,
@@ -260,19 +262,19 @@ func (pc *PeerClient) Query(m *core.Message,
 		switch f.cmd {
 		case nCmdRStatus:
 			if len(f.body) < 2 {
-				actionCB(util.BWStatusPeerError, "short response frame")
+				actionCB(bwe.M(bwe.PeerError, "short response frame"))
 				return
 			}
 			code := int(binary.LittleEndian.Uint16(f.body))
-			actionCB(code, string(f.body[2:]))
+			actionCB(bwe.M(code, string(f.body[2:])))
 		case nCmdResult:
 			nm, err := core.LoadMessage(f.body)
 			if err != nil {
 				log.Info("dropping incoming query result (malformed message)")
 				return
 			}
-			s := nm.Verify()
-			if s.Code != util.BWStatusOkay {
+			s := nm.Verify(pc.bwcl.BW())
+			if s.Code != bwe.Okay {
 				log.Infof("dropping incoming query result on uri=%s (failed local validation)", m.Topic)
 				return
 			}

@@ -1,3 +1,5 @@
+# NOTE THIS DOCUMENT IS VERY OUT OF DATE
+
 # Bosswave 2 Protocol Documentation
 
 This document is the canonical bosswave2 (bw2) protocol documentation. Client implementors should consult this document.

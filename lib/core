@@ -39,8 +39,9 @@ echo "Automated installer for BOSSWAVE $REL "
 
 	if command_exists bw2; then
 		cat >&2 <<-'EOF'
-			Warning: seems bw2 might already be installed
+			Warning: seems bw2 might already be installed. Hit CTRL-C to cancel
 		EOF
+		sleep 3
 	fi
 
 	user="$(id -un 2>/dev/null || true)"
@@ -90,7 +91,7 @@ echo "Automated installer for BOSSWAVE $REL "
 		echo "This install script only supports Ubuntu"
 		exit 1
 	fi
-	 
+
 	lsb_rel="$(lsb_release -sr)"
 	case "$lsb_rel" in
 		"12.04")
@@ -123,6 +124,12 @@ echo "Automated installer for BOSSWAVE $REL "
 		( set -x; $sh_c 'useradd -r -s /usr/sbin/nologin bw2' )
 	fi
 	set -e
+	$sh_c 'apt-get update >/dev/null'
+	$sh_c 'apt-get install -y ntp'
+	$sh_c 'service ntp start'
+	echo "NTP status: "
+	ntpq -p
+
 	# Configure logrotate
 	$sh_c "cat >/etc/logrotate.d/bw2" <<-'EOF'
 	/var/log/bw2/*.log {

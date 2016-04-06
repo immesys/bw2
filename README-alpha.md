@@ -16,11 +16,14 @@ Assuming you are familiar with BOSSWAVE, what is new in 2.1.0?
 ### Full decentralization
 
 Starting with 2.1.0 there are no more centralized components, not even DNS. BW 2.0.x used to use DNS for storing three important records:
-a) The mapping from a namespace symbolic name to the namespace verifying key
+
+ a) The mapping from a namespace symbolic name to the namespace verifying key
    (e.g. castle.bw2.io/my/url -> CSnDzka2Nuu5e0UmOR6FH9YEYwIdEx5GwaD_ms9rDV0=/my/url)
-b) The mapping from a namespace verifying key to the designated router
+   
+ b) The mapping from a namespace verifying key to the designated router
    (e.g. CSnDzka2Nuu5e0UmOR6FH9YEYwIdEx5GwaD_ms9rDV0= -> _jP3esBVf5QfTRaJJ4reVXyiRTwHgtPziBSPA_lW4_Y=)
-c) The mapping from a designated router verifying key to an IP address and port
+   
+ c) The mapping from a designated router verifying key to an IP address and port
    (e.g. _jP3esBVf5QfTRaJJ4reVXyiRTwHgtPziBSPA_lW4_Y= -> 128.32.37.201:4514)
 
 While these records were secure in that they were signed and delivered using DNSSEC, they were centralized in that the client would always look on a specific domain for these records (bw2.io). In 2.1.0+ these three mappings still exist, but are managed in a smart contract on the blockchain:

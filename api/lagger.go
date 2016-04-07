@@ -70,6 +70,7 @@ func (lag *Lagger) BeginLoop() {
 			lag.caughtup = true
 		}
 		fmt.Printf("received block %d\n", b.Number)
+		fmt.Printf("doneNumber: %d\n", lag.doneNumber)
 		lag.onBlock(b)
 		return false
 	})

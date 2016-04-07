@@ -178,7 +178,7 @@ Now that we have our namespace entity, we need to bind it to a designated router
 
 ```
 sudo bw2 i --publish /etc/bw2/router.ent
-sudo bw2 usrv --dr usrv --dr /etc/bw2/router.ent --srv 128.32.37.230:4514
+sudo bw2 usrv --dr /etc/bw2/router.ent --srv 128.32.37.230:4514
 ```
 
 The sudo is required because the local router's private key (stored by default in /etc/bw2/) should not be accessible to you. Now, you can make your router *offer* to be the designated router for our namespace like so:

@@ -19,8 +19,8 @@ import (
 	"github.com/immesys/bw2/objects"
 	"github.com/immesys/bw2/util"
 	"github.com/immesys/bw2/util/coldstore"
-	"github.com/immesys/bw2bind"
 	"github.com/mgutz/ansi"
+	bw2bind "gopkg.in/immesys/bw2bind.v2"
 )
 
 func silencelog() {

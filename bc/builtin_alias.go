@@ -1,7 +1,6 @@
 package bc
 
 import (
-	"fmt"
 	"math/big"
 
 	"github.com/immesys/bw2/util/bwe"
@@ -30,13 +29,10 @@ func (bc *blockChain) ResolveShortAlias(alias uint64) (res Bytes32, iszero bool,
 
 func (bc *blockChain) ResolveAlias(key Bytes32) (res Bytes32, iszero bool, err error) {
 	calldat := "0x" + AliasSigResolve + key.Hex()
-	fmt.Println("Resolve calldat is ", calldat)
 	rv, _, err := bc.UX().Call("", AliasAddress, "", "", "", calldat)
 	if err != nil {
 		return Bytes32{}, false, err
 	}
-	fmt.Println("Resolve Key is ", key.Hex())
-	fmt.Println("Resolve RV  is ", rv)
 	copy(res[:], common.FromHex(rv))
 	if (res == Bytes32{}) {
 		iszero = true
@@ -77,7 +73,6 @@ func (bcc *bcClient) CreateShortAlias(acc int, val Bytes32, confirmed func(alias
 }
 
 func (bcc *bcClient) SetAlias(acc int, key Bytes32, val Bytes32, confirmed func(err error)) {
-	fmt.Printf("Doing set alias\n   acc=%d\n   key=%x\n   val=%x\n", acc, key[:], val[:])
 	if val.Zero() {
 		confirmed(bwe.M(bwe.AliasError, "You cannot create an alias to zero"))
 		return

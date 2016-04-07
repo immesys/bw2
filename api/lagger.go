@@ -24,7 +24,6 @@ func NewLagger(bchain bc.BlockChainProvider) *Lagger {
 		bchain:     bchain,
 		doneNumber: -1,
 	}
-	rv.beginLoop()
 	return rv
 }
 
@@ -39,6 +38,7 @@ func (lag *Lagger) Subscribe(onConfirmedBlock func(b *bc.Block), onReset func())
 	lag.subscribers = append(lag.subscribers, onConfirmedBlock)
 }
 
+//Must be called with smu locked
 func (lag *Lagger) onConfirmedBlock(b *bc.Block) {
 	if b.Number != 0 && b.Parent != lag.expectParent {
 		fmt.Printf("block=%d parent=%x expected=%x done=%d\n", b.Number, b.Parent, lag.expectParent, lag.doneNumber)
@@ -47,19 +47,19 @@ func (lag *Lagger) onConfirmedBlock(b *bc.Block) {
 	}
 	lag.expectParent = b.Hash
 	lag.doneNumber = int64(b.Number)
-	lag.smu.Lock()
-	defer lag.smu.Unlock()
 	for _, s := range lag.subscribers {
 		s(b)
 	}
 }
 func (lag *Lagger) onBlock(b *bc.Block) {
+	lag.smu.Lock()
+	defer lag.smu.Unlock()
 	if int64(b.Number)-LagConfirmations > lag.doneNumber {
 		laggedBlock := lag.bchain.GetBlock(uint64(lag.doneNumber + 1))
 		lag.onConfirmedBlock(laggedBlock)
 	}
 }
-func (lag *Lagger) beginLoop() {
+func (lag *Lagger) BeginLoop() {
 	lag.bchain.CallOnNewBlocks(func(b *bc.Block) bool {
 		if !lag.caughtup {
 			lag.bchain.CallOnBlocksBetween(0, b.Number, func(oldb *bc.Block) {

@@ -345,7 +345,10 @@ func actionADRO(c *cli.Context) {
 		os.Exit(1)
 	}
 	ns := getAvailableEntity(c, c.String("ns"))
-
+	if ns == nil {
+		fmt.Println("Could not load 'ns' entity")
+		os.Exit(1)
+	}
 	//If a bankroll is specified, we will use that to pay
 	if c.String("bankroll") != "" {
 		br := getBankroll(c, cl)
@@ -924,18 +927,18 @@ func actionXfer(c *cli.Context) {
 		total.Add(total, incr)
 	}
 	if milli != "" {
-		incr, _, err := big.ParseFloat(eth, 10, 256, big.ToNearestEven)
+		incr, _, err := big.ParseFloat(milli, 10, 256, big.ToNearestEven)
 		if err != nil {
-			fmt.Println("Problem parsing --ether:", err)
+			fmt.Println("Problem parsing --milli:", err)
 			os.Exit(1)
 		}
 		incr.Mul(incr, big.NewFloat(1e15))
 		total.Add(total, incr)
 	}
 	if micro != "" {
-		incr, _, err := big.ParseFloat(eth, 10, 256, big.ToNearestEven)
+		incr, _, err := big.ParseFloat(micro, 10, 256, big.ToNearestEven)
 		if err != nil {
-			fmt.Println("Problem parsing --ether:", err)
+			fmt.Println("Problem parsing --micro:", err)
 			os.Exit(1)
 		}
 		incr.Mul(incr, big.NewFloat(1e12))

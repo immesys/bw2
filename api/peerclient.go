@@ -23,6 +23,7 @@ import (
 	"crypto/x509"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -165,7 +166,11 @@ func (pc *PeerClient) PublishPersist(m *core.Message, actionCB func(err error)) 
 		}
 		code := int(binary.LittleEndian.Uint16(f.body))
 		msg := string(f.body[2:])
-		actionCB(bwe.M(code, msg))
+		if code != bwe.Okay {
+			actionCB(bwe.M(code, msg))
+		} else {
+			actionCB(nil)
+		}
 		return
 	})
 }
@@ -190,6 +195,8 @@ func (pc *PeerClient) Subscribe(m *core.Message,
 				return
 			}
 			code := int(binary.LittleEndian.Uint16(f.body))
+			fmt.Println("GOT SUB RESPONSE BINARY CODE ", code)
+			fmt.Printf("BODY: %x \n", f.body[2:])
 			if code != bwe.Okay {
 				actionCB(bwe.M(code, string(f.body[2:])), false, core.UniqueMessageID{})
 			} else {

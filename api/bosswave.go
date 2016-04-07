@@ -57,7 +57,8 @@ type BW struct {
 	//This is all for resolution caching
 	cachemu sync.Mutex
 
-	lag *Lagger
+	lag       *Lagger
+	cachesize int
 	//from vk -> to vk -> []dothash
 	dotcache map[bc.Bytes32]map[bc.Bytes32][]bc.Bytes32
 }

@@ -132,7 +132,6 @@ func EncodeABICall(ufi UFI, argvaluesi ...interface{}) (contract common.Address,
 }
 
 func DecodeABIReturn(ufi UFI, data []byte) (retvalues []interface{}, err error) {
-	fmt.Printf("\nABI RETURN: len=%d content=%x\n", len(data), data)
 	var rets []int
 	_, _, _, rets, err = DecodeUFI(ufi)
 	if err != nil {

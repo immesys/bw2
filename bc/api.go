@@ -238,7 +238,13 @@ func (bcc *bcClient) CallOnChain(acc int, ufi UFI, value, gas, gasPrice string, 
 	if err != nil {
 		return "", err
 	}
-	txhash, err = bcc.bc.x.Transact(from.Hex(), addr.Hex(), "", value, gas, gasPrice, common.ToHex(calldata))
+	var terr error
+	txhash, terr = bcc.bc.x.Transact(from.Hex(), addr.Hex(), "", value, gas, gasPrice, common.ToHex(calldata))
+	if terr != nil {
+		err = bwe.WrapM(bwe.BlockChainGenericError, "Could not transact", terr)
+		return
+	}
+	err = nil
 	return
 }
 

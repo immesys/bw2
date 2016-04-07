@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/immesys/bw2/bc"
@@ -46,6 +47,15 @@ func (bw *BW) startResolutionLoop() {
 		bw.dotcache = make(map[bc.Bytes32]map[bc.Bytes32][]bc.Bytes32)
 		bw.cachemu.Unlock()
 	})
+	bw.lag.BeginLoop()
+	go func() {
+		for {
+			bw.cachemu.Lock()
+			fmt.Println("Cache size:", bw.cachesize)
+			bw.cachemu.Unlock()
+			time.Sleep(5 * time.Second)
+		}
+	}()
 }
 
 func (bw *BW) CacheDOT(d *objects.DOT) {
@@ -68,6 +78,7 @@ func (bw *BW) CacheDOT(d *objects.DOT) {
 			return //Already there
 		}
 	}
+	bw.cachesize++
 	tslc = append(tslc, hsh)
 	fmap[to] = tslc
 }

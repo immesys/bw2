@@ -23,7 +23,6 @@ import (
 	"crypto/x509"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -195,8 +194,6 @@ func (pc *PeerClient) Subscribe(m *core.Message,
 				return
 			}
 			code := int(binary.LittleEndian.Uint16(f.body))
-			fmt.Println("GOT SUB RESPONSE BINARY CODE ", code)
-			fmt.Printf("BODY: %x \n", f.body[2:])
 			if code != bwe.Okay {
 				actionCB(bwe.M(code, string(f.body[2:])), false, core.UniqueMessageID{})
 			} else {
@@ -244,7 +241,11 @@ func (pc *PeerClient) List(m *core.Message,
 				return
 			}
 			code := int(binary.LittleEndian.Uint16(f.body))
-			actionCB(bwe.M(code, string(f.body[2:])))
+			if code != bwe.Okay {
+				actionCB(bwe.M(code, string(f.body[2:])))
+			} else {
+				actionCB(nil)
+			}
 			return
 		case nCmdResult:
 			resultCB(string(f.body), true)
@@ -273,7 +274,12 @@ func (pc *PeerClient) Query(m *core.Message,
 				return
 			}
 			code := int(binary.LittleEndian.Uint16(f.body))
-			actionCB(bwe.M(code, string(f.body[2:])))
+			if code != bwe.Okay {
+				actionCB(bwe.M(code, string(f.body[2:])))
+			} else {
+				actionCB(nil)
+			}
+			return
 		case nCmdResult:
 			nm, err := core.LoadMessage(f.body)
 			if err != nil {

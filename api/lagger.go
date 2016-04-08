@@ -61,7 +61,10 @@ func (lag *Lagger) onBlock(b *bc.Block) {
 }
 func (lag *Lagger) BeginLoop() {
 	lag.bchain.CallOnNewBlocks(func(b *bc.Block) bool {
+		fmt.Printf("received block %d\n", b.Number)
+		fmt.Printf("doneNumber: %d\n", lag.doneNumber)
 		if !lag.caughtup {
+			fmt.Println("not caught up")
 			lag.bchain.CallOnBlocksBetween(0, b.Number, func(oldb *bc.Block) {
 				if oldb != nil {
 					lag.onBlock(oldb)
@@ -69,8 +72,6 @@ func (lag *Lagger) BeginLoop() {
 			})
 			lag.caughtup = true
 		}
-		fmt.Printf("received block %d\n", b.Number)
-		fmt.Printf("doneNumber: %d\n", lag.doneNumber)
 		lag.onBlock(b)
 		return false
 	})

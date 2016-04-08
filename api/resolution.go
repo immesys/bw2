@@ -2,8 +2,11 @@ package api
 
 import (
 	"bytes"
+	"encoding/gob"
 	"encoding/hex"
 	"fmt"
+	"os"
+	"path"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -25,6 +28,27 @@ func (bw *BW) GetTarget(drvk string) (string, error) {
 */
 
 func (bw *BW) startResolutionLoop() {
+	rocache, err := os.Open(path.Join(bw.Config.Router.DB, "rocache"))
+	if err == nil {
+		dec := gob.NewDecoder(rocache)
+		err = dec.Decode(&bw.lag.doneNumber)
+		if err != nil {
+			panic(err)
+		}
+		err = dec.Decode(&bw.lag.expectParent)
+		if err != nil {
+			panic(err)
+		}
+		err = dec.Decode(&bw.dotcache)
+		if err != nil {
+			panic(err)
+		}
+		rocache.Close()
+		fmt.Println("Loaded rocache number", bw.lag.doneNumber)
+	} else {
+		fmt.Println("Did not load rocache")
+	}
+
 	bw.lag.Subscribe(func(b *bc.Block) {
 		//Check the logs for DOTs
 		for _, l := range b.Logs {
@@ -50,10 +74,46 @@ func (bw *BW) startResolutionLoop() {
 	bw.lag.BeginLoop()
 	go func() {
 		for {
+
 			bw.cachemu.Lock()
 			fmt.Println("Cache size:", bw.cachesize)
 			bw.cachemu.Unlock()
 			time.Sleep(5 * time.Second)
+		}
+	}()
+	go func() {
+		for {
+			time.Sleep(30 * time.Second)
+
+			rocache, err := os.Create(path.Join(bw.Config.Router.DB, "rocache.next"))
+			if err != nil {
+				panic(err)
+			}
+
+			enc := gob.NewEncoder(rocache)
+			bw.lag.smu.Lock()
+			bw.cachemu.Lock()
+			err = enc.Encode(bw.lag.doneNumber)
+			if err != nil {
+				panic(err)
+			}
+			err = enc.Encode(bw.lag.expectParent)
+			if err != nil {
+				panic(err)
+			}
+			err = enc.Encode(bw.dotcache)
+			if err != nil {
+				panic(err)
+			}
+			bw.cachemu.Unlock()
+			bw.lag.smu.Unlock()
+
+			err = rocache.Close()
+			if err != nil {
+				panic(err)
+			}
+			os.Rename(path.Join(bw.Config.Router.DB, "rocache.next"), path.Join(bw.Config.Router.DB, "rocache"))
+			fmt.Println("Saved rocache")
 		}
 	}()
 }

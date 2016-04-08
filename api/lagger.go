@@ -45,18 +45,22 @@ func (lag *Lagger) onConfirmedBlock(b *bc.Block) {
 		//If you hit this, just increase LagConfirmations
 		panic(fmt.Errorf("Deep chain reorganization. Not supported in this version!!"))
 	}
-	lag.expectParent = b.Hash
-	lag.doneNumber = int64(b.Number)
 	for _, s := range lag.subscribers {
 		s(b)
 	}
+	lag.expectParent = b.Hash
+	lag.doneNumber = int64(b.Number)
 }
 func (lag *Lagger) onBlock(b *bc.Block) {
 	lag.smu.Lock()
 	defer lag.smu.Unlock()
-	if int64(b.Number)-LagConfirmations > lag.doneNumber {
-		laggedBlock := lag.bchain.GetBlock(uint64(lag.doneNumber + 1))
-		lag.onConfirmedBlock(laggedBlock)
+	for {
+		if lag.bchain.GetBlock(uint64(lag.doneNumber+1+LagConfirmations)) != nil {
+			laggedBlock := lag.bchain.GetBlock(uint64(lag.doneNumber + 1))
+			lag.onConfirmedBlock(laggedBlock)
+		} else {
+			break
+		}
 	}
 }
 func (lag *Lagger) BeginLoop() {
@@ -65,7 +69,11 @@ func (lag *Lagger) BeginLoop() {
 		fmt.Printf("doneNumber: %d\n", lag.doneNumber)
 		if !lag.caughtup {
 			fmt.Println("not caught up")
-			lag.bchain.CallOnBlocksBetween(0, b.Number, func(oldb *bc.Block) {
+			st := lag.doneNumber
+			if st < 0 {
+				st = 0
+			}
+			lag.bchain.CallOnBlocksBetween(uint64(st), b.Number, func(oldb *bc.Block) {
 				if oldb != nil {
 					lag.onBlock(oldb)
 				}

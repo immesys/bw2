@@ -39,6 +39,10 @@ func (bw *BW) startResolutionLoop() {
 		if err != nil {
 			panic(err)
 		}
+		err = dec.Decode(&bw.cachesize)
+		if err != nil {
+			panic(err)
+		}
 		err = dec.Decode(&bw.dotcache)
 		if err != nil {
 			panic(err)
@@ -98,6 +102,10 @@ func (bw *BW) startResolutionLoop() {
 				panic(err)
 			}
 			err = enc.Encode(bw.lag.expectParent)
+			if err != nil {
+				panic(err)
+			}
+			err = enc.Encode(bw.cachesize)
 			if err != nil {
 				panic(err)
 			}

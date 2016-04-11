@@ -1,7 +1,6 @@
 package bc
 
 import (
-	"fmt"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -50,7 +49,6 @@ func NewBlockChain(datadir string) (BlockChainProvider, chan bool) {
 	os.MkdirAll(datadir, os.ModeDir|0777)
 	glog.SetV(2)
 	glog.CopyStandardLogTo("INFO")
-	glog.SetToStderr(true)
 	glog.SetLogDir(datadir)
 
 	rv := &blockChain{
@@ -98,14 +96,12 @@ func NewBlockChain(datadir string) (BlockChainProvider, chan bool) {
 		SolcPath:                "",
 		AutoDAG:                 false,
 	}
-	fmt.Println("made config")
 	var err error
 	rv.eth, err = eth.New(cfg)
 	if err != nil {
 		utils.Fatalf("%v", err)
 	}
 	utils.StartEthereum(rv.eth)
-	fmt.Println("started eth")
 	rv.fm = filters.NewFilterSystem(rv.eth.EventMux())
 	rv.x = xeth.New(rv.eth, front)
 
@@ -114,6 +110,7 @@ func NewBlockChain(datadir string) (BlockChainProvider, chan bool) {
 	go func() {
 		<-sig
 		rv.x.Stop()
+		glog.Flush()
 		rv.shdwn <- true
 	}()
 	go rv.DebugTXPoolLoop()
@@ -126,10 +123,10 @@ func (bc *blockChain) DebugTXPoolLoop() {
 
 		for i, v := range bc.eth.TxPool().GetTransactions() {
 			if i == 0 {
-				fmt.Println()
+				glog.V(2).Infof("\n")
 			}
-			fmt.Println("TX ", i)
-			fmt.Println(v.String())
+			glog.V(2).Infof("TX %d", i)
+			glog.V(2).Info(v.String())
 		}
 	}
 }

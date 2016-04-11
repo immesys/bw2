@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"encoding/gob"
 	"encoding/hex"
-	"fmt"
 	"os"
 	"path"
 	"strings"
 	"time"
 	"unicode/utf8"
 
+	log "github.com/cihub/seelog"
 	"github.com/immesys/bw2/bc"
 	"github.com/immesys/bw2/crypto"
 	"github.com/immesys/bw2/objects"
@@ -48,20 +48,20 @@ func (bw *BW) startResolutionLoop() {
 			panic(err)
 		}
 		rocache.Close()
-		fmt.Println("Loaded rocache number", bw.lag.doneNumber)
+
+		log.Infof("Loaded ROCache number %d", bw.lag.doneNumber)
 	} else {
-		fmt.Println("Did not load rocache")
+		log.Warnf("Did not load ROCache: %v", err)
 	}
 
 	bw.lag.Subscribe(func(b *bc.Block) {
 		//Check the logs for DOTs
 		for _, l := range b.Logs {
-			fmt.Printf("Found log from %x \n", l.ContractAddress())
-			fmt.Println(l.String())
+			log.Tracef("Found log from %x \n %s", l.ContractAddress(), l.String())
 			topicz := []bc.Bytes32{bc.HexToBytes32(bc.EventSig_Registry_NewDOT)}
 			if l.ContractAddress() == bc.HexToAddress(bc.UFI_Registry_Address) &&
 				l.MatchesTopicsStrict(topicz) {
-				fmt.Println("Found a DOT: \n", l)
+				log.Tracef("Found a DOT: \n%s", l)
 				dh := l.Topics()[1]
 				dot, _, err := bw.ResolveDOT(dh[:])
 				if err != nil {
@@ -80,7 +80,7 @@ func (bw *BW) startResolutionLoop() {
 		for {
 
 			bw.cachemu.Lock()
-			fmt.Println("Cache size:", bw.cachesize)
+			log.Infof("ROCache size: %d", bw.cachesize)
 			bw.cachemu.Unlock()
 			time.Sleep(5 * time.Second)
 		}
@@ -121,7 +121,7 @@ func (bw *BW) startResolutionLoop() {
 				panic(err)
 			}
 			os.Rename(path.Join(bw.Config.Router.DB, "rocache.next"), path.Join(bw.Config.Router.DB, "rocache"))
-			fmt.Println("Saved rocache")
+			log.Infof("Save ROCache")
 		}
 	}()
 }

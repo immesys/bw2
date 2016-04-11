@@ -351,7 +351,7 @@ type boundFrame struct {
 
 func (bf *boundFrame) Err(err error) {
 	bws := bwe.AsBW(err)
-
+	log.Warnf("OOB nonterminal error: %s", bws.Error())
 	r := objects.CreateFrame(objects.CmdResponse, bf.replyto)
 	r.AddHeader("status", "error")
 	r.AddHeader("reason", bws.Msg)

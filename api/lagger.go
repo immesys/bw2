@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sync"
 
+	log "github.com/cihub/seelog"
 	"github.com/immesys/bw2/bc"
 )
 
@@ -41,7 +42,7 @@ func (lag *Lagger) Subscribe(onConfirmedBlock func(b *bc.Block), onReset func())
 //Must be called with smu locked
 func (lag *Lagger) onConfirmedBlock(b *bc.Block) {
 	if b.Number != 0 && b.Parent != lag.expectParent {
-		fmt.Printf("block=%d parent=%x expected=%x done=%d\n", b.Number, b.Parent, lag.expectParent, lag.doneNumber)
+		log.Errorf("DEEP CHAIN REORG block=%d parent=%x expected=%x done=%d\n", b.Number, b.Parent, lag.expectParent, lag.doneNumber)
 		//If you hit this, just increase LagConfirmations
 		panic(fmt.Errorf("Deep chain reorganization. Not supported in this version!!"))
 	}
@@ -65,10 +66,8 @@ func (lag *Lagger) onBlock(b *bc.Block) {
 }
 func (lag *Lagger) BeginLoop() {
 	lag.bchain.CallOnNewBlocks(func(b *bc.Block) bool {
-		fmt.Printf("received block %d\n", b.Number)
-		fmt.Printf("doneNumber: %d\n", lag.doneNumber)
+		log.Tracef("received block %d (done %d)", b.Number, lag.doneNumber)
 		if !lag.caughtup {
-			fmt.Println("not caught up")
 			st := lag.doneNumber
 			if st < 0 {
 				st = 0

@@ -63,7 +63,7 @@ func makeConf(c *cli.Context) {
 	if c.String("logfile") != "" {
 		lpath = c.String("logfile")
 	}
-	dbpath := ".bw.db"
+	dbpath := configdir + "/" + ".bw.db"
 	if c.String("dbpath") != "" {
 		dbpath = c.String("dbpath")
 	}

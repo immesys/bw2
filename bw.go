@@ -18,10 +18,10 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"runtime"
 
+	log "github.com/cihub/seelog"
 	"github.com/codegangsta/cli"
 	"github.com/immesys/bw2/adapter/oob"
 	"github.com/immesys/bw2/api"
@@ -40,6 +40,12 @@ func main() {
 			Name:   "a",
 			Usage:  "add available entityfile",
 			EnvVar: "BW2_ENTITIES",
+		},
+		cli.StringFlag{
+			Name:   "localrouter",
+			Usage:  "set the local router",
+			Value:  "127.0.0.1:28589",
+			EnvVar: "BW2_LOCAL_ROUTER",
 		},
 	}
 	nflag := cli.BoolFlag{
@@ -410,13 +416,15 @@ func actionRouter(c *cli.Context) {
 	if bw.Config.Native.ListenOn != "" {
 		go api.Start(bw)
 	} else {
-		fmt.Println("not starting native server: no listen address")
+		log.Warnf("not starting native server: no listen address")
 	}
 	if bw.Config.OOB.ListenOn != "" {
 		oob := new(oob.Adapter)
 		go oob.Start(bw)
 	} else {
-		fmt.Println("not starting oob server: no listen address")
+		log.Warnf("not starting oob server: no listen address")
 	}
 	<-shd
+	log.Warnf("Shutting down")
+	log.Flush()
 }

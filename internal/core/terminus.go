@@ -35,6 +35,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	log "github.com/cihub/seelog"
 	"github.com/immesys/bw2/internal/store"
 )
 
@@ -185,14 +186,15 @@ func CreateTerminus() *Terminus {
 	go func() {
 		for {
 			time.Sleep(5 * time.Second)
-			fmt.Println("active clients:")
+			log.Infof("Active terminus clients:")
 			for k, v := range rv.cmap {
-				fmt.Printf("[%d->%s]\n", k, v.name)
+				log.Infof("[%d->%s]\n", k, v.name)
 			}
-			fmt.Println("rsmap:")
-			for k, v := range rv.rstree {
-				fmt.Printf("[%v->%+v]\n", k, v)
-			}
+			/*	fmt.Println("rsmap:")
+				for k, v := range rv.rstree {
+					fmt.Printf("[%v->%+v]\n", k, v)
+				}
+			*/
 		}
 	}()
 	return rv

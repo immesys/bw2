@@ -121,6 +121,79 @@ func main() {
 			},
 		},
 		{
+			Name:   "mget",
+			Usage:  "get the metadata for a URI",
+			Action: actionMget,
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name:   "entity, e",
+					Usage:  "the entity to use",
+					Value:  "",
+					EnvVar: "BW2_DEFAULT_ENTITY",
+				},
+				cli.StringFlag{
+					Name:  "key, k",
+					Usage: "the key to resolve (all if omitted)",
+					Value: "",
+				},
+				cli.BoolFlag{
+					Name:  "i, verbose",
+					Usage: "show where the values are inherited fromr",
+				},
+			},
+		},
+		{
+			Name:   "mset",
+			Usage:  "set a metadata key for a URI",
+			Action: actionMset,
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name:   "entity, e",
+					Usage:  "the entity to use",
+					Value:  "",
+					EnvVar: "BW2_DEFAULT_ENTITY",
+				},
+				cli.StringFlag{
+					Name:  "uri, u",
+					Usage: "the uri to set on",
+					Value: "",
+				},
+				cli.StringFlag{
+					Name:  "key, k",
+					Usage: "the key to set",
+					Value: "",
+				},
+				cli.StringFlag{
+					Name:  "val, v",
+					Usage: "the value to set",
+					Value: "",
+				},
+			},
+		},
+		{
+			Name:   "mdel",
+			Usage:  "delete a metadata key for a URI",
+			Action: actionMdel,
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name:   "entity, e",
+					Usage:  "the entity to use",
+					Value:  "",
+					EnvVar: "BW2_DEFAULT_ENTITY",
+				},
+				cli.StringFlag{
+					Name:  "key, k",
+					Usage: "the key to delete",
+					Value: "",
+				},
+				cli.StringFlag{
+					Name:  "uri, u",
+					Usage: "the uri to delete it from",
+					Value: "",
+				},
+			},
+		},
+		{
 			Name:    "coldstore",
 			Aliases: []string{"redeem", "cs"},
 			Usage:   "view or redeem coldstore accounts",

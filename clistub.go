@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"math/big"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -19,8 +20,8 @@ import (
 	"github.com/immesys/bw2/objects"
 	"github.com/immesys/bw2/util"
 	"github.com/immesys/bw2/util/coldstore"
+	"github.com/immesys/bw2bind"
 	"github.com/mgutz/ansi"
-	bw2bind "gopkg.in/immesys/bw2bind.v2"
 )
 
 func silencelog() {
@@ -1009,6 +1010,7 @@ func actionSubscribe(c *cli.Context) {
 }
 
 func actionQuery(c *cli.Context) {
+	bw2bind.SilenceLog()
 	cl := bw2bind.ConnectOrExit("")
 	if c.String("entity") == "" {
 		fmt.Println("You need to specify an entity to be (-e)")
@@ -1020,6 +1022,7 @@ func actionQuery(c *cli.Context) {
 		os.Exit(1)
 	}
 	cl.SetEntity(e.GetSigningBlob())
+	cl.StatLine()
 	for _, uri := range c.Args() {
 		ch := cl.QueryOrExit(&bw2bind.QueryParams{
 			URI:       uri,
@@ -1035,5 +1038,134 @@ func actionQuery(c *cli.Context) {
 	}
 	for {
 		time.Sleep(10 * time.Second)
+	}
+}
+
+func actionMset(c *cli.Context) {
+	bw2bind.SilenceLog()
+	cl := bw2bind.ConnectOrExit("")
+	if c.String("entity") == "" {
+		fmt.Println("You need to specify an entity to be (-e)")
+		os.Exit(1)
+	}
+	e := getAvailableEntity(c, c.String("entity"))
+	if e == nil {
+		fmt.Println("Could not load entity")
+		os.Exit(1)
+	}
+	cl.SetEntity(e.GetSigningBlob())
+	cl.StatLine()
+	uri := c.String("uri")
+	key := c.String("key")
+	val := c.String("val")
+	if key == "" || val == "" || uri == "" {
+		fmt.Println("You must specify the uri, key and value")
+		os.Exit(1)
+	}
+	err := cl.SetMetadata(uri, key, val)
+	if err != nil {
+		fmt.Println("Encountered error: ", err)
+		os.Exit(1)
+	} else {
+		fmt.Println("Set OK")
+		os.Exit(0)
+	}
+}
+
+func actionMget(c *cli.Context) {
+	bw2bind.SilenceLog()
+	cl := bw2bind.ConnectOrExit("")
+	if c.String("entity") == "" {
+		fmt.Println("You need to specify an entity to be (-e)")
+		os.Exit(1)
+	}
+	e := getAvailableEntity(c, c.String("entity"))
+	if e == nil {
+		fmt.Println("Could not load entity")
+		os.Exit(1)
+	}
+	cl.SetEntity(e.GetSigningBlob())
+	cl.StatLine()
+	uri := c.String("uri")
+	key := c.String("key")
+	verb := c.Bool("verbose")
+	if uri == "" {
+		if len(c.Args()) == 0 {
+			fmt.Println("You must specify the uri")
+			os.Exit(1)
+		}
+		uri = c.Args()[0]
+	}
+	if key == "" {
+		//All
+		datmap, originmap, err := cl.GetMetadata(uri)
+		if err != nil {
+			fmt.Println("Encountered error: ", err)
+			os.Exit(1)
+		}
+		maxl := 0
+		for k, _ := range datmap {
+			if len(k) > maxl {
+				maxl = len(k)
+			}
+		}
+		if maxl > 70 {
+			maxl = 70
+		}
+		found := false
+		for k, dat := range datmap {
+			found = true
+			fmt.Printf("%41s | %"+strconv.Itoa(maxl)+"s -> %s\n", dat.Time(), k, dat.Value)
+			if verb {
+				fmt.Printf("  inherited from %s\n", originmap[k])
+			}
+		}
+		if !found {
+			fmt.Println("There are no keys set for this URI")
+		}
+	} else {
+		dat, origin, err := cl.GetMetadataKey(uri, key)
+		if err != nil {
+			fmt.Println("Encountered error: ", err)
+			os.Exit(1)
+		}
+		if dat == nil {
+			fmt.Printf("Key '%s' is not set\n", key)
+		} else {
+			fmt.Printf("%s -> %s @ %s\n", key, dat.Value, dat.Time())
+			if verb {
+				fmt.Printf("  inherited from %s\n", origin)
+			}
+		}
+	}
+}
+
+func actionMdel(c *cli.Context) {
+	bw2bind.SilenceLog()
+	cl := bw2bind.ConnectOrExit("")
+	if c.String("entity") == "" {
+		fmt.Println("You need to specify an entity to be (-e)")
+		os.Exit(1)
+	}
+	e := getAvailableEntity(c, c.String("entity"))
+	if e == nil {
+		fmt.Println("Could not load entity")
+		os.Exit(1)
+	}
+	cl.SetEntity(e.GetSigningBlob())
+	cl.StatLine()
+	uri := c.String("uri")
+	key := c.String("key")
+	if key == "" || uri == "" {
+		fmt.Println("You must specify the uri and the key")
+		os.Exit(1)
+	}
+	err := cl.DelMetadata(uri, key)
+	if err != nil {
+		fmt.Println("Encountered error: ", err)
+		os.Exit(1)
+	} else {
+		fmt.Println("Set OK")
+		os.Exit(0)
 	}
 }

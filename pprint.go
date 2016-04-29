@@ -8,8 +8,8 @@ import (
 
 	"github.com/immesys/bw2/crypto"
 	"github.com/immesys/bw2/objects"
+	"github.com/immesys/bw2bind"
 	"github.com/mgutz/ansi"
-	"gopkg.in/immesys/bw2bind.v2"
 )
 
 func istring(level int) string {

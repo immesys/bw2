@@ -235,7 +235,7 @@ Let us say that Alice is the head of engineering. She ought to be able to do any
 bw2 mkdot --from ns.ent --to alice.ent --uri "oski.demo/engineering/*" --ttl 5 --permissions "PC*"
 ```
 
-This says that `alice.ent` is allowed to publish (P) and subscribe (C) including wildcards (*) on any URI beginning with oski.demo/engineering. The TTL parameter specifies over how many hops this this trust can be *re-delegated*. By default it is zero which says that we trust alice (one hop), but do not trust the people that she trusts (more than one hop). Note that although we are using alice.ent (the private key file) as a target for convenience, we could also use the full VK or an alias as the 'to' parameter. The 'from' parameter must be a private keyfile.
+This says that `alice.ent` is allowed to publish (P) and subscribe (C) including wildcards (`*`) on any URI beginning with oski.demo/engineering. The TTL parameter specifies over how many hops this this trust can be *re-delegated*. By default it is zero which says that we trust alice (one hop), but do not trust the people that she trusts (more than one hop). Note that although we are using alice.ent (the private key file) as a target for convenience, we could also use the full VK or an alias as the 'to' parameter. The 'from' parameter must be a private keyfile.
 
 Let us say that Bob is in charge of making reports, so Alice wants him to be able to read all the resources from the 'epic' project:
 

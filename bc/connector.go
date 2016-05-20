@@ -98,14 +98,12 @@ func NewBlockChain(datadir string) (BlockChainProvider, chan bool) {
 		SolcPath:                "",
 		AutoDAG:                 false,
 	}
-	fmt.Println("made config")
 	var err error
 	rv.eth, err = eth.New(cfg)
 	if err != nil {
 		utils.Fatalf("%v", err)
 	}
 	utils.StartEthereum(rv.eth)
-	fmt.Println("started eth")
 	rv.fm = filters.NewFilterSystem(rv.eth.EventMux())
 	rv.x = xeth.New(rv.eth, front)
 

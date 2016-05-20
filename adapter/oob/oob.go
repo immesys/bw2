@@ -173,34 +173,36 @@ func (bf *boundFrame) loadBoolParam(name string) bool {
 //Panics on error, returns nil or object on success
 func (bf *boundFrame) loadCommonPAC(autochain bool, perms string) *objects.DChain {
 	if autochain {
-		if bf.bwcl.GetUs() == nil {
-			panic(bwe.C(bwe.NoEntity))
-		}
-		log.Info("autochaining")
-		mvk, suffix := bf.loadCommonURI()
-		//XTAG new chainbuilder
-		ch, err := bf.bwcl.BuildChain(&api.BuildChainParams{
-			To:          bf.bwcl.GetUs().GetVK(),
-			URI:         crypto.FmtKey(mvk) + "/" + suffix,
-			Status:      nil,
-			Permissions: perms,
-		})
-		if err != nil {
-			panic(bwe.AsBW(err))
-		}
-		log.Info("blocking on chain")
-		realpac := <-ch
-		log.Info("built")
-		if realpac == nil {
-			panic(bwe.C(bwe.ChainBuildFailed))
-		}
-		//XTAG: this is preeety ugly. We should create a reverse channel to stop
-		//XTAG: chain building. That would save a lot of cpu time too
-		go func() {
-			for _ = range ch {
-			}
-		}()
-		return realpac
+		return nil
+		//
+		// if bf.bwcl.GetUs() == nil {
+		// 	panic(bwe.C(bwe.NoEntity))
+		// }
+		// log.Info("autochaining")
+		// mvk, suffix := bf.loadCommonURI()
+		// //XTAG new chainbuilder
+		// ch, err := bf.bwcl.BuildChain(&api.BuildChainParams{
+		// 	To:          bf.bwcl.GetUs().GetVK(),
+		// 	URI:         crypto.FmtKey(mvk) + "/" + suffix,
+		// 	Status:      nil,
+		// 	Permissions: perms,
+		// })
+		// if err != nil {
+		// 	panic(bwe.AsBW(err))
+		// }
+		// log.Info("blocking on chain")
+		// realpac := <-ch
+		// log.Info("built")
+		// if realpac == nil {
+		// 	panic(bwe.C(bwe.ChainBuildFailed))
+		// }
+		// //XTAG: this is preeety ugly. We should create a reverse channel to stop
+		// //XTAG: chain building. That would save a lot of cpu time too
+		// go func() {
+		// 	for _ = range ch {
+		// 	}
+		// }()
+		// return realpac
 	}
 	pac, pacok := bf.f.GetFirstHeader("primary_access_chain")
 	if !pacok {
@@ -263,7 +265,7 @@ func (bf *boundFrame) loadCommonElaborate() int {
 			panic(bwe.M(bwe.MalformedOOBCommand, "malformed elaborate_pac"))
 		}
 	}
-	return api.NoElaboration
+	return api.PartialElaboration
 }
 func loadCommonXOs(f *objects.Frame) ([]objects.RoutingObject, []objects.PayloadObject) {
 	ros := make([]objects.RoutingObject, len(f.ROs))
@@ -356,6 +358,7 @@ func (bf *boundFrame) Err(err error) {
 	r.AddHeader("status", "error")
 	r.AddHeader("reason", bws.Msg)
 	r.AddHeader("code", strconv.Itoa(bws.Code))
+	r.AddHeader("finished", "true")
 	bf.send(r)
 }
 func (bf *boundFrame) loadEntityPoOrUs() *objects.Entity {
@@ -435,6 +438,16 @@ func (bf *boundFrame) Handle() {
 		bf.cmdUpdateSRVRecord()
 	case objects.CmdListDROffers:
 		bf.cmdListDesignatedRouterOffers()
+	case objects.CmdMakeView:
+		bf.cmdMakeView()
+	case objects.CmdListView:
+		bf.cmdListView()
+	case objects.CmdPublishView:
+		bf.cmdPubView()
+	case objects.CmdSubscribeView:
+		bf.cmdSubView()
+	case "devl":
+		bf.cmdDevelop()
 	default:
 		bf.Err(bwe.M(bwe.InvalidOOBCommand, "Unknown OOB command "+bf.f.Cmd))
 		return

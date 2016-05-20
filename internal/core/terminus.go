@@ -22,10 +22,8 @@ package core
 // otherwise a different part of the program
 // would have handled it.
 
-// For subscribe requests, a valid D Similarly, any subscribe requests entering the
+// Similarly, any subscribe requests entering the
 // terminus have been verified, same for tap, ls etc.
-// This might not be possible for subscribes with wildcards, but the exiting
-// messages will be verified by outer layers
 
 import (
 	"fmt"
@@ -38,15 +36,8 @@ import (
 	"github.com/immesys/bw2/internal/store"
 )
 
-/*
-type SubscriptionHandler interface {
-	Handle(m *Message)
-}
-*/
-
 //A handle to a queue that gets messages dispatched to it
 type Client struct {
-	//MVK etc
 	cid  clientid
 	subs []UniqueMessageID
 	tm   *Terminus
@@ -55,22 +46,35 @@ type Client struct {
 
 type clientid uint32
 
-type snode struct {
+type subTreeNode struct {
 	lock     sync.RWMutex
-	children map[string]*snode
+	children map[string]*subTreeNode
 	//map cid to subscription (NOT SUBID)
-	subs map[clientid]subscription
+	subz []*subscription
+	//	subs map[clientid]subscription
 }
 
-func NewSnode() *snode {
-	return &snode{children: make(map[string]*snode), subs: make(map[clientid]subscription, 0)}
+func (stn *subTreeNode) subForId(subid UniqueMessageID) *subscription {
+	for _, sub := range stn.subz {
+		if sub.subid == subid {
+			return sub
+		}
+	}
+	return nil
 }
 
+func NewSnode() *subTreeNode {
+	return &subTreeNode{children: make(map[string]*subTreeNode)}
+}
+
+//This identifies an individual client subscription
 type subscription struct {
 	subid   UniqueMessageID
 	handler func(m *Message, s UniqueMessageID)
 	client  *Client
 	tap     bool
+	uri     string
+	created time.Time
 }
 
 type Terminus struct {
@@ -78,27 +82,26 @@ type Terminus struct {
 	//q_lock sync.RWMutex
 
 	//This maps a client ID onto a client pointer
-	//TODO can we just use the pointer throughout?
 	c_maplock sync.RWMutex
 	cmap      map[clientid]*Client
 	cid_head  uint32
 
 	//The subscription tree
-	stree *snode
+	stree *subTreeNode
 
 	//map a subscription ID onto the snode that contains it
 	rstree_lock sync.RWMutex
-	rstree      map[UniqueMessageID]*snode
+	rstree      map[UniqueMessageID]*subTreeNode
 }
 
 //For a node in the tree, match the given subscription string and call visitor
 //for every subscription found
-func (s *snode) rmatchSubs(parts []string, visitor func(s subscription)) {
+func (s *subTreeNode) rmatchSubs(parts []string, visitor func(s *subscription)) {
 	//fmt.Println("rms ", parts)
 	if len(parts) == 0 {
 		//fmt.Println("checking zero case")
 		s.lock.RLock()
-		for _, sub := range s.subs {
+		for _, sub := range s.subz {
 			//fmt.Println("dispatching to sub")
 			visitor(sub)
 		}
@@ -125,22 +128,15 @@ func (s *snode) rmatchSubs(parts []string, visitor func(s subscription)) {
 }
 
 //Add the given subscription parts starting from the given snode
-//returns a unique message ID of the subscription in the tree. If this does
-//not match the ID of the subscription given, then it is because there was
-//an existing subscription from the same client with the same pattern.
-func (s *snode) addSub(parts []string, sub subscription) (UniqueMessageID, *snode) {
+//returns a unique message ID of the subscription in the tree.
+func (s *subTreeNode) addSub(parts []string, sub *subscription) (UniqueMessageID, *subTreeNode) {
 	if len(parts) == 0 {
 		s.lock.Lock()
-		existing, ok := s.subs[sub.client.cid]
-		if ok {
-			s.lock.Unlock()
-			return existing.subid, s
-		} else {
-			s.subs[sub.client.cid] = sub
-			s.lock.Unlock()
-			return sub.subid, s
-		}
+		s.subz = append(s.subz, sub)
+		s.lock.Unlock()
+		return sub.subid, s
 	}
+
 	s.lock.RLock()
 	child, ok := s.children[parts[0]]
 	s.lock.RUnlock()
@@ -157,31 +153,45 @@ func (s *snode) addSub(parts []string, sub subscription) (UniqueMessageID, *snod
 }
 
 //AddSub adds a subscription to terminus. It returns the unique message ID
-//of the actual subscription in the tree. If it is not the same as the one
-//in the given subscription, then the add was a noop. Note that means that
-//the new callback in the added subscription WILL NOT BE CALLED upon new
-//messages. i.e subscriptions must be unique within a client
-func (tm *Terminus) AddSub(topic string, s subscription) UniqueMessageID {
+//of the actual subscription in the tree.
+func (tm *Terminus) AddSub(topic string, s *subscription) UniqueMessageID {
 	parts := strings.Split(topic, "/")
 	fmt.Println("Add subscription: ", parts)
 	subid, node := tm.stree.addSub(parts, s)
-	if subid == s.subid { //This was a new subscription
-		tm.rstree_lock.Lock()
-		tm.rstree[subid] = node
-		tm.rstree_lock.Unlock()
-	}
+	tm.rstree_lock.Lock()
+	tm.rstree[subid] = node
+	tm.rstree_lock.Unlock()
 	return subid
 }
-func (tm *Terminus) RMatchSubs(topic string, visitor func(s subscription)) {
+func (tm *Terminus) RMatchSubs(topic string, visitor func(s *subscription)) {
 	parts := strings.Split(topic, "/")
 	tm.stree.rmatchSubs(parts, visitor)
+}
+
+func rounddur(d, r time.Duration) time.Duration {
+	if r <= 0 {
+		return d
+	}
+	neg := d < 0
+	if neg {
+		d = -d
+	}
+	if m := d % r; m+m < r {
+		d = d - m
+	} else {
+		d = d + r - m
+	}
+	if neg {
+		return -d
+	}
+	return d
 }
 
 func CreateTerminus() *Terminus {
 	rv := &Terminus{}
 	rv.cmap = make(map[clientid]*Client)
 	rv.stree = NewSnode()
-	rv.rstree = make(map[UniqueMessageID]*snode)
+	rv.rstree = make(map[UniqueMessageID]*subTreeNode)
 	go func() {
 		for {
 			time.Sleep(5 * time.Second)
@@ -189,9 +199,12 @@ func CreateTerminus() *Terminus {
 			for k, v := range rv.cmap {
 				fmt.Printf("[%d->%s]\n", k, v.name)
 			}
-			fmt.Println("rsmap:")
-			for k, v := range rv.rstree {
-				fmt.Printf("[%v->%+v]\n", k, v)
+			fmt.Println("Active subscriptions:")
+			fmt.Printf("  AGE   CLIENT                     URI \n")
+			for mid, stn := range rv.rstree {
+				sub := stn.subForId(mid)
+				age := time.Now().Sub(sub.created)
+				fmt.Printf("  %-5s %-26s %s\n", rounddur(age, time.Second), sub.client.name, sub.uri)
 			}
 		}
 	}()
@@ -208,8 +221,8 @@ func (tm *Terminus) CreateClient(name string) *Client {
 }
 
 func (cl *Client) Publish(m *Message) {
-	var clientlist []subscription
-	cl.tm.RMatchSubs(m.Topic, func(s subscription) {
+	var clientlist []*subscription
+	cl.tm.RMatchSubs(m.Topic, func(s *subscription) {
 		//fmt.Printf("sub match\n")
 		clientlist = append(clientlist, s)
 	})
@@ -240,15 +253,14 @@ func (cl *Client) Subscribe(m *Message, cb func(m *Message, id UniqueMessageID))
 	newsub := subscription{subid: m.UMid,
 		tap:     m.Type == TypeTap,
 		client:  cl,
-		handler: cb}
+		handler: cb,
+		created: time.Now(),
+		uri:     m.Topic}
 
 	//Add to the sub tree
-	subid := cl.tm.AddSub(m.Topic, newsub)
+	subid := cl.tm.AddSub(m.Topic, &newsub)
 	//Record it for destroy
-	if subid == m.UMid { //this sub was new
-		cl.subs = append(cl.subs, subid)
-	}
-	//the subid might not be the one we specified, if it was already in the tree
+	cl.subs = append(cl.subs, subid)
 	return subid
 }
 
@@ -299,7 +311,13 @@ func (cl *Client) Destroy() {
 	for _, subid := range cl.subs {
 		node, ok := cl.tm.rstree[subid]
 		if ok {
-			delete(node.subs, cl.cid)
+			np := node.subz[:0]
+			for _, s := range node.subz {
+				if s.client.cid != cl.cid {
+					np = append(np, s)
+				}
+			}
+			node.subz = np
 		}
 		delete(cl.tm.rstree, subid)
 	}
@@ -320,8 +338,17 @@ func (cl *Client) Unsubscribe(subid UniqueMessageID) {
 		cl.tm.rstree_lock.Unlock()
 		return
 	}
-	delete(node.subs, cl.cid)
+	//delete(node.subs, cl.cid)
+	np := node.subz[:0]
+	for _, s := range node.subz {
+		if s.client.cid != cl.cid {
+			np = append(np, s)
+		}
+	}
+	node.subz = np
 	delete(cl.tm.rstree, subid)
 	//TODO we don't clean up the tree!
+	// meaning there are intermediate nodes with no leaves
+	// that is probably ok
 	cl.tm.rstree_lock.Unlock()
 }

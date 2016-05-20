@@ -8,7 +8,7 @@ import (
 	"github.com/immesys/bw2/api"
 	"github.com/immesys/bw2/bc"
 	"github.com/immesys/bw2/crypto"
-	_ "github.com/immesys/bw2/internal/core"
+	"github.com/immesys/bw2/internal/core"
 	"github.com/immesys/bw2/objects"
 	"github.com/immesys/bw2/util/bwe"
 )
@@ -157,7 +157,6 @@ func (bf *boundFrame) cmdBCInteractionParams() {
 		bf.bwcl.SetMaxChainAge(uint64(maxa))
 	}
 	r := bf.mkFinalResponseOkayFrame()
-	fmt.Printf("here: %v %v %v %v\n", bf, bf.bwcl, bf.bwcl.BC(), bf.bwcl.BCC())
 	if bf.bwcl.BCC() != nil {
 		r.AddHeader("confirmations", strconv.FormatUint(bf.bwcl.BCC().GetDefaultConfirmations(), 10))
 		r.AddHeader("timeout", strconv.FormatUint(bf.bwcl.BCC().GetDefaultTimeout(), 10))
@@ -404,4 +403,111 @@ func (bf *boundFrame) cmdResolveRegistryObject() {
 		panic(bwe.M(bwe.BadOperation, "This should not have happened"))
 	}
 	bf.send(r)
+}
+
+func (bf *boundFrame) cmdMakeView() {
+	expression, ok := bf.f.GetFirstHeaderB("msgpack")
+	if !ok {
+		panic(bwe.M(bwe.InvalidOOBCommand, "missing kv(msgpack)"))
+	}
+	ondone := func(err error, vid int) {
+		if err != nil {
+			bf.Err(bwe.WrapM(bwe.BadView, "Could not create view", err))
+			return
+		}
+		r := bf.mkNonfinalResponseOkayFrame()
+		r.AddHeader("id", strconv.Itoa(vid))
+		bf.send(r)
+		bf.bwcl.LookupView(vid).OnChange(func() {
+			//	nr := bf.mkResult
+			nr := objects.CreateFrame(objects.CmdResult, bf.replyto)
+			nr.AddHeader("finished", strconv.FormatBool(false))
+			//Maybe add extra content here
+			bf.send(nr)
+		})
+	}
+	bf.bwcl.NewViewFromBlob(ondone, expression)
+}
+
+func (bf *boundFrame) cmdSubView() {
+	vid, _, _ := bf.f.ParseFirstHeaderAsInt("id", -1)
+	v := bf.bwcl.LookupView(vid)
+	if v == nil {
+		panic(bwe.M(bwe.BadView, "Cannot find view"))
+	}
+	iface, ok := bf.f.GetFirstHeader("iface")
+	if !ok {
+		panic(bwe.M(bwe.InvalidOOBCommand, "missing kv(iface)"))
+	}
+	sig, sigok := bf.f.GetFirstHeader("signal")
+	slot, slotok := bf.f.GetFirstHeader("slot")
+	if !sigok && !slotok {
+		panic(bwe.M(bwe.InvalidOOBCommand, "missing kv(signal) or kv(slot)"))
+	}
+	if sigok && slotok {
+		panic(bwe.M(bwe.InvalidOOBCommand, "cannot have both kv(signal) and kv(slot)"))
+	}
+	sigslot := sig
+	if slotok {
+		sigslot = slot
+	}
+	v.SubscribeInterface(iface, sigslot, sigok, bf.mkGenericActionCB(), func(m *core.Message) {
+		r := objects.CreateFrame(objects.CmdResult, bf.replyto)
+		r.AddHeader("vid", strconv.Itoa(vid))
+		commonUnpackMsg(m, r)
+		bf.send(r)
+	})
+}
+
+func (bf *boundFrame) cmdPubView() {
+	vid, _, _ := bf.f.ParseFirstHeaderAsInt("id", -1)
+	v := bf.bwcl.LookupView(vid)
+	if v == nil {
+		panic(bwe.M(bwe.BadView, "Cannot find view"))
+	}
+	iface, ok := bf.f.GetFirstHeader("iface")
+	if !ok {
+		panic(bwe.M(bwe.InvalidOOBCommand, "missing kv(iface)"))
+	}
+	sig, sigok := bf.f.GetFirstHeader("signal")
+	slot, slotok := bf.f.GetFirstHeader("slot")
+	if !sigok && !slotok {
+		panic(bwe.M(bwe.InvalidOOBCommand, "missing kv(signal) or kv(slot)"))
+	}
+	if sigok && slotok {
+		panic(bwe.M(bwe.InvalidOOBCommand, "cannot have both kv(signal) and kv(slot)"))
+	}
+	sigslot := sig
+	if slotok {
+		sigslot = slot
+	}
+	_, pos := loadCommonXOs(bf.f)
+	v.PublishInterface(iface, sigslot, sigok, pos, bf.mkFinalGenericActionCB())
+}
+func (bf *boundFrame) cmdListView() {
+	vid, _, _ := bf.f.ParseFirstHeaderAsInt("id", -1)
+	v := bf.bwcl.LookupView(vid)
+	if v == nil {
+		panic(bwe.M(bwe.BadView, "Cannot find view"))
+	}
+	r := bf.mkFinalResponseOkayFrame()
+	iz := v.Interfaces()
+	for _, iface := range iz {
+		r.AddPayloadObject(iface.ToPO())
+	}
+	bf.send(r)
+}
+func (bf *boundFrame) cmdDevelop() {
+	// bf.checkChainAge()
+	// fmt.Println("\n\n\nDEVELOP CALL")
+	// // Do develop stuff
+	// var v *api.View
+	// ondone := func(err error) {
+	// 	//	fmt.Println("got ondone: ", err, v)
+	// 	//fmt.Println("view db: ", )
+	// 	mk, ok := v.Meta("410.dev/foo", "app")
+	// 	fmt.Printf("test1: %+v %v\n", mk, ok)
+	// }
+	// v = bf.bwcl.NewView(ondone, []string{"410.dev"})
+	// fmt.Println("view created: ", v)
 }

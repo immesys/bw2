@@ -62,6 +62,11 @@ const (
 	CmdUpdateSRVRecord       = "usrv"
 	CmdListDROffers          = "ldro"
 
+	CmdMakeView      = "mkvw"
+	CmdSubscribeView = "vsub"
+	CmdPublishView   = "vpub"
+	CmdListView      = "vlst"
+
 	CmdResponse = "resp"
 	CmdResult   = "rslt"
 )

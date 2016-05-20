@@ -327,3 +327,27 @@ Fields
  Fields
  * kv(key) - The key to resolve. If not a 44 character hash/vk then it will be resolved
              as a long alias first.
+
+ ### mkvw - Make a view
+ Fields
+ * kv(msgpack) - The expression that forms the view, in msgpack form
+
+ ### vsub - Subscribe to a view
+ Fields
+ * kv(slot) - The name of the slot
+ OR
+ * kv(signal) - The name of the signal
+ AND
+ * kv(interface) - The name of the interface
+
+ ### vpub - Publish to a view
+ Fields
+ * kv(slot) - The name of the slot
+ OR
+ * kv(signal) - The name of the signal
+ AND
+ * kv(interface) - The name of the interface
+ * po() - The payload objects to publish
+
+ ### vlst - List contents of a view
+   -> list of po(InterfaceDescriptor)

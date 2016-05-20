@@ -129,6 +129,19 @@ type BosswaveClient struct {
 	bcc    bc.BlockChainClient
 
 	maxage uint64
+
+	viewseq int
+	views   map[int]*View
+	viewmu  sync.Mutex
+}
+
+func (cl *BosswaveClient) registerView(v *View) int {
+	cl.viewmu.Lock()
+	cl.viewseq++
+	seq := cl.viewseq
+	cl.views[seq] = v
+	cl.viewmu.Unlock()
+	return seq
 }
 
 func (cl *BosswaveClient) GetMaxChainAge() uint64 {
@@ -162,6 +175,7 @@ func (bw *BW) CreateClient(name string) *BosswaveClient {
 		peers:  make(map[string]*PeerClient),
 		bchain: bw.bchain,
 		maxage: defaultMaxAge,
+		views:  make(map[int]*View),
 	}
 	rv.cl = bw.tm.CreateClient(name)
 	return rv

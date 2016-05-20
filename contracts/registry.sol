@@ -133,10 +133,10 @@ contract Registry {
 
       /* Find the min expiry for the DOT */
       uint minExpiry = expiry;
-      if (minExpiry == 0 || EntityExpiry[srcvk] < minExpiry) {
+      if (minExpiry == 0 || (EntityExpiry[srcvk] != 0 && EntityExpiry[srcvk] < minExpiry)) {
         minExpiry = EntityExpiry[srcvk];
       }
-      if (minExpiry == 0 || EntityExpiry[dstvk] < minExpiry) {
+      if (minExpiry == 0 || (EntityExpiry[dstvk] != 0 && EntityExpiry[dstvk] < minExpiry)) {
         minExpiry = EntityExpiry[dstvk];
       }
 
@@ -279,6 +279,17 @@ contract Registry {
       PatentPrice = 10 ether;
       PatentDuration = 100;
       admin = msg.sender;
+
+      /* The everyone entity is used for grant-all DOTs but cannot
+         be submitted manually because there cannot be a valid sig.
+         If the state is not set though, DOTs using it won't work
+       */
+       todo fix this
+      uint32 eveyone = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff;
+      EntityState
+      mapping (bytes32 => bytes) public Entities;
+      mapping (bytes32 => Validity) public EntityState;
+      mapping (bytes32 => uint) public EntityExpiry;
     }
 }
 

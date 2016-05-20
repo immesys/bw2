@@ -29,7 +29,6 @@ import (
 	"math/big"
 	"net"
 	"os"
-	"strconv"
 	"sync"
 	"time"
 
@@ -207,8 +206,8 @@ func handleSession(cl *BosswaveClient, conn net.Conn) {
 				}
 				s := msg.Verify(cl.BW())
 				if s.Code != bwe.Okay {
-					log.Info("message failed verification")
-					errframe(nf.seqno, s.Code, "see code("+strconv.Itoa(s.Code)+")")
+					log.Infof("message failed verification: %#v", msg)
+					errframe(nf.seqno, s.Code, "message failed ingress verification")
 					return
 				}
 				//log.Info("message verified ok")

@@ -93,6 +93,10 @@ const (
 	BadChainBuildParams = 429
 	//Called when a hash or vk is not a 32 byte slice
 	InvalidSlice = 430
+	//Called when a view creation expression is bad or a view does not exist
+	BadView = 431
+	//A view encountered a suboperation error
+	ViewError = 432
 
 	//The 500 series are chain interaction errors
 	RegistryEntityResolutionFailed = 500

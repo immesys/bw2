@@ -156,6 +156,13 @@ const PODFMaskROEntityWKey = `0.0.0.50/32`
 const PODFROEntityWKey = `0.0.0.50`
 const POMaskROEntityWKey = 32
 
+//RODRVK (0.0.0.51/32): Designated router verifying key
+//a 32 byte designated router verifying key
+const PONumRODRVK = 51
+const PODFMaskRODRVK = `0.0.0.51/32`
+const PODFRODRVK = `0.0.0.51`
+const POMaskRODRVK = 32
+
 //ROExpiry (0.0.0.64/32): Expiry
 //Sets an expiry for the message
 const PONumROExpiry = 64
@@ -191,6 +198,13 @@ const PODFMaskDouble = `1.0.2.0/32`
 const PODFDouble = `1.0.2.0`
 const POMaskDouble = 32
 
+//Wavelet (1.0.6.1/32): Wavelet binary
+//This object contains a BOSSWAVE Wavelet
+const PONumWavelet = 16778753
+const PODFMaskWavelet = `1.0.6.1/32`
+const PODFWavelet = `1.0.6.1`
+const POMaskWavelet = 32
+
 //SpawnpointLog (2.0.2.0/32): Spawnpoint stdout
 //This contains stdout data from a spawnpoint container. It is a msgpacked dictionary that contains a "service" key, a "time" key (unix nano timestamp) and a "contents" key and a "spalias" key.
 const PONumSpawnpointLog = 33554944
@@ -211,6 +225,13 @@ const PONumHSBLightMessage = 33555713
 const PODFMaskHSBLightMessage = `2.0.5.1/32`
 const PODFHSBLightMessage = `2.0.5.1`
 const POMaskHSBLightMessage = 32
+
+//InterfaceDescriptor (2.0.6.1/32): InterfaceDescriptor
+//This object is used to describe an interface. It contains "uri", "iface","svc","namespace" "prefix" and "metadata" keys.
+const PONumInterfaceDescriptor = 33555969
+const PODFMaskInterfaceDescriptor = `2.0.6.1/32`
+const PODFInterfaceDescriptor = `2.0.6.1`
+const POMaskInterfaceDescriptor = 32
 
 //String (64.0.1.0/32): String
 //A plain string with no rigid semantic meaning. This can be thought of as a print statement. Anything that has semantic meaning like a process log should use a different schema.

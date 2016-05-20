@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"time"
 
 	"github.com/codegangsta/cli"
 	"github.com/immesys/bw2/adapter/oob"
@@ -67,6 +68,11 @@ func main() {
 				},
 			},
 		},
+		// {
+		// 	Name:   "dtrig",
+		// 	Usage:  "if you ever see this, email michael, he messed up",
+		// 	Action: actionDTrig,
+		// },
 		{
 			Name:   "makeconf",
 			Usage:  "create a new bw2.ini file",
@@ -479,7 +485,12 @@ func actionRouter(c *cli.Context) {
 	config = core.LoadConfig(cfg)
 	confLog(config)
 	bw, shd := api.OpenBWContext(config)
-
+	go func() {
+		for {
+			time.Sleep(5 * time.Second)
+			fmt.Println("num goroutines:", runtime.NumGoroutine())
+		}
+	}()
 	if bw.Config.Native.ListenOn != "" {
 		go api.Start(bw)
 	} else {

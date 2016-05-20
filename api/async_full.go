@@ -75,11 +75,11 @@ type PublishParams struct {
 	ElaboratePAC       int
 	DoVerify           bool
 	Persist            bool
+	AutoChain          bool
 }
 type PublishCallback func(err error)
 
 func (c *BosswaveClient) checkAddOriginVK(m *core.Message) {
-
 	//Although the PAC may not be elaborated, we might be able to
 	//elaborate it some more here for our decision support
 	pac := m.PrimaryAccessChain
@@ -106,6 +106,10 @@ func (c *BosswaveClient) Publish(params *PublishParams,
 	t := core.TypePublish
 	if params.Persist {
 		t = core.TypePersist
+	}
+	if err := c.doAutoChain(params.MVK, params.URISuffix, "P", params.AutoChain, &params.PrimaryAccessChain); err != nil {
+		cb(err)
+		return
 	}
 	m, err := c.newMessage(t, params.MVK, params.URISuffix)
 	if err != nil {
@@ -183,6 +187,7 @@ type SubscribeParams struct {
 	ExpiryDelta        *time.Duration
 	ElaboratePAC       int
 	DoVerify           bool
+	AutoChain          bool
 }
 type SubscribeInitialCallback func(err error, isNew bool, id core.UniqueMessageID)
 type SubscribeMessageCallback func(m *core.Message)
@@ -190,7 +195,10 @@ type SubscribeMessageCallback func(m *core.Message)
 func (c *BosswaveClient) Subscribe(params *SubscribeParams,
 	actionCB SubscribeInitialCallback,
 	messageCB SubscribeMessageCallback) {
-
+	if err := c.doAutoChain(params.MVK, params.URISuffix, "C", params.AutoChain, &params.PrimaryAccessChain); err != nil {
+		actionCB(err, false, core.UniqueMessageID{})
+		return
+	}
 	m, err := c.newMessage(core.TypeSubscribe, params.MVK, params.URISuffix)
 	if err != nil {
 		actionCB(err, false, core.UniqueMessageID{})
@@ -214,7 +222,7 @@ func (c *BosswaveClient) Subscribe(params *SubscribeParams,
 	if params.DoVerify {
 		s := m.Verify(c.BW())
 		if s.Code != bwe.Okay {
-			actionCB(bwe.C(s.Code), false, core.UniqueMessageID{})
+			actionCB(bwe.M(s.Code, "Local verification failed"), false, core.UniqueMessageID{})
 			return
 		}
 	}
@@ -334,6 +342,7 @@ type ListParams struct {
 	ExpiryDelta        *time.Duration
 	ElaboratePAC       int
 	DoVerify           bool
+	AutoChain          bool
 }
 type ListInitialCallback func(err error)
 type ListResultCallback func(s string, ok bool)
@@ -341,6 +350,10 @@ type ListResultCallback func(s string, ok bool)
 func (c *BosswaveClient) List(params *ListParams,
 	actionCB ListInitialCallback,
 	resultCB ListResultCallback) {
+	if err := c.doAutoChain(params.MVK, params.URISuffix, "C", params.AutoChain, &params.PrimaryAccessChain); err != nil {
+		actionCB(err)
+		return
+	}
 	m, err := c.newMessage(core.TypeLS, params.MVK, params.URISuffix)
 	if err != nil {
 		actionCB(err)
@@ -395,6 +408,7 @@ type QueryParams struct {
 	ExpiryDelta        *time.Duration
 	ElaboratePAC       int
 	DoVerify           bool
+	AutoChain          bool
 }
 type QueryInitialCallback func(err error)
 type QueryResultCallback func(m *core.Message)
@@ -402,6 +416,10 @@ type QueryResultCallback func(m *core.Message)
 func (c *BosswaveClient) Query(params *QueryParams,
 	actionCB QueryInitialCallback,
 	resultCB QueryResultCallback) {
+	if err := c.doAutoChain(params.MVK, params.URISuffix, "C", params.AutoChain, &params.PrimaryAccessChain); err != nil {
+		actionCB(err)
+		return
+	}
 	m, err := c.newMessage(core.TypeQuery, params.MVK, params.URISuffix)
 	if err != nil {
 		actionCB(err)

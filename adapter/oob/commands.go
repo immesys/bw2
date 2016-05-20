@@ -31,8 +31,9 @@ func (bf *boundFrame) cmdPublishPersist() {
 		PayloadObjects:     pos,
 		Persist:            bf.f.Cmd == objects.CmdPersist,
 		DoVerify:           verify,
+		AutoChain:          autochain,
 	}
-	bf.bwcl.Publish(p, bf.mkGenericActionCB())
+	bf.bwcl.Publish(p, bf.mkFinalGenericActionCB())
 }
 
 func (bf *boundFrame) cmdList() {
@@ -50,6 +51,7 @@ func (bf *boundFrame) cmdList() {
 		Expiry:             expt,
 		ElaboratePAC:       el,
 		RoutingObjects:     ros,
+		AutoChain:          autochain,
 	}
 	bf.bwcl.List(p,
 		bf.mkGenericActionCB(),
@@ -78,6 +80,7 @@ func (bf *boundFrame) cmdQuery() {
 		Expiry:             expt,
 		ElaboratePAC:       el,
 		RoutingObjects:     ros,
+		AutoChain:          autochain,
 	}
 	bf.bwcl.Query(p,
 		bf.mkGenericActionCB(),
@@ -119,6 +122,7 @@ func (bf *boundFrame) cmdSubscribe() {
 		Expiry:             expt,
 		ElaboratePAC:       el,
 		RoutingObjects:     ros,
+		AutoChain:          autochain,
 	}
 	bf.bwcl.Subscribe(p,
 		func(err error, isNew bool, id core.UniqueMessageID) {

@@ -125,11 +125,10 @@ func (bf *boundFrame) cmdSubscribe() {
 		AutoChain:          autochain,
 	}
 	bf.bwcl.Subscribe(p,
-		func(err error, isNew bool, id core.UniqueMessageID) {
+		func(err error, id core.UniqueMessageID) {
 			if err == nil {
 				r := objects.CreateFrame(objects.CmdResponse, bf.replyto)
 				r.AddHeader("status", "okay")
-				r.AddHeader("duplicate", strconv.FormatBool(!isNew))
 				r.AddHeader("handle", id.ToString())
 				bf.send(r)
 			} else {
@@ -138,14 +137,17 @@ func (bf *boundFrame) cmdSubscribe() {
 		},
 		func(m *core.Message) {
 			r := objects.CreateFrame(objects.CmdResult, bf.replyto)
-			if unpack {
-				commonUnpackMsg(m, r)
-			} else {
-				po, err := objects.CreateOpaquePayloadObjectDF("1.0.1.1", m.Encoded)
-				if err != nil {
-					panic("Not expecting this")
+			r.AddHeader("finished", strconv.FormatBool(m == nil))
+			if m != nil {
+				if unpack {
+					commonUnpackMsg(m, r)
+				} else {
+					po, err := objects.CreateOpaquePayloadObjectDF("1.0.1.1", m.Encoded)
+					if err != nil {
+						panic("Not expecting this")
+					}
+					r.AddPayloadObject(po)
 				}
-				r.AddPayloadObject(po)
 			}
 			bf.send(r)
 		})

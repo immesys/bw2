@@ -351,3 +351,8 @@ Fields
 
  ### vlst - List contents of a view
    -> list of po(InterfaceDescriptor)
+
+ ### usub - Unsubscribe
+ kv(handle) - The subscription handle
+  You can only unsubscribe from the same TCP connection that initiated the
+  subscription

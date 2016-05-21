@@ -133,6 +133,14 @@ type BosswaveClient struct {
 	viewseq int
 	views   map[int]*View
 	viewmu  sync.Mutex
+
+	subs   map[core.UniqueMessageID]*Subscription
+	subsmu sync.Mutex
+}
+
+type Subscription struct {
+	Msg  *core.Message
+	UMid core.UniqueMessageID
 }
 
 func (cl *BosswaveClient) registerView(v *View) int {
@@ -176,6 +184,7 @@ func (bw *BW) CreateClient(name string) *BosswaveClient {
 		bchain: bw.bchain,
 		maxage: defaultMaxAge,
 		views:  make(map[int]*View),
+		subs:   make(map[core.UniqueMessageID]*Subscription),
 	}
 	rv.cl = bw.tm.CreateClient(name)
 	return rv

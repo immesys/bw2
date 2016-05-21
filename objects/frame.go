@@ -66,6 +66,7 @@ const (
 	CmdSubscribeView = "vsub"
 	CmdPublishView   = "vpub"
 	CmdListView      = "vlst"
+	CmdUnsubscribe   = "usub"
 
 	CmdResponse = "resp"
 	CmdResult   = "rslt"

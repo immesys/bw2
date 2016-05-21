@@ -34,6 +34,7 @@ import (
 	"time"
 
 	"github.com/immesys/bw2/internal/store"
+	"github.com/immesys/bw2/util/bwe"
 )
 
 //A handle to a queue that gets messages dispatched to it
@@ -195,6 +196,8 @@ func CreateTerminus() *Terminus {
 	go func() {
 		for {
 			time.Sleep(5 * time.Second)
+			rv.rstree_lock.RLock()
+			rv.c_maplock.RLock()
 			fmt.Println("active clients:")
 			for k, v := range rv.cmap {
 				fmt.Printf("[%d->%s]\n", k, v.name)
@@ -202,10 +205,13 @@ func CreateTerminus() *Terminus {
 			fmt.Println("Active subscriptions:")
 			fmt.Printf("  AGE   CLIENT                     URI \n")
 			for mid, stn := range rv.rstree {
+				fmt.Printf("got mid=%+v stn=%+v\n", mid, stn)
 				sub := stn.subForId(mid)
 				age := time.Now().Sub(sub.created)
 				fmt.Printf("  %-5s %-26s %s\n", rounddur(age, time.Second), sub.client.name, sub.uri)
 			}
+			rv.c_maplock.RUnlock()
+			rv.rstree_lock.RUnlock()
 		}
 	}()
 	return rv
@@ -331,18 +337,22 @@ func (cl *Client) Destroy() {
 //Unsubscribe does what it says. For now the topic system is crude
 //so this doesn't seem necessary to have the subid instead of topic
 //but it will make sense when we are doing wildcards later.
-func (cl *Client) Unsubscribe(subid UniqueMessageID) {
+func (cl *Client) Unsubscribe(subid UniqueMessageID) error {
 	cl.tm.rstree_lock.Lock()
 	node, ok := cl.tm.rstree[subid]
 	if !ok {
 		cl.tm.rstree_lock.Unlock()
-		return
+		panic("got not exists")
+		return bwe.M(bwe.UnsubscribeError, "Subscription does not exist (terminus)")
 	}
+	toTerm := []*subscription{}
 	//delete(node.subs, cl.cid)
 	np := node.subz[:0]
 	for _, s := range node.subz {
-		if s.client.cid != cl.cid {
+		if s.subid != subid {
 			np = append(np, s)
+		} else {
+			toTerm = append(toTerm, s)
 		}
 	}
 	node.subz = np
@@ -351,4 +361,8 @@ func (cl *Client) Unsubscribe(subid UniqueMessageID) {
 	// meaning there are intermediate nodes with no leaves
 	// that is probably ok
 	cl.tm.rstree_lock.Unlock()
+	for _, tt := range toTerm {
+		tt.handler(nil, tt.subid)
+	}
+	return nil
 }

@@ -175,7 +175,7 @@ func (pc *PeerClient) PublishPersist(m *core.Message, actionCB func(err error)) 
 }
 
 func (pc *PeerClient) Subscribe(m *core.Message,
-	actionCB func(err error, isNew bool, id core.UniqueMessageID),
+	actionCB func(err error, id core.UniqueMessageID),
 	messageCB func(m *core.Message)) {
 	nf := nativeFrame{
 		cmd:   nCmdMessage,
@@ -190,18 +190,17 @@ func (pc *PeerClient) Subscribe(m *core.Message,
 		case nCmdRSub:
 			log.Infof("Got subscribe status response")
 			if len(f.body) < 2 {
-				actionCB(bwe.M(bwe.PeerError, "short response frame"), false, core.UniqueMessageID{})
+				actionCB(bwe.M(bwe.PeerError, "short response frame"), core.UniqueMessageID{})
 				return
 			}
 			code := int(binary.LittleEndian.Uint16(f.body))
 			if code != bwe.Okay {
-				actionCB(bwe.M(code, string(f.body[2:])), false, core.UniqueMessageID{})
+				actionCB(bwe.M(code, string(f.body[2:])), core.UniqueMessageID{})
 			} else {
 				mid := binary.LittleEndian.Uint64(f.body[2:])
 				sig := binary.LittleEndian.Uint64(f.body[10:])
 				umid := core.UniqueMessageID{Mid: mid, Sig: sig}
-				isnew := m.UMid == umid
-				actionCB(nil, isnew, umid)
+				actionCB(nil, umid)
 			}
 			return
 		case nCmdResult:
@@ -220,11 +219,33 @@ func (pc *PeerClient) Subscribe(m *core.Message,
 			return
 		case nCmdEnd:
 			//This will be signalled when we unsubscribe
+			messageCB(nil)
 			pc.removeCB(nf.seqno)
 		}
 	})
 }
-
+func (pc *PeerClient) Unsubscribe(m *core.Message, actionCB func(err error)) {
+	nf := nativeFrame{
+		cmd:   nCmdMessage,
+		body:  m.Encoded,
+		seqno: pc.getSeqno(),
+	}
+	pc.transact(&nf, func(f *nativeFrame) {
+		defer pc.removeCB(nf.seqno)
+		if len(f.body) < 2 {
+			actionCB(bwe.M(bwe.PeerError, "short response frame"))
+			return
+		}
+		code := int(binary.LittleEndian.Uint16(f.body))
+		msg := string(f.body[2:])
+		if code != bwe.Okay {
+			actionCB(bwe.M(code, msg))
+		} else {
+			actionCB(nil)
+		}
+		return
+	})
+}
 func (pc *PeerClient) List(m *core.Message,
 	actionCB func(err error),
 	resultCB func(uri string, ok bool)) {

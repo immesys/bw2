@@ -33,13 +33,14 @@ import (
 )
 
 const (
-	TypePublish   = 0x01
-	TypePersist   = 0x02
-	TypeSubscribe = 0x03
-	TypeTap       = 0x04
-	TypeQuery     = 0x05
-	TypeTapQuery  = 0x06
-	TypeLS        = 0x07
+	TypePublish     = 0x01
+	TypePersist     = 0x02
+	TypeSubscribe   = 0x03
+	TypeTap         = 0x04
+	TypeQuery       = 0x05
+	TypeTapQuery    = 0x06
+	TypeLS          = 0x07
+	TypeUnsubscribe = 0x08
 )
 
 // This is used for verifying messages
@@ -69,6 +70,7 @@ type Message struct {
 	Signature      []byte
 	RoutingObjects []objects.RoutingObject
 	PayloadObjects []objects.PayloadObject
+	UnsubUMid      UniqueMessageID
 
 	//Derived data, not needed for TX message
 	SigCoverEnd        int
@@ -99,6 +101,11 @@ func (m *Message) Encode(sk []byte, vk []byte) {
 	switch m.Type {
 	case TypePublish, TypePersist:
 		b = append(b, byte(m.Consumers))
+	case TypeUnsubscribe:
+		binary.LittleEndian.PutUint64(tmp, m.UnsubUMid.Mid)
+		b = append(b, tmp...)
+		binary.LittleEndian.PutUint64(tmp, m.UnsubUMid.Sig)
+		b = append(b, tmp...)
 	}
 	for _, ro := range m.RoutingObjects {
 		b = append(b, byte(ro.GetRONum()))
@@ -159,6 +166,11 @@ func LoadMessage(b []byte) (m *Message, err error) {
 		//One additional byte denoting consumer limit
 		m.Consumers = int(b[idx])
 		idx++
+	case TypeUnsubscribe:
+		m.UnsubUMid.Mid = binary.LittleEndian.Uint64(b[idx:])
+		idx += 8
+		m.UnsubUMid.Sig = binary.LittleEndian.Uint64(b[idx:])
+		idx += 8
 	}
 
 	foundprimary := false
@@ -370,6 +382,7 @@ func (m *Message) Verify(res Resolver) *StatusMessage {
 	if m.status.Code != bwe.Unchecked {
 		return &m.status
 	}
+
 	//This is used as the EVERYONE vk (all 0xFF) or the router MVK (all 0xFF)
 	allgrant := make([]byte, 32)
 	for i := range allgrant {
@@ -468,11 +481,6 @@ func (m *Message) Verify(res Resolver) *StatusMessage {
 	//status
 endperm:
 
-	//No dollar, and we hit an error, bail
-	if !uridollar && m.status.Code != bwe.Okay {
-		return &m.status
-	}
-
 	if m.OriginVK == nil {
 		log.Criticalf("V: no origin VK on message")
 		m.status.Code = bwe.NoOrigin
@@ -486,7 +494,20 @@ endperm:
 	if !crypto.VerifyBlob(*m.OriginVK, m.Signature, m.Encoded[:m.SigCoverEnd]) {
 		m.status.Code = bwe.InvalidSig
 		log.Infof("V: InvalidSig (whole sig)")
-		//Not even a dollar can save you
+		//Not even a dollar/unsub can save you
+		return &m.status
+	}
+
+	if m.Type == TypeUnsubscribe {
+		//Valid sig and originVK is really all you need
+		//you also need to be from the same client, but
+		//terminus will verify that
+		m.status.Code = bwe.Okay
+		return &m.status
+	}
+
+	//No dollar, and we hit an error, bail
+	if !uridollar && m.status.Code != bwe.Okay {
 		return &m.status
 	}
 

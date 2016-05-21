@@ -497,6 +497,14 @@ func (bf *boundFrame) cmdListView() {
 	}
 	bf.send(r)
 }
+func (bf *boundFrame) cmdUnsubscribe() {
+	handle, ok := bf.f.GetFirstHeader("handle")
+	if !ok {
+		panic(bwe.M(bwe.InvalidOOBCommand, "missing kv(handle)"))
+	}
+	bf.bwcl.Unsubscribe(*core.UniqueMessageIDFromString(handle), bf.mkFinalGenericActionCB())
+
+}
 func (bf *boundFrame) cmdDevelop() {
 	// bf.checkChainAge()
 	// fmt.Println("\n\n\nDEVELOP CALL")

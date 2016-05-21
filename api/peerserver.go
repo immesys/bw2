@@ -219,14 +219,31 @@ func handleSession(cl *BosswaveClient, conn net.Conn) {
 				case core.TypePersist:
 					errframe(nf.seqno, bwe.Okay, "")
 					cl.cl.Persist(msg)
+				case core.TypeUnsubscribe:
+
+					err := cl.cl.Unsubscribe(msg.UnsubUMid)
+					if err == nil {
+						errframe(nf.seqno, bwe.Okay, "")
+					} else {
+						errframe(nf.seqno, bwe.UnsubscribeError, "Unsubscribe error: "+err.Error())
+					}
+
 				case core.TypeSubscribe, core.TypeTap:
 					subid := cl.cl.Subscribe(msg, func(m *core.Message, subid core.UniqueMessageID) {
-						rv := nativeFrame{
-							seqno: nf.seqno,
-							cmd:   nCmdResult,
-							body:  m.Encoded,
+						if m == nil {
+							rv := nativeFrame{
+								seqno: nf.seqno,
+								cmd:   nCmdEnd,
+							}
+							reply(&rv)
+						} else {
+							rv := nativeFrame{
+								seqno: nf.seqno,
+								cmd:   nCmdResult,
+								body:  m.Encoded,
+							}
+							reply(&rv)
 						}
-						reply(&rv)
 					})
 					rv := nativeFrame{
 						seqno: nf.seqno,

@@ -96,7 +96,8 @@ const (
 	//Called when a view creation expression is bad or a view does not exist
 	BadView = 431
 	//A view encountered a suboperation error
-	ViewError = 432
+	ViewError        = 432
+	UnsubscribeError = 433
 
 	//The 500 series are chain interaction errors
 	RegistryEntityResolutionFailed = 500

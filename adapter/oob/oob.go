@@ -446,6 +446,8 @@ func (bf *boundFrame) Handle() {
 		bf.cmdPubView()
 	case objects.CmdSubscribeView:
 		bf.cmdSubView()
+	case objects.CmdUnsubscribe:
+		bf.cmdUnsubscribe()
 	case "devl":
 		bf.cmdDevelop()
 	default:

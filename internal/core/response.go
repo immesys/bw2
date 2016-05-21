@@ -33,7 +33,7 @@ type UniqueMessageID struct {
 func (umid *UniqueMessageID) ToString() string {
 	tmp := make([]byte, 16)
 	binary.LittleEndian.PutUint64(tmp, umid.Mid)
-	binary.LittleEndian.PutUint64(tmp[8:], umid.Mid)
+	binary.LittleEndian.PutUint64(tmp[8:], umid.Sig)
 	return base64.URLEncoding.EncodeToString(tmp)
 }
 

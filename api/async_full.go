@@ -189,25 +189,39 @@ type SubscribeParams struct {
 	DoVerify           bool
 	AutoChain          bool
 }
-type SubscribeInitialCallback func(err error, isNew bool, id core.UniqueMessageID)
+type SubscribeInitialCallback func(err error, id core.UniqueMessageID)
 type SubscribeMessageCallback func(m *core.Message)
 
 func (c *BosswaveClient) Subscribe(params *SubscribeParams,
 	actionCB SubscribeInitialCallback,
 	messageCB SubscribeMessageCallback) {
-	if err := c.doAutoChain(params.MVK, params.URISuffix, "C", params.AutoChain, &params.PrimaryAccessChain); err != nil {
-		actionCB(err, false, core.UniqueMessageID{})
+	var m *core.Message
+	regActionCB := func(err error, id core.UniqueMessageID) {
+		fmt.Printf("sub, id is: %#v, err is %#v\n", id, err)
+		if err == nil {
+			c.subsmu.Lock()
+			c.subs[id] = &Subscription{
+				Msg:  m,
+				UMid: id,
+			}
+			c.subsmu.Unlock()
+		}
+		actionCB(err, id)
+	}
+	var err error
+	if err = c.doAutoChain(params.MVK, params.URISuffix, "C", params.AutoChain, &params.PrimaryAccessChain); err != nil {
+		actionCB(err, core.UniqueMessageID{})
 		return
 	}
-	m, err := c.newMessage(core.TypeSubscribe, params.MVK, params.URISuffix)
+	m, err = c.newMessage(core.TypeSubscribe, params.MVK, params.URISuffix)
 	if err != nil {
-		actionCB(err, false, core.UniqueMessageID{})
+		actionCB(err, core.UniqueMessageID{})
 		return
 	}
 	m.PrimaryAccessChain = params.PrimaryAccessChain
 	m.RoutingObjects = params.RoutingObjects
-	if err := c.doPAC(m, params.ElaboratePAC); err != nil {
-		actionCB(err, false, core.UniqueMessageID{})
+	if err = c.doPAC(m, params.ElaboratePAC); err != nil {
+		actionCB(err, core.UniqueMessageID{})
 		return
 	}
 	//Add expiry
@@ -222,7 +236,7 @@ func (c *BosswaveClient) Subscribe(params *SubscribeParams,
 	if params.DoVerify {
 		s := m.Verify(c.BW())
 		if s.Code != bwe.Okay {
-			actionCB(bwe.M(s.Code, "Local verification failed"), false, core.UniqueMessageID{})
+			actionCB(bwe.M(s.Code, "Local verification failed"), core.UniqueMessageID{})
 			return
 		}
 	}
@@ -232,16 +246,78 @@ func (c *BosswaveClient) Subscribe(params *SubscribeParams,
 		subid := c.cl.Subscribe(m, func(m *core.Message, subid core.UniqueMessageID) {
 			messageCB(m)
 		})
-		isNew := subid == m.UMid
-		actionCB(nil, isNew, subid)
+		regActionCB(nil, subid)
 	} else { //Remote delivery
 		peer, err := c.GetPeer(m.MVK)
 		if err != nil {
 			log.Info("Could not deliver to peer: ", err)
-			actionCB(bwe.WrapM(bwe.PeerError, "could not peer", err), false, core.UniqueMessageID{})
+			actionCB(bwe.WrapM(bwe.PeerError, "could not peer", err), core.UniqueMessageID{})
 			return
 		}
-		peer.Subscribe(m, actionCB, messageCB)
+		peer.Subscribe(m, regActionCB, messageCB)
+	}
+}
+
+func (c *BosswaveClient) Unsubscribe(id core.UniqueMessageID, actioncb func(error)) {
+	var err error
+	c.subsmu.Lock()
+	sub, ok := c.subs[id]
+	c.subsmu.Unlock()
+	fmt.Printf("unsub, id is: %#v\n", id)
+	if !ok {
+		actioncb(bwe.M(bwe.UnsubscribeError, "Subscription does not exist"))
+		return
+	}
+
+	regActionCB := func(err error) {
+		c.subsmu.Lock()
+		_, ok := c.subs[id]
+		if ok {
+			delete(c.subs, id)
+		}
+		c.subsmu.Unlock()
+		actioncb(err)
+	}
+
+	m, err := c.newMessage(core.TypeUnsubscribe, sub.Msg.MVK, sub.Msg.TopicSuffix)
+	if err != nil {
+		//So even though we fail, we deregister locally, so that
+		//messages coming from this subscription are ignored in future
+		regActionCB(err)
+		return
+	}
+	//Check if we need to add an origin VK header
+	ovk := objects.CreateOriginVK(c.GetUs().GetVK())
+	m.RoutingObjects = append(m.RoutingObjects, ovk)
+	vk := c.GetUs().GetVK()
+	m.OriginVK = &vk
+	m.UnsubUMid = id
+	c.finishMessage(m)
+	//Just for dev, no reason to do this
+	s := m.Verify(c.BW())
+	if s.Code != bwe.Okay {
+		//So even though we fail, we deregister locally, so that
+		//messages coming from this subscription are ignored in future
+		regActionCB(bwe.M(s.Code, "Local verification failed"))
+		return
+	}
+	//end just for dev
+
+	err = c.VerifyAffinity(m)
+	if err == nil { //Local delivery
+		c.cl.Unsubscribe(m.UnsubUMid)
+		//TODO remove subscription entry
+		regActionCB(nil)
+	} else { //Remote delivery
+		peer, err := c.GetPeer(m.MVK)
+		if err != nil {
+			log.Info("Could not deliver to peer: ", err)
+			//So even though we fail, we deregister locally, so that
+			//messages coming from this subscription are ignored in future
+			regActionCB(bwe.WrapM(bwe.PeerError, "could not peer", err))
+			return
+		}
+		peer.Unsubscribe(m, regActionCB)
 	}
 }
 

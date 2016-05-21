@@ -67,6 +67,19 @@ func base64Encode(src []byte) []byte {
 	}
 	return dst[:n]
 }
+func GetAccountHex(ro *objects.Entity, index int) (string, error) {
+    seed := make([]byte, 64)
+    copy(seed[0:32], ro.GetSK())
+    copy(seed[32:64], common.BigToBytes(big.NewInt(int64(index)), 256))
+    rand := sha3.Sum512(seed)
+    reader := bytes.NewReader(rand[:])
+    privateKeyECDSA, err := ecdsa.GenerateKey(ethcrypto.S256(), reader)
+    if err != nil {
+        panic(err)
+    }    
+    addr := ethcrypto.PubkeyToAddress(privateKeyECDSA.PublicKey)
+    return addr.Hex(), nil
+}
 
 func expensiveBlowfishSetup(key []byte, cost uint32, csalt []byte) (*blowfish.Cipher, error) {
 

@@ -26,6 +26,26 @@ type View struct {
 	mscond    *sync.Cond
 	msloaded  bool
 	changecb  []func()
+	matchset  []*InterfaceDescription
+
+	subs  []*vsub
+	submu sync.Mutex
+}
+
+const (
+	stateNew = iota
+	stateSubd
+	stateEnded
+	stateToRemove
+)
+
+type vsub struct {
+	iface    string
+	sigslot  string
+	isSignal bool
+	reply    func(error)
+	result   func(m *core.Message)
+	actual   []*vsubsub
 }
 
 // The expression tree can be used to construct a view using a simple syntax.
@@ -577,14 +597,35 @@ func (v *View) waitForMetaView() {
 	}
 	v.msmu.Unlock()
 }
-func (v *View) fireChange() {
-	v.msmu.RLock()
-	for _, cb := range v.changecb {
-		go cb()
-	}
-	v.msmu.RUnlock()
-}
+/*
+func (v *View) checkChange() {
+	newIfaceList := v.interfacesImpl()
 
+	changed := false
+	if len(newIfaceList) != len(v.matchset) {
+		changed = true
+	}
+	if !changed {
+		//serious test
+		for idx := range newIfaceList {
+			if !v.matchset[idx].Equals(newIfaceList[idx]) {
+				changed = true
+				break
+			}
+		}
+	}
+
+	if changed {
+		//TODO update subs
+		v.matchset = newIfaceList
+		v.msmu.RLock()
+		for _, cb := range v.changecb {
+			go cb()
+		}
+		v.msmu.RUnlock()
+	}
+}
+*/
 func (v *View) TearDown() {
 	//Release all the assets here
 }
@@ -632,7 +673,7 @@ func (v *View) initMetaView() {
 			delete(map1, key)
 		}
 		v.msmu.Unlock()
-		v.fireChange()
+		//v.checkChange()
 	}
 	go func() {
 		//First subscribe and wait for that to finish
@@ -651,7 +692,7 @@ func (v *View) initMetaView() {
 				ElaboratePAC: PartialElaboration,
 				DoVerify:     true,
 				AutoChain:    true,
-			}, func(err error, isNew bool, id core.UniqueMessageID) {
+			}, func(err error, id core.UniqueMessageID) {
 				wg.Done()
 				if err != nil {
 					v.fatal(err)
@@ -696,9 +737,112 @@ func (v *View) initMetaView() {
 	}()
 }
 
-// func (c *BosswaveClient) Publish(params *PublishParams,
-// 	cb PublishCallback) {
 func (v *View) SubscribeInterface(iface, sigslot string, isSignal bool, reply func(error), result func(m *core.Message)) {
+	s := &vsub{iface: iface, sigslot: sigslot, isSignal: isSignal, reply: reply, result: result}
+	v.submu.Lock()
+	v.subs = append(v.subs, s)
+	v.submu.Unlock()
+}
+
+func (v *View) checkSubs() {
+	// wrapres := func(s *vsub) func(m *core.Message) {
+	// 	return func(m *core.Message) {
+	// 		s.result(m)
+	// 		if m == nil {
+	// 			s.state = stateEnded
+	// 			go v.checkSubs()
+	// 		}
+	// 	}
+	// }
+	v.submu.Lock()
+	for _, s := range v.subs {
+		newVss := v.expandSub(s)
+		intersection := make(map[*InterfaceDescription]bool)
+		tosub := []*InterfaceDescription{}
+		toremove := []*vsubsub{}
+		//check for new
+		for _, id := range newVss {
+			//Checking new iterface 'id'
+			foundInExisting := false
+			for _, oid := range s.actual {
+				if oid.id.URI == id.URI {
+					foundInExisting = true
+					intersection[oid.id] = true
+					break
+				}
+			}
+			if !foundInExisting {
+				//this is a new iface
+				tosub = append(tosub, id)
+			}
+		}
+		//Check for missing
+		for _, oid := range s.actual {
+			//Skip over entries that we know are in the intersection
+			_, donealready := intersection[oid.id]
+			if donealready {
+				continue
+			}
+			//Ok this is a sub that needs to be removed
+			toremove = append(toremove, oid)
+		}
+
+		//for _, vss := range v.newIn(s, newVss) {
+			// Handle additional subsubs (sub)
+		//}
+		//for _, vss := range v.missingIn(s, newVss) {
+			// handle removed subsubs (unsub)
+		//}
+		// switch s.state {
+		// case stateNew:
+		// 	v.subscribeInterfaceImpl(s.iface, s.sigslot, s.isSignal, s.reply, wrapres(s))
+		// case stateEnded:
+		// 	//do nothing for now?
+		// case stateSubd:
+		// case stateToRemove:
+		// 	v.unsub(s)
+		// }
+	}
+	v.submu.Unlock()
+}
+
+//In the sub 's', we have seen a change, and there are now
+//nvss matching interfaces. For every new interface in nvss
+//that is not in s.actual, initiate a subscription, and
+//populate actual with the new result. submu is held while
+//this is called
+func (v *View) newIn(s *vsub, nvss []*InterfaceDescription) {
+
+}
+
+//In the sub 's', we have seen a change, and there are now
+//nvss matching interfaces. For every MISSING interface in nvss
+//that is in s.actual, unsubscribe. The entry in actual will be
+//changed automatically when the unsub nil msg comes through
+//populate actual with the new result. submu is held while
+//this is called
+func (v *View) missingIn(s *vsub, nvss []*InterfaceDescription) {
+
+}
+func (v *View) unsub(s *vsub) {
+
+}
+
+type vsubsub struct {
+	id    *InterfaceDescription
+	state int
+}
+
+func (v *View) expandSub(s *vsub) []*InterfaceDescription {
+	todo := []*InterfaceDescription{}
+	for _, viewiface := range v.matchset {
+		if viewiface.Interface == s.iface {
+			todo = append(todo, viewiface)
+		}
+	}
+	return todo
+}
+func (v *View) subscribeInterfaceImpl(iface, sigslot string, isSignal bool, reply func(error), result func(m *core.Message)) {
 	idz := v.Interfaces()
 	fmt.Println("we found ", len(idz), "interfaces")
 	fmt.Println(idz)
@@ -731,7 +875,7 @@ func (v *View) SubscribeInterface(iface, sigslot string, isSignal bool, reply fu
 			URISuffix:    suffix,
 			ElaboratePAC: PartialElaboration,
 			AutoChain:    true,
-		}, func(e error, ok bool, id core.UniqueMessageID) {
+		}, func(e error, id core.UniqueMessageID) {
 			if e != nil {
 				errc <- e
 				panic(fmt.Sprintf("%#v %#v %#v", e, crypto.FmtKey(mvk), suffix))
@@ -816,35 +960,11 @@ func (v *View) PublishInterface(iface, sigslot string, isSignal bool, poz []obje
 	}()
 }
 
-// func (v *View) SubSignal(iface, signal string) (chan *bw2bind.SimpleMessage, error) {
-// 	idz := v.Interfaces()
-// 	rv := make(chan *bw2bind.SimpleMessage, 10)
-// 	wg := sync.WaitGroup{}
-// 	for _, viewiface := range idz {
-// 		if viewiface.Interface == iface {
-// 			rvc, err := v.cl.Subscribe(&bw2bind.SubscribeParams{
-// 				AutoChain: true,
-// 				URI:       viewiface.URI + "/signal/" + signal,
-// 			})
-// 			if err != nil {
-// 				return nil, err
-// 			}
-// 			wg.Add(1)
-// 			go func() {
-// 				for sm := range rvc {
-// 					rv <- sm
-// 				}
-// 				wg.Done()
-// 			}()
-// 		}
-// 	}
-// 	go func() {
-// 		wg.Wait()
-// 		close(rv)
-// 	}()
-// 	return rv, nil
-// }
 func (v *View) Interfaces() []*InterfaceDescription {
+	return v.matchset
+}
+
+func (v *View) interfacesImpl() []*InterfaceDescription {
 	fmt.Printf("the view ex is: %#v\n", v.ex)
 	v.msmu.RLock()
 	found := make(map[string]InterfaceDescription)
@@ -896,7 +1016,6 @@ func (is interfaceSorter) Len() int {
 	return len(is)
 }
 func (v *View) OnChange(f func()) {
-	//TODO determien if change is actually relevant
 	v.msmu.Lock()
 	v.changecb = append(v.changecb, f)
 	v.msmu.Unlock()

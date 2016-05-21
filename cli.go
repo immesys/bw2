@@ -117,7 +117,7 @@ func getAccountParam(bwcl *bw2bind.BW2Client, c *cli.Context, param string) stri
 	//First try it as an entity file:
 	se := loadSigningEntityFile(param)
 	if se != nil {
-		rv, _ := se.GetAccountHex(0)
+		rv, _ := coldstore.GetAccountHex(se,0)
 		return rv
 	}
 	//Then try it as hex directly

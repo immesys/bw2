@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sync"
 
+	log "github.com/cihub/seelog"
 	"github.com/immesys/bw2/bc"
 )
 
@@ -65,10 +66,8 @@ func (lag *Lagger) onBlock(b *bc.Block) {
 }
 func (lag *Lagger) BeginLoop() {
 	lag.bchain.CallOnNewBlocks(func(b *bc.Block) bool {
-		fmt.Printf("received block %d\n", b.Number)
-		fmt.Printf("doneNumber: %d\n", lag.doneNumber)
+		log.Infof("received block %d (lagged=%d)", b.Number, lag.doneNumber)
 		if !lag.caughtup {
-			fmt.Println("not caught up")
 			st := lag.doneNumber
 			if st < 0 {
 				st = 0

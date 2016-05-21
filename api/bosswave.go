@@ -61,6 +61,38 @@ type BW struct {
 	cachesize int
 	//from vk -> to vk -> []dothash
 	dotcache map[bc.Bytes32]map[bc.Bytes32][]bc.Bytes32
+
+	chaincache   map[[32]byte]map[CacheKey][]*objects.DChain
+	chaincachemu sync.Mutex
+}
+
+func (bw *BW) LookupChain(ck *CacheKey) []*objects.DChain {
+	bw.chaincachemu.Lock()
+	defer bw.chaincachemu.Unlock()
+	l1 := bw.chaincache[ck.nsvk]
+	if l1 == nil {
+		return nil
+	}
+	return l1[*ck]
+}
+
+func (bw *BW) InvalidateChainCache(nsvk []byte) {
+	arr := [32]byte{}
+	copy(arr[:], nsvk)
+	bw.chaincachemu.Lock()
+	delete(bw.chaincache, arr)
+	bw.chaincachemu.Unlock()
+}
+
+func (bw *BW) CacheChain(ck *CacheKey, res []*objects.DChain) {
+	bw.chaincachemu.Lock()
+	defer bw.chaincachemu.Unlock()
+	l1, ok := bw.chaincache[ck.nsvk]
+	if !ok {
+		l1 = make(map[CacheKey][]*objects.DChain)
+		bw.chaincache[ck.nsvk] = l1
+	}
+	l1[*ck] = res
 }
 
 func (bw *BW) BC() bc.BlockChainProvider {
@@ -77,8 +109,9 @@ func OpenBWContext(config *core.BWConfig) (*BW, chan bool) {
 		config = core.LoadConfig("")
 	}
 	rv := &BW{Config: config,
-		tm:       core.CreateTerminus(),
-		dotcache: make(map[bc.Bytes32]map[bc.Bytes32][]bc.Bytes32),
+		tm:         core.CreateTerminus(),
+		dotcache:   make(map[bc.Bytes32]map[bc.Bytes32][]bc.Bytes32),
+		chaincache: make(map[[32]byte]map[CacheKey][]*objects.DChain),
 	}
 	entcontents, err := ioutil.ReadFile(config.Router.Entity)
 	if err != nil {

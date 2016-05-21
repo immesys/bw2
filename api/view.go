@@ -9,6 +9,7 @@ import (
 
 	"gopkg.in/vmihailenco/msgpack.v2"
 
+	log "github.com/cihub/seelog"
 	"github.com/immesys/bw2/crypto"
 	"github.com/immesys/bw2/internal/core"
 	"github.com/immesys/bw2/objects"
@@ -34,8 +35,10 @@ type View struct {
 
 const (
 	stateNew = iota
-	stateSubd
-	stateEnded
+	stateStartSub
+	stateSubComplete
+	stateStartUnsub
+	stateUnsubEnded
 	stateToRemove
 )
 
@@ -43,9 +46,10 @@ type vsub struct {
 	iface    string
 	sigslot  string
 	isSignal bool
-	reply    func(error)
 	result   func(m *core.Message)
 	actual   []*vsubsub
+	v        *View
+	mu       sync.Mutex
 }
 
 // The expression tree can be used to construct a view using a simple syntax.
@@ -56,15 +60,12 @@ If the top object is a list, all the clauses are ANDED together
 or {uri:"matchpattern"}
 or {uri:{$re:"regexpattern"}}
 or {meta:{"key":"value"}}
-or {svc:"servicename"}
-or {iface:"ifacename"}
+//or {svc:"servicename"}
+//or {iface:"ifacename"}
 or {uri:{$or:{$re:..}}}
-
-{rematch:<uri regex>, match:<uri pattern>, attr:{"key": <exactval>, "key":{re:"regex"}}}
 
 */
 func _parseURI(t interface{}) (Expression, error) {
-	fmt.Println("doing parseURI")
 	switch t := t.(type) {
 	case string:
 		return MatchURI(t), nil
@@ -82,15 +83,16 @@ func _parseURI(t interface{}) (Expression, error) {
 	return nil, fmt.Errorf("unexpected URI structure: %T : %#v", t, t)
 }
 func _parseMeta(t interface{}) (Expression, error) {
-	m, ok := t.(map[string]interface{})
+	m, ok := t.(map[interface{}]interface{})
 	if !ok {
-		return nil, fmt.Errorf("unexpected meta structure")
+		return nil, fmt.Errorf("unexpected meta structure %T : %#v", t, t)
 	}
 	rv := []Expression{}
-	for key, value := range m {
-		valueS, ok := value.(string)
-		if !ok {
-			return nil, fmt.Errorf("expected string")
+	for ikey, value := range m {
+		key, ok1 := ikey.(string)
+		valueS, ok2 := value.(string)
+		if !ok1 || !ok2 {
+			return nil, fmt.Errorf("expected map[string]string")
 		}
 		rv = append(rv, EqMeta(key, valueS))
 	}
@@ -133,7 +135,6 @@ func _parseGlobal(t interface{}) (Expression, error) {
 	}
 	rv := []Expression{}
 	for key, el := range rt {
-		fmt.Println("XTAGSUBEX: ", key, el)
 		switch key {
 		case "ns":
 			slc, ok := el.([]interface{})
@@ -375,11 +376,9 @@ type orExpression struct {
 func (e *orExpression) Matches(uri string, v *View) bool {
 	for _, s := range e.subex {
 		if s.Matches(uri, v) {
-			fmt.Printf("orex(%s) -> true\n", uri)
 			return true
 		}
 	}
-	fmt.Printf("orex(%s) -> false\n", uri)
 	return false
 }
 func (e *orExpression) MightMatch(uri string, v *View) bool {
@@ -419,7 +418,6 @@ func (e *metaEqExpression) Matches(uri string, v *View) bool {
 	if e.regex {
 		panic("have not done regex yet")
 	} else {
-		fmt.Println("returning meta match: ", val.Value == e.val)
 		return val.Value == e.val
 	}
 }
@@ -450,7 +448,6 @@ func (e *uriEqExpression) Namespaces() []string {
 func (e *uriEqExpression) Matches(uri string, v *View) bool {
 	if e.regex {
 		rv := regexp.MustCompile(e.pattern).MatchString(uri)
-		fmt.Printf("urieq(%s/%s) -> %v\n", uri, e.pattern, rv)
 		return rv
 	} else {
 		panic("have not done thing yet")
@@ -597,10 +594,9 @@ func (v *View) waitForMetaView() {
 	}
 	v.msmu.Unlock()
 }
-/*
-func (v *View) checkChange() {
-	newIfaceList := v.interfacesImpl()
 
+func (v *View) checkMatchset() {
+	newIfaceList := v.interfacesImpl()
 	changed := false
 	if len(newIfaceList) != len(v.matchset) {
 		changed = true
@@ -616,8 +612,8 @@ func (v *View) checkChange() {
 	}
 
 	if changed {
-		//TODO update subs
 		v.matchset = newIfaceList
+		v.checkSubs()
 		v.msmu.RLock()
 		for _, cb := range v.changecb {
 			go cb()
@@ -625,7 +621,7 @@ func (v *View) checkChange() {
 		v.msmu.RUnlock()
 	}
 }
-*/
+
 func (v *View) TearDown() {
 	//Release all the assets here
 }
@@ -638,7 +634,6 @@ func (v *View) fatal(err error) {
 func (v *View) initMetaView() {
 	v.mscond = sync.NewCond(&v.msmu)
 	procChange := func(m *core.Message) {
-		fmt.Println("doing procchange")
 		if m == nil {
 			return //we use this for queries too, so we don't know it means
 			//end of subscription.
@@ -673,14 +668,13 @@ func (v *View) initMetaView() {
 			delete(map1, key)
 		}
 		v.msmu.Unlock()
-		//v.checkChange()
+		v.checkMatchset()
 	}
 	go func() {
 		//First subscribe and wait for that to finish
 		wg := sync.WaitGroup{}
 		wg.Add(len(v.ns))
 		for _, n := range v.ns {
-			fmt.Println("sub is on", n+"/*/!meta/+")
 			mvk, err := v.c.bw.ResolveKey(n)
 			if err != nil {
 				v.fatal(err)
@@ -738,22 +732,17 @@ func (v *View) initMetaView() {
 }
 
 func (v *View) SubscribeInterface(iface, sigslot string, isSignal bool, reply func(error), result func(m *core.Message)) {
-	s := &vsub{iface: iface, sigslot: sigslot, isSignal: isSignal, reply: reply, result: result}
+	s := &vsub{iface: iface, sigslot: sigslot, isSignal: isSignal, result: result, v: v}
 	v.submu.Lock()
 	v.subs = append(v.subs, s)
 	v.submu.Unlock()
+	v.checkSubs()
+	//any errors will go as a fatal view error
+	reply(nil)
 }
 
+//Check subs is called whenever matchset changes, or subscriptions change
 func (v *View) checkSubs() {
-	// wrapres := func(s *vsub) func(m *core.Message) {
-	// 	return func(m *core.Message) {
-	// 		s.result(m)
-	// 		if m == nil {
-	// 			s.state = stateEnded
-	// 			go v.checkSubs()
-	// 		}
-	// 	}
-	// }
 	v.submu.Lock()
 	for _, s := range v.subs {
 		newVss := v.expandSub(s)
@@ -786,51 +775,79 @@ func (v *View) checkSubs() {
 			//Ok this is a sub that needs to be removed
 			toremove = append(toremove, oid)
 		}
-
-		//for _, vss := range v.newIn(s, newVss) {
-			// Handle additional subsubs (sub)
-		//}
-		//for _, vss := range v.missingIn(s, newVss) {
-			// handle removed subsubs (unsub)
-		//}
-		// switch s.state {
-		// case stateNew:
-		// 	v.subscribeInterfaceImpl(s.iface, s.sigslot, s.isSignal, s.reply, wrapres(s))
-		// case stateEnded:
-		// 	//do nothing for now?
-		// case stateSubd:
-		// case stateToRemove:
-		// 	v.unsub(s)
-		// }
+		for _, vss := range toremove {
+			s.unsub(vss)
+		}
+		for _, vss := range tosub {
+			s.sub(vss)
+		}
 	}
 	v.submu.Unlock()
 }
 
-//In the sub 's', we have seen a change, and there are now
-//nvss matching interfaces. For every new interface in nvss
-//that is not in s.actual, initiate a subscription, and
-//populate actual with the new result. submu is held while
-//this is called
-func (v *View) newIn(s *vsub, nvss []*InterfaceDescription) {
-
+func (s *vsub) unsub(vss *vsubsub) {
+	if vss.state != stateSubComplete {
+		log.Criticalf("Unsubscribe, but sub is not complete: %d", vss.state)
+		return
+	}
+	vss.state = stateStartUnsub
+	s.v.c.Unsubscribe(vss.subid, func(err error) {
+		if err != nil {
+			s.v.fatal(err)
+		}
+	})
 }
+func (s *vsub) sub(id *InterfaceDescription) {
+	vss := &vsubsub{id: id, state: stateStartSub}
+	parts := strings.SplitN(id.URI, "/", 2)
+	mvk, err := s.v.c.BW().ResolveKey(parts[0])
+	if err != nil {
+		s.v.fatal(err)
+		return
+	}
+	pfx := "/slot/"
+	if s.isSignal {
+		pfx = "/signal/"
+	}
+	suffix := parts[1] + pfx + s.sigslot
+	s.v.c.Subscribe(&SubscribeParams{
+		MVK:          mvk,
+		URISuffix:    suffix,
+		ElaboratePAC: PartialElaboration,
+		AutoChain:    true,
+	}, func(e error, id core.UniqueMessageID) {
+		if e != nil {
+			s.v.fatal(e)
+			return
+		}
+		s.mu.Lock()
+		vss.subid = id
+		vss.state = stateSubComplete
+		s.actual = append(s.actual, vss)
+		s.mu.Unlock()
+	}, func(m *core.Message) {
+		if m != nil {
+			s.result(m)
+		} else {
+			s.mu.Lock()
+			np := s.actual[:0]
+			for _, vvv := range s.actual {
+				if vvv != vss {
+					np = append(np, vvv)
+				}
+			}
+			s.actual = np
+			vss.state = stateUnsubEnded
+			s.mu.Unlock()
 
-//In the sub 's', we have seen a change, and there are now
-//nvss matching interfaces. For every MISSING interface in nvss
-//that is in s.actual, unsubscribe. The entry in actual will be
-//changed automatically when the unsub nil msg comes through
-//populate actual with the new result. submu is held while
-//this is called
-func (v *View) missingIn(s *vsub, nvss []*InterfaceDescription) {
-
-}
-func (v *View) unsub(s *vsub) {
-
+		}
+	})
 }
 
 type vsubsub struct {
 	id    *InterfaceDescription
 	state int
+	subid core.UniqueMessageID
 }
 
 func (v *View) expandSub(s *vsub) []*InterfaceDescription {
@@ -842,77 +859,9 @@ func (v *View) expandSub(s *vsub) []*InterfaceDescription {
 	}
 	return todo
 }
-func (v *View) subscribeInterfaceImpl(iface, sigslot string, isSignal bool, reply func(error), result func(m *core.Message)) {
-	idz := v.Interfaces()
-	fmt.Println("we found ", len(idz), "interfaces")
-	fmt.Println(idz)
-	pfx := "/slot/"
-	if isSignal {
-		pfx = "/signal/"
-	}
-	wg := sync.WaitGroup{}
-	todo := []*InterfaceDescription{}
-	for _, viewiface := range idz {
-		if viewiface.Interface == iface {
-			todo = append(todo, viewiface)
-			wg.Add(1)
-		}
-	}
-	errc := make(chan error, len(todo)+1)
-	msgc := make(chan *core.Message, 50)
-	for _, viewiface := range todo {
-		fmt.Println("doing the actual subscribe")
-		parts := strings.SplitN(viewiface.URI, "/", 2)
-		mvk, err := v.c.BW().ResolveKey(parts[0])
-		if err != nil {
-			reply(err)
-			return
-		}
-		suffix := parts[1] + pfx + sigslot
-		fmt.Println("suffix is; ", suffix)
-		v.c.Subscribe(&SubscribeParams{
-			MVK:          mvk,
-			URISuffix:    suffix,
-			ElaboratePAC: PartialElaboration,
-			AutoChain:    true,
-		}, func(e error, id core.UniqueMessageID) {
-			if e != nil {
-				errc <- e
-				panic(fmt.Sprintf("%#v %#v %#v", e, crypto.FmtKey(mvk), suffix))
-			}
-			wg.Done()
-		}, func(m *core.Message) {
-			if m != nil {
-				msgc <- m
-			}
-		})
-	}
-	go func() {
-		fmt.Println("============ BEGINNING WG WAIT ==============")
-		wg.Wait()
-		fmt.Println("============ END WG WAIT ==============")
-		var e error
-		select {
-		case e = <-errc:
-		default:
-		}
-		if e != nil {
-			reply(bwe.WrapM(bwe.ViewError, "Could not subscribe", e))
-		} else {
-			reply(nil)
-		}
-		//Serialize so that reply occurs before results
-		fmt.Println("============ BEGINNING MSG READ ==============")
-		for m := range msgc {
-			fmt.Println("=====GOT RES")
-			result(m)
-		}
-	}()
-}
+
 func (v *View) PublishInterface(iface, sigslot string, isSignal bool, poz []objects.PayloadObject, cb func(error)) {
 	idz := v.Interfaces()
-	fmt.Println("we found ", len(idz), "interfaces")
-	fmt.Println(idz)
 	pfx := "/slot/"
 	if isSignal {
 		pfx = "/signal/"
@@ -927,7 +876,6 @@ func (v *View) PublishInterface(iface, sigslot string, isSignal bool, poz []obje
 	}
 	errc := make(chan error, len(todo)+1)
 	for _, viewiface := range todo {
-		fmt.Println("doing the actual publish")
 		parts := strings.SplitN(viewiface.URI, "/", 2)
 		mvk, err := v.c.BW().ResolveKey(parts[0])
 		if err != nil {
@@ -935,7 +883,6 @@ func (v *View) PublishInterface(iface, sigslot string, isSignal bool, poz []obje
 			return
 		}
 		suffix := parts[1] + pfx + sigslot
-		fmt.Println("suffix is; ", suffix)
 		v.c.Publish(&PublishParams{
 			MVK:            mvk,
 			URISuffix:      suffix,
@@ -965,13 +912,10 @@ func (v *View) Interfaces() []*InterfaceDescription {
 }
 
 func (v *View) interfacesImpl() []*InterfaceDescription {
-	fmt.Printf("the view ex is: %#v\n", v.ex)
 	v.msmu.RLock()
 	found := make(map[string]InterfaceDescription)
 	for uri, _ := range v.metastore {
-		fmt.Println("checking ", uri)
 		if v.ex.Matches(uri, v) {
-			fmt.Println("passed first check")
 			pat := `^(([^/]+)(/.*)?/(s\.[^/]+)/([^/]+)/(i\.[^/]+)).*$`
 			//"^((([^/]+)/(.*)/(s\\.[^/]+)/+)/(i\\.[^/]+)).*$"
 			groups := regexp.MustCompile(pat).FindStringSubmatch(uri)
@@ -985,19 +929,21 @@ func (v *View) interfacesImpl() []*InterfaceDescription {
 					v:         v,
 				}
 				id.Suffix = strings.TrimPrefix(id.URI, id.Namespace+"/")
-				fmt.Println("id was", id)
+				id.Metadata = make(map[string]string)
+				for k, v := range v.AllMeta(id.URI) {
+					id.Metadata[k] = v.Value
+				}
 				found[id.URI] = id
 			}
 		}
 	}
 	v.msmu.RUnlock()
 	rv := []*InterfaceDescription{}
+	//TODO maybe we want a real liveness filter here?
 	for _, vv := range found {
 		if vv.Meta("lastalive") != "" {
 			lv := vv
 			rv = append(rv, &lv)
-		} else {
-			fmt.Println("interface is not alive")
 		}
 	}
 	sort.Sort(interfaceSorter(rv))
@@ -1032,6 +978,15 @@ type InterfaceDescription struct {
 	v         *View
 }
 
+func (id *InterfaceDescription) String() string {
+	return fmt.Sprintf("ID %s\n", id.URI)
+}
+
+//This is not a deep equals, it is only comparing if they refer
+//to the same resource (URI)
+func (id *InterfaceDescription) Equals(rhs *InterfaceDescription) bool {
+	return id.URI == rhs.URI
+}
 func (id *InterfaceDescription) ToPO() objects.PayloadObject {
 	po, err := advpo.CreateMsgPackPayloadObject(objects.PONumInterfaceDescriptor, id)
 	if err != nil {
@@ -1096,7 +1051,6 @@ func (e *andExpression) Namespaces() []string {
 func (e *andExpression) Matches(uri string, v *View) bool {
 	for _, s := range e.subex {
 		if !s.Matches(uri, v) {
-			fmt.Printf("andex(%s) -> false\n", uri)
 			return false
 		}
 	}

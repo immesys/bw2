@@ -7,11 +7,21 @@ import (
 	"fmt"
 	"strings"
 
+	log "github.com/cihub/seelog"
 	"github.com/immesys/bw2/crypto"
 	"github.com/immesys/bw2/objects"
 	"github.com/immesys/bw2/util"
 )
 
+type CBCache interface {
+	Lookup(ck CacheKey) []*objects.DChain
+}
+type CacheKey struct {
+	uri    string
+	perms  string
+	target [32]byte
+	nsvk   [32]byte
+}
 type ChainBuilder struct {
 	cl     *BosswaveClient
 	status chan string
@@ -22,6 +32,10 @@ type ChainBuilder struct {
 	nsvk      []byte
 	urisuffix string
 	desperms  *objects.AccessDOTPermissionSet
+}
+
+func (c *BosswaveClient) LookupChain(ck *CacheKey) {
+
 }
 
 type scenario struct {
@@ -194,6 +208,19 @@ func (b *ChainBuilder) getOptions(from []byte) []*objects.DOT {
 	return rv
 }*/
 func (b *ChainBuilder) Build() ([]*objects.DChain, error) {
+	ck := CacheKey{
+		uri:   b.uri,
+		perms: b.perms,
+	}
+	copy(ck.target[:], b.target)
+	copy(ck.nsvk[:], b.nsvk)
+	cached := b.cl.bw.LookupChain(&ck)
+	if cached != nil {
+		log.Infof("chain build cache hit")
+		return cached, nil
+	} else {
+		log.Infof("chain build cache miss")
+	}
 	parts := strings.SplitN(b.uri, "/", 2)
 	if len(parts) != 2 {
 		return nil, errors.New("Invalid URI")
@@ -254,5 +281,6 @@ func (b *ChainBuilder) Build() ([]*objects.DChain, error) {
 	}
 	b.status <- "chain build operation complete"
 	close(b.status)
+	b.cl.bw.CacheChain(&ck, rv)
 	return rv, nil
 }

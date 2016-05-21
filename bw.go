@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"os"
 	"runtime"
-	"time"
 
 	"github.com/codegangsta/cli"
 	"github.com/immesys/bw2/adapter/oob"
@@ -485,12 +484,12 @@ func actionRouter(c *cli.Context) {
 	config = core.LoadConfig(cfg)
 	confLog(config)
 	bw, shd := api.OpenBWContext(config)
-	go func() {
-		for {
-			time.Sleep(5 * time.Second)
-			fmt.Println("num goroutines:", runtime.NumGoroutine())
-		}
-	}()
+	// go func() {
+	// 	for {
+	// 		time.Sleep(5 * time.Second)
+	// 		fmt.Println("num goroutines:", runtime.NumGoroutine())
+	// 	}
+	// }()
 	if bw.Config.Native.ListenOn != "" {
 		go api.Start(bw)
 	} else {

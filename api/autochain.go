@@ -19,18 +19,18 @@ func (c *BosswaveClient) doAutoChain(mvk []byte, suffix string, perms string, au
 		Permissions: perms,
 	})
 
-	go func() {
-		for _ = range ch {
-		}
-	}()
-
 	if err != nil {
 		fmt.Println("hit err1")
 		return err
 	}
 	realpac := <-ch
+
+	go func() {
+		for _ = range ch {
+		}
+	}()
+
 	//even if nil
-	fmt.Println("read realpac as ", realpac)
 	*ppac = realpac
 	return nil
 

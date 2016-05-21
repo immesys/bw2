@@ -33,6 +33,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	log "github.com/cihub/seelog"
 	"github.com/immesys/bw2/internal/store"
 	"github.com/immesys/bw2/util/bwe"
 )
@@ -198,17 +199,24 @@ func CreateTerminus() *Terminus {
 			time.Sleep(5 * time.Second)
 			rv.rstree_lock.RLock()
 			rv.c_maplock.RLock()
-			fmt.Println("active clients:")
-			for k, v := range rv.cmap {
-				fmt.Printf("[%d->%s]\n", k, v.name)
+			if len(rv.cmap) > 0 {
+				log.Infof("Active clients:")
+				for k, v := range rv.cmap {
+					log.Infof("[%d->%s]", k, v.name)
+				}
+			} else {
+				log.Infof("No active clients")
 			}
-			fmt.Println("Active subscriptions:")
-			fmt.Printf("  AGE   CLIENT                     URI \n")
-			for mid, stn := range rv.rstree {
-				fmt.Printf("got mid=%+v stn=%+v\n", mid, stn)
-				sub := stn.subForId(mid)
-				age := time.Now().Sub(sub.created)
-				fmt.Printf("  %-5s %-26s %s\n", rounddur(age, time.Second), sub.client.name, sub.uri)
+			if len(rv.rstree) > 0 {
+				log.Infof("Active subscriptions:")
+				log.Infof("  AGE   CLIENT                     URI")
+				for mid, stn := range rv.rstree {
+					sub := stn.subForId(mid)
+					age := time.Now().Sub(sub.created)
+					log.Infof("  %-5s %-26s %s", rounddur(age, time.Second), sub.client.name, sub.uri)
+				}
+			} else {
+				log.Infof("No active subscriptions")
 			}
 			rv.c_maplock.RUnlock()
 			rv.rstree_lock.RUnlock()

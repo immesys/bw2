@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"encoding/gob"
 	"encoding/hex"
-	"fmt"
 	"os"
 	"path"
 	"strings"
 	"time"
 	"unicode/utf8"
 
+	log "github.com/cihub/seelog"
 	"github.com/immesys/bw2/bc"
 	"github.com/immesys/bw2/crypto"
 	"github.com/immesys/bw2/objects"
@@ -48,20 +48,20 @@ func (bw *BW) startResolutionLoop() {
 			panic(err)
 		}
 		rocache.Close()
-		fmt.Println("Loaded rocache number", bw.lag.doneNumber)
+		log.Infof("Loaded rocache number %d", bw.lag.doneNumber)
 	} else {
-		fmt.Println("Did not load rocache")
+		log.Warnf("Did not load rocache")
 	}
 
 	bw.lag.Subscribe(func(b *bc.Block) {
 		//Check the logs for DOTs
 		for _, l := range b.Logs {
-			fmt.Printf("Found log from %x \n", l.ContractAddress())
-			fmt.Println(l.String())
+			//fmt.Printf("Found log from %x \n", l.ContractAddress())
+			//fmt.Println(l.String())
 			topicz := []bc.Bytes32{bc.HexToBytes32(bc.EventSig_Registry_NewDOT)}
 			if l.ContractAddress() == bc.HexToAddress(bc.UFI_Registry_Address) &&
 				l.MatchesTopicsStrict(topicz) {
-				fmt.Println("Found a DOT: \n", l)
+				log.Infof("Found a DOT: %s", l)
 				dh := l.Topics()[1]
 				dot, _, err := bw.ResolveDOT(dh[:])
 				if err != nil {
@@ -76,15 +76,15 @@ func (bw *BW) startResolutionLoop() {
 		bw.cachemu.Unlock()
 	})
 	bw.lag.BeginLoop()
-	go func() {
-		for {
-
-			bw.cachemu.Lock()
-			fmt.Println("Cache size:", bw.cachesize)
-			bw.cachemu.Unlock()
-			time.Sleep(5 * time.Second)
-		}
-	}()
+	// go func() {
+	// 	for {
+	//
+	// 		bw.cachemu.Lock()
+	// 		fmt.Println("Cache size:", bw.cachesize)
+	// 		bw.cachemu.Unlock()
+	// 		time.Sleep(5 * time.Second)
+	// 	}
+	// }()
 	go func() {
 		for {
 			time.Sleep(30 * time.Second)
@@ -121,7 +121,7 @@ func (bw *BW) startResolutionLoop() {
 				panic(err)
 			}
 			os.Rename(path.Join(bw.Config.Router.DB, "rocache.next"), path.Join(bw.Config.Router.DB, "rocache"))
-			fmt.Println("Saved rocache")
+			log.Infof("Saved rocache")
 		}
 	}()
 }
@@ -132,6 +132,7 @@ func (bw *BW) CacheDOT(d *objects.DOT) {
 	from := bc.SliceToBytes32(d.GetGiverVK())
 	to := bc.SliceToBytes32(d.GetReceiverVK())
 	hsh := bc.SliceToBytes32(d.GetHash())
+	bw.InvalidateChainCache(d.GetAccessURIMVK())
 	fmap, ok := bw.dotcache[from]
 	if !ok {
 		fmap = make(map[bc.Bytes32][]bc.Bytes32)

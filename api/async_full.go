@@ -197,7 +197,6 @@ func (c *BosswaveClient) Subscribe(params *SubscribeParams,
 	messageCB SubscribeMessageCallback) {
 	var m *core.Message
 	regActionCB := func(err error, id core.UniqueMessageID) {
-		fmt.Printf("sub, id is: %#v, err is %#v\n", id, err)
 		if err == nil {
 			c.subsmu.Lock()
 			c.subs[id] = &Subscription{
@@ -263,7 +262,6 @@ func (c *BosswaveClient) Unsubscribe(id core.UniqueMessageID, actioncb func(erro
 	c.subsmu.Lock()
 	sub, ok := c.subs[id]
 	c.subsmu.Unlock()
-	fmt.Printf("unsub, id is: %#v\n", id)
 	if !ok {
 		actioncb(bwe.M(bwe.UnsubscribeError, "Subscription does not exist"))
 		return
@@ -329,12 +327,12 @@ type BuildChainParams struct {
 }
 
 func (c *BosswaveClient) BuildChain(p *BuildChainParams) (chan *objects.DChain, error) {
-	log.Info("BC TO: ", crypto.FmtKey(p.To))
-	log.Info("Permissions: ", p.Permissions)
-	log.Info("URI: ", p.URI)
+	//log.Info("BC TO: ", crypto.FmtKey(p.To))
+	//log.Info("Permissions: ", p.Permissions)
+	//log.Info("URI: ", p.URI)
 	var status chan string
 	if p.Status == nil {
-		log.Info("default status")
+		//log.Info("default status")
 		status = make(chan string, 10)
 		go func() {
 			for m := range status {
@@ -352,18 +350,15 @@ func (c *BosswaveClient) BuildChain(p *BuildChainParams) (chan *objects.DChain, 
 	if err != nil {
 		return nil, err
 	}
-	log.Info("making CB")
 	cb := NewChainBuilder(c, crypto.FmtKey(rnsvk)+"/"+parts[1], p.Permissions, p.To, status)
 	if cb == nil {
 		return nil, bwe.M(bwe.BadChainBuildParams, "Could not construct CB: bad params")
 	}
-	log.Info("making RV chan")
 	rv := make(chan *objects.DChain)
 	go func() {
 		//We are going to change the chain builder to emit results on a channel later
 		//so lets emit each result on a different message preemptively
 		chains, e := cb.Build()
-		fmt.Println("chain build in async complete")
 		if e != nil {
 			log.Criticalf("CB fail: %v", e.Error())
 			close(rv)

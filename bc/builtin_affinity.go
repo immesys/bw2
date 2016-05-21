@@ -236,6 +236,6 @@ func (bc *blockChain) GetSRVRecordFor(drvk []byte) (string, error) {
 	if len(rvz[0].([]byte)) == 0 {
 		return "", fmt.Errorf("SRV record not found")
 	}
-	fmt.Println("srv lookup: ", string(rvz[0].([]byte)))
+	//fmt.Println("srv lookup: ", string(rvz[0].([]byte)))
 	return string(rvz[0].([]byte)), nil
 }

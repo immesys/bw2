@@ -17,9 +17,9 @@
 
 package crypto
 
-// #cgo CFLAGS: -O3
+// #cgo linux,amd64 CFLAGS: -O3
 // #cgo linux,amd64 LDFLAGS: -lssl -lcrypto
-// #cgo !linux !amd64 CFLAGS: -DWINSUPPORT
+// #cgo !linux !amd64 CFLAGS: -O2 -DWINSUPPORT
 // #include "ed25519.h"
 // #include <string.h>
 // #include <stdint.h>

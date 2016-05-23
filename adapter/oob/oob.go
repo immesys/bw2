@@ -299,11 +299,13 @@ func (bf *boundFrame) mkGenericActionCB() func(err error) {
 		if err == nil {
 			r := objects.CreateFrame(objects.CmdResponse, bf.replyto)
 			r.AddHeader("status", "okay")
+			r.AddHeader("finished", "false")
 			bf.send(r)
 		} else {
 			bws := bwe.AsBW(err)
 			r := objects.CreateFrame(objects.CmdResponse, bf.replyto)
 			r.AddHeader("status", "error")
+			r.AddHeader("finished", "true")
 			r.AddHeader("reason", bws.Msg)
 			r.AddHeader("code", strconv.Itoa(bws.Code))
 			bf.send(r)

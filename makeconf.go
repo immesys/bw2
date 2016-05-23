@@ -40,8 +40,7 @@ func makeConf(c *cli.Context) {
 	}
 	err = conf.Chmod(0600)
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		fmt.Println("WARN: chmod failed:", err)
 	}
 	abs, err := filepath.Abs(fname)
 	if err != nil {

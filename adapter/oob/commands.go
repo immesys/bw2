@@ -130,6 +130,7 @@ func (bf *boundFrame) cmdSubscribe() {
 				r := objects.CreateFrame(objects.CmdResponse, bf.replyto)
 				r.AddHeader("status", "okay")
 				r.AddHeader("handle", id.ToString())
+				r.AddHeader("finished", "false")
 				bf.send(r)
 			} else {
 				bf.Err(err)

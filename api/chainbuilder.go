@@ -152,61 +152,6 @@ func (b *ChainBuilder) getOptions(from []byte) []*objects.DOT {
 	return rv
 }
 
-/*
-func (b *ChainBuilder) getOptions(from []byte) []*objects.DOT {
-	rv := make([]*objects.DOT, 0)
-	rc := make(chan *objects.DOT, 10)
-	wg := sync.WaitGroup{}
-	go func() {
-		for _, peerMVK := range b.peers {
-			drVK, err := b.cl.BW().LookupDesignatedRouter(peerMVK)
-			if err != nil {
-				b.status <- "could not get DRVK for peer " + crypto.FmtKey(peerMVK)
-				continue
-			}
-			wg.Add(1)
-			//The peer might be an MVK, but its the DR itself that we need to query
-			go b.cl.Query(&QueryParams{
-				MVK:       drVK,
-				URISuffix: "$/dot/fromto/" + crypto.FmtKey(from)[:43] + "/+/+",
-			},
-				func(err error) {
-					if err != nil {
-						b.status <- "edge discovery query error: " + err.Error()
-						wg.Done()
-					}
-				},
-				func(m *core.Message) {
-					if m == nil {
-						wg.Done()
-						return
-					}
-					for _, ro := range m.RoutingObjects {
-						dot, ok := ro.(*objects.DOT)
-						if ok {
-							if b.dotUseful(dot) {
-								b.status <- "possible edge DOT: " + crypto.FmtHash(dot.GetHash())
-								rc <- dot
-							}
-						}
-					}
-				})
-		}
-		wg.Wait()
-		close(rc)
-	}()
-	seen := make(map[string]bool)
-	for res := range rc {
-		k := crypto.FmtHash(res.GetHash())
-		_, ok := seen[k]
-		if !ok {
-			rv = append(rv, res)
-			seen[k] = true
-		}
-	}
-	b.status <- fmt.Sprintf("graph walk found %d possible edges", len(rv))
-	return rv
-}*/
 func (b *ChainBuilder) Build() ([]*objects.DChain, error) {
 	ck := CacheKey{
 		uri:   b.uri,
@@ -240,7 +185,7 @@ func (b *ChainBuilder) Build() ([]*objects.DChain, error) {
 	initial := b.getOptions(mvk)
 	for _, dt := range initial {
 		s := NewScenario(dt)
-		if bytes.Equal(s.GetTerminalVK(), b.target) {
+		if bytes.Equal(s.GetTerminalVK(), b.target) || bytes.Equal(s.GetTerminalVK(), util.EverybodySlice) {
 			b.status <- "found valid scenario"
 			validscenarios.PushBack(s)
 		} else {
@@ -258,7 +203,7 @@ func (b *ChainBuilder) Build() ([]*objects.DChain, error) {
 			if !okay {
 				continue
 			}
-			if bytes.Equal(newscenario.GetTerminalVK(), b.target) {
+			if bytes.Equal(newscenario.GetTerminalVK(), b.target) || bytes.Equal(newscenario.GetTerminalVK(), util.EverybodySlice) {
 				b.status <- "graph walk found a valid scenario!"
 				validscenarios.PushBack(newscenario)
 			} else {

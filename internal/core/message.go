@@ -384,10 +384,6 @@ func (m *Message) Verify(res Resolver) *StatusMessage {
 	}
 
 	//This is used as the EVERYONE vk (all 0xFF) or the router MVK (all 0xFF)
-	allgrant := make([]byte, 32)
-	for i := range allgrant {
-		allgrant[i] = 0xFF
-	}
 	pac := m.PrimaryAccessChain
 	//First thing: check the uri for validity
 	//the presence of a dollar complicates everything because it
@@ -457,7 +453,7 @@ func (m *Message) Verify(res Resolver) *StatusMessage {
 		m.MergedTopic = azURI
 
 		//Check if this is an ALL grant and we don't have an origin VK
-		if bytes.Equal(azOVK, allgrant) {
+		if bytes.Equal(azOVK, util.EverybodySlice) {
 			if m.OriginVK == nil {
 				m.status.Code = bwe.NoOrigin
 				log.Infof("V: NoOrigin (allgrant, no OVK ro)")

@@ -19,26 +19,26 @@ package objects
 
 import (
 	"bytes"
-//	"crypto/ecdsa"
+	//	"crypto/ecdsa"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
-//	"math/big"
+	//	"math/big"
 	"runtime/debug"
 	"strconv"
 	"time"
 
-//	"golang.org/x/crypto/sha3"
+	//	"golang.org/x/crypto/sha3"
 
 	log "github.com/cihub/seelog"
 	"github.com/immesys/bw2/crypto"
 	"github.com/immesys/bw2/util"
 	"github.com/immesys/bw2/util/bwe"
-//	"github.com/immesys/bw2bc/common"
-//	ethcrypto "github.com/immesys/bw2bc/crypto"
+	//	"github.com/immesys/bw2bc/common"
+	//	ethcrypto "github.com/immesys/bw2bc/crypto"
 )
 
 //RoutingObject is the interface that is common among all objects that
@@ -92,6 +92,7 @@ func (ro *DChain) IsPayloadObject() bool {
 func (ro *Entity) IsPayloadObject() bool {
 	return false
 }
+
 /*
 func (ro *Entity) GetAccountHex(index int) (string, error) {
 	if ro.sk == nil || len(ro.sk) != 32 {
@@ -1073,12 +1074,7 @@ func (ro *DOT) SetCreationToNow() {
 
 //Check is vk is all zeroes
 func IsEveryoneVK(vk []byte) bool {
-	for _, b := range vk {
-		if b != 0 {
-			return false
-		}
-	}
-	return true
+	return bytes.Equal(vk, util.EverybodySlice)
 }
 
 //SetExpiry sets the expiry time to the given time

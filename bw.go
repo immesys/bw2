@@ -22,11 +22,11 @@ import (
 	"os"
 	"runtime"
 
-	"github.com/codegangsta/cli"
 	"github.com/immesys/bw2/adapter/oob"
 	"github.com/immesys/bw2/api"
 	"github.com/immesys/bw2/internal/core"
 	"github.com/immesys/bw2/util"
+	"github.com/urfave/cli"
 )
 
 func main() {
@@ -59,7 +59,7 @@ func main() {
 		{
 			Name:   "router",
 			Usage:  "start a router as configured in the bw2.ini file",
-			Action: actionRouter,
+			Action: cli.ActionFunc(actionRouter),
 			Flags: []cli.Flag{
 				cli.StringFlag{
 					Name:  "conf",
@@ -70,12 +70,12 @@ func main() {
 		// {
 		// 	Name:   "dtrig",
 		// 	Usage:  "if you ever see this, email michael, he messed up",
-		// 	Action: actionDTrig,
+		// 	Action: cli.ActionFunc( actionDTrig,
 		// },
 		{
 			Name:   "makeconf",
 			Usage:  "create a new bw2.ini file",
-			Action: makeConf,
+			Action: cli.ActionFunc(makeConf),
 			Flags: []cli.Flag{
 				cli.StringFlag{
 					Name:  "logfile",
@@ -97,7 +97,7 @@ func main() {
 			Name:    "mkentity",
 			Aliases: []string{"mke"},
 			Usage:   "create a new entity",
-			Action:  actionMkEntity,
+			Action:  cli.ActionFunc(actionMkEntity),
 			Flags: []cli.Flag{
 				cli.StringFlag{
 					Name:   "contact, c",
@@ -128,7 +128,7 @@ func main() {
 		{
 			Name:   "mget",
 			Usage:  "get the metadata for a URI",
-			Action: actionMget,
+			Action: cli.ActionFunc(actionMget),
 			Flags: []cli.Flag{
 				cli.StringFlag{
 					Name:   "entity, e",
@@ -150,7 +150,7 @@ func main() {
 		{
 			Name:   "mset",
 			Usage:  "set a metadata key for a URI",
-			Action: actionMset,
+			Action: cli.ActionFunc(actionMset),
 			Flags: []cli.Flag{
 				cli.StringFlag{
 					Name:   "entity, e",
@@ -178,7 +178,7 @@ func main() {
 		{
 			Name:   "mdel",
 			Usage:  "delete a metadata key for a URI",
-			Action: actionMdel,
+			Action: cli.ActionFunc(actionMdel),
 			Flags: []cli.Flag{
 				cli.StringFlag{
 					Name:   "entity, e",
@@ -202,7 +202,7 @@ func main() {
 			Name:    "coldstore",
 			Aliases: []string{"redeem", "cs"},
 			Usage:   "view or redeem coldstore accounts",
-			Action:  actionColdStore,
+			Action:  cli.ActionFunc(actionColdStore),
 			Flags: []cli.Flag{
 				cli.StringFlag{
 					Name:  "to, t",
@@ -214,7 +214,7 @@ func main() {
 		{
 			Name:   "xfer",
 			Usage:  "transfer Ether to an address",
-			Action: actionXfer,
+			Action: cli.ActionFunc(actionXfer),
 			Flags: []cli.Flag{
 				cli.StringFlag{
 					Name:  "to, t",
@@ -246,13 +246,13 @@ func main() {
 		{
 			Name:   "status",
 			Usage:  "get the local router status",
-			Action: actionStatus,
+			Action: cli.ActionFunc(actionStatus),
 		},
 		{
 			Name:    "mkdot",
 			Aliases: []string{"mkd"},
 			Usage:   "create a new access dot",
-			Action:  actionMkDOT,
+			Action:  cli.ActionFunc(actionMkDOT),
 			Flags: []cli.Flag{
 				cli.StringFlag{
 					Name:   "contact, c",
@@ -312,7 +312,7 @@ func main() {
 			Name:    "inspect",
 			Aliases: []string{"i"},
 			Usage:   "inspect a file, alias, VK or address",
-			Action:  actionInspect,
+			Action:  cli.ActionFunc(actionInspect),
 			Flags: []cli.Flag{
 				cli.BoolFlag{
 					Name:  "publish, p",
@@ -323,7 +323,7 @@ func main() {
 		{
 			Name:   "mkdroffer",
 			Usage:  "create a new designated router offer",
-			Action: actionMkDRO,
+			Action: cli.ActionFunc(actionMkDRO),
 			Flags: []cli.Flag{
 				cli.StringFlag{
 					Name:  "dr",
@@ -341,7 +341,7 @@ func main() {
 		{
 			Name:   "mkalias",
 			Usage:  "create an alias",
-			Action: actionMkAlias,
+			Action: cli.ActionFunc(actionMkAlias),
 			Flags: []cli.Flag{
 				cli.StringFlag{
 					Name:  "long",
@@ -370,7 +370,7 @@ func main() {
 			Name:    "listDRoffers",
 			Aliases: []string{"lsdro"},
 			Usage:   "list designated router offers for a namespace",
-			Action:  actionLsDRO,
+			Action:  cli.ActionFunc(actionLsDRO),
 			Flags: []cli.Flag{
 				cli.StringFlag{
 					Name:  "ns",
@@ -383,7 +383,7 @@ func main() {
 			Name:    "acceptDRoffer",
 			Aliases: []string{"adro"},
 			Usage:   "accept a designated router offer",
-			Action:  actionADRO,
+			Action:  cli.ActionFunc(actionADRO),
 			Flags: []cli.Flag{
 				cli.StringFlag{
 					Name:  "dr",
@@ -401,7 +401,7 @@ func main() {
 		{
 			Name:   "usrv",
 			Usage:  "accept a designated router SRV record",
-			Action: actionUSRV,
+			Action: cli.ActionFunc(actionUSRV),
 			Flags: []cli.Flag{
 				cli.StringFlag{
 					Name:  "dr",
@@ -420,7 +420,7 @@ func main() {
 			Name:    "buildchain",
 			Aliases: []string{"bc"},
 			Usage:   "build a DOT Chain",
-			Action:  actionBuildChain,
+			Action:  cli.ActionFunc(actionBuildChain),
 			Flags: []cli.Flag{
 				cli.StringFlag{
 					Name:  "uri, u",
@@ -433,9 +433,10 @@ func main() {
 					Value: "PC",
 				},
 				cli.StringFlag{
-					Name:  "to, t",
-					Usage: "the VK to build a chain to",
-					Value: "",
+					Name:   "to, t",
+					Usage:  "the VK to build a chain to",
+					Value:  "",
+					EnvVar: "BW2_DEFAULT_ENTITY",
 				},
 				cli.BoolFlag{
 					Name:  "verbose, v",
@@ -451,7 +452,7 @@ func main() {
 		{
 			Name:    "subscribe",
 			Aliases: []string{"sub", "s"},
-			Action:  actionSubscribe,
+			Action:  cli.ActionFunc(actionSubscribe),
 			Flags: []cli.Flag{
 				cli.StringFlag{
 					Name:   "entity, e",
@@ -464,7 +465,7 @@ func main() {
 		{
 			Name:    "query",
 			Aliases: []string{"q"},
-			Action:  actionQuery,
+			Action:  cli.ActionFunc(actionQuery),
 			Flags: []cli.Flag{
 				cli.StringFlag{
 					Name:   "entity, e",
@@ -478,7 +479,7 @@ func main() {
 	app.Run(os.Args)
 }
 
-func actionRouter(c *cli.Context) {
+func actionRouter(c *cli.Context) error {
 	cfg := c.String("conf")
 	var config *core.BWConfig
 	config = core.LoadConfig(cfg)
@@ -502,4 +503,5 @@ func actionRouter(c *cli.Context) {
 		fmt.Println("not starting oob server: no listen address")
 	}
 	<-shd
+	return nil
 }

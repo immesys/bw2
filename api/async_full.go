@@ -651,7 +651,7 @@ func (c *BosswaveClient) doPAC(m *core.Message, elaboratePAC int) error {
 	if elaboratePAC > NoElaboration {
 		//fmt.Println("doing elab")
 		if m.PrimaryAccessChain == nil {
-			return bwe.M(bwe.Unresolvable, "No PAC with elaboration")
+			return bwe.M(bwe.Unresolvable, "No primary access chain found, cannot elaborate")
 		}
 		if !m.PrimaryAccessChain.IsElaborated() {
 			dc := core.ElaborateDChain(m.PrimaryAccessChain, c.BW())

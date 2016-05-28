@@ -57,7 +57,7 @@ func doentityfile(e *objects.Entity, cl *bw2bind.BW2Client) {
 }
 func doentityobj(e *objects.Entity, indent int, regnote string, cl *bw2bind.BW2Client) {
 	//TODO clean this func up a little to be not copypasta
-	fmt.Println(ifstring(indent) + " Entity VK=" + crypto.FmtKey(e.GetVK()))
+	fmt.Println(ifstring(indent) + " Entity VK: " + crypto.FmtKey(e.GetVK()))
 	if e.SigValid() {
 		fmt.Println(istring(indent) + " Signature: valid")
 	} else {

@@ -23,12 +23,12 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/codegangsta/cli"
 	"github.com/immesys/bw2/objects"
 	"github.com/immesys/bw2/util"
+	"github.com/urfave/cli"
 )
 
-func makeConf(c *cli.Context) {
+func makeConf(c *cli.Context) error {
 	fname := "bw2.ini"
 	if c.String("conf") != "" {
 		fname = c.String("conf")
@@ -89,4 +89,5 @@ func makeConf(c *cli.Context) {
 		fmt.Println(err)
 		os.Exit(1)
 	}
+	return nil
 }

@@ -15,13 +15,13 @@ import (
 	"unicode/utf8"
 
 	log "github.com/cihub/seelog"
-	"github.com/codegangsta/cli"
 	"github.com/immesys/bw2/crypto"
 	"github.com/immesys/bw2/objects"
 	"github.com/immesys/bw2/util"
 	"github.com/immesys/bw2/util/coldstore"
 	"github.com/immesys/bw2bind"
 	"github.com/mgutz/ansi"
+	"github.com/urfave/cli"
 )
 
 func silencelog() {
@@ -117,7 +117,7 @@ func getAccountParam(bwcl *bw2bind.BW2Client, c *cli.Context, param string) stri
 	//First try it as an entity file:
 	se := loadSigningEntityFile(param)
 	if se != nil {
-		rv, _ := coldstore.GetAccountHex(se,0)
+		rv, _ := coldstore.GetAccountHex(se, 0)
 		return rv
 	}
 	//Then try it as hex directly
@@ -218,7 +218,7 @@ func getEntityParam(bwcl *bw2bind.BW2Client, c *cli.Context, param string, asSK 
 	}
 	return nil, false
 }
-func actionColdStore(c *cli.Context) {
+func actionColdStore(c *cli.Context) error {
 	cl := bw2bind.ConnectOrExit("")
 	cscode := ""
 	for _, v := range c.Args() {
@@ -269,8 +269,9 @@ func actionColdStore(c *cli.Context) {
 	} else {
 		fmt.Println("no 'to' account specified, not transferring")
 	}
+	return nil
 }
-func actionMkDRO(c *cli.Context) {
+func actionMkDRO(c *cli.Context) error {
 	cl := bw2bind.ConnectOrExit("")
 	nsp := c.String("ns")
 	if nsp == "" {
@@ -304,8 +305,9 @@ func actionMkDRO(c *cli.Context) {
 		}
 	}()
 	doChainOp(cl, dchan)
+	return nil
 }
-func actionLsDRO(c *cli.Context) {
+func actionLsDRO(c *cli.Context) error {
 	cl := bw2bind.ConnectOrExit("")
 	nsp := c.String("ns")
 	if nsp == "" {
@@ -335,8 +337,9 @@ func actionLsDRO(c *cli.Context) {
 			fmt.Println(" " + o)
 		}
 	}
+	return nil
 }
-func actionADRO(c *cli.Context) {
+func actionADRO(c *cli.Context) error {
 	cl := bw2bind.ConnectOrExit("")
 	drp := c.String("dr")
 	if drp == "" {
@@ -370,8 +373,9 @@ func actionADRO(c *cli.Context) {
 		}
 	}()
 	doChainOp(cl, dchan)
+	return nil
 }
-func actionUSRV(c *cli.Context) {
+func actionUSRV(c *cli.Context) error {
 	cl := bw2bind.ConnectOrExit("")
 	srv := c.String("srv")
 	if srv == "" {
@@ -401,37 +405,10 @@ func actionUSRV(c *cli.Context) {
 		}
 	}()
 	doChainOp(cl, dchan)
+	return nil
 }
 
-/*		{
-			Name:   "mkalias",
-			Usage:  "create an alias",
-			Action: actionMkAlias,
-			Flags: []cli.Flag{
-				cli.StringFlag{
-					Name:  "long",
-					Usage: "create a long alias with the given key",
-					Value: "",
-				},
-				cli.StringFlag{
-					Name:  "hex",
-					Usage: "specify the content as a hex string",
-					Value: "",
-				},
-				cli.StringFlag{
-					Name:  "b64",
-					Usage: "specify the content as urlsafe base64",
-					Value: "",
-				},
-				cli.StringFlag{
-					Name:  "text",
-					Usage: "specify the content as UTF-8 text",
-					Value: "",
-				},
-			},
-		},
-*/
-func actionMkAlias(c *cli.Context) {
+func actionMkAlias(c *cli.Context) error {
 	//check usage
 	if c.String("long") == "" {
 		fmt.Println("You need to specify the alias text with --long")
@@ -504,9 +481,9 @@ func actionMkAlias(c *cli.Context) {
 		}
 	}()
 	doChainOp(cl, dchan)
-
+	return nil
 }
-func actionMkDOT(c *cli.Context) {
+func actionMkDOT(c *cli.Context) error {
 	silencelog()
 	cl := bw2bind.ConnectOrExit("")
 	if !c.Bool("nopublish") {
@@ -571,9 +548,10 @@ func actionMkDOT(c *cli.Context) {
 	if !c.Bool("nopublish") {
 		pubObj(dot, cl, c)
 	}
+	return nil
 }
 
-func actionMkEntity(c *cli.Context) {
+func actionMkEntity(c *cli.Context) error {
 	silencelog()
 	cl := bw2bind.ConnectOrExit("")
 	if !c.Bool("nopublish") {
@@ -605,8 +583,8 @@ func actionMkEntity(c *cli.Context) {
 	ent := enti.(*objects.Entity)
 
 	fmt.Println("Entity created")
-	fmt.Println("Public  VK: ", crypto.FmtKey(ent.GetVK()))
-	fmt.Println("Private SK: ", crypto.FmtKey(ent.GetSK()))
+	fmt.Println("Public VK:", crypto.FmtKey(ent.GetVK()))
+	//	fmt.Println("Private SK: ", crypto.FmtKey(ent.GetSK()))
 
 	fname := c.String("outfile")
 	if len(fname) == 0 {
@@ -624,6 +602,7 @@ func actionMkEntity(c *cli.Context) {
 	if !c.Bool("nopublish") {
 		pubObj(ent, cl, c)
 	}
+	return nil
 }
 
 func inspectInterface(ro objects.RoutingObject, cl *bw2bind.BW2Client) {
@@ -745,7 +724,7 @@ func doChainOp(cl *bw2bind.BW2Client, done chan string) {
 		}
 	}
 }
-func actionInspect(c *cli.Context) {
+func actionInspect(c *cli.Context) error {
 	cl := bw2bind.ConnectOrExit("")
 	pub := c.Bool("publish")
 	if pub {
@@ -850,9 +829,9 @@ func actionInspect(c *cli.Context) {
 	if pub {
 		pubObjs(topub, cl, c)
 	}
-
+	return nil
 }
-func actionBuildChain(c *cli.Context) {
+func actionBuildChain(c *cli.Context) error {
 	silencelog()
 	cl := bw2bind.ConnectOrExit("")
 	if c.Bool("publish") {
@@ -907,8 +886,9 @@ func actionBuildChain(c *cli.Context) {
 	if c.Bool("publish") {
 		pubObjs(topub, cl, c)
 	}
+	return nil
 }
-func actionXfer(c *cli.Context) {
+func actionXfer(c *cli.Context) error {
 	if c.String("bankroll") == "" {
 		fmt.Println("Need bankroll to transfer from")
 		os.Exit(1)
@@ -966,9 +946,9 @@ func actionXfer(c *cli.Context) {
 		}
 	}()
 	doChainOp(cl, dchan)
-
+	return nil
 }
-func actionStatus(c *cli.Context) {
+func actionStatus(c *cli.Context) error {
 	cl := bw2bind.ConnectOrExit("")
 	cip, err := cl.GetBCInteractionParams()
 	if err != nil {
@@ -981,10 +961,11 @@ func actionStatus(c *cli.Context) {
 	fmt.Printf("    Seen block: %d\n", cip.HighestBlock)
 	fmt.Printf("   Current age: %s\n", cip.CurrentAge.String())
 	fmt.Printf("    Difficulty: %d\n", cip.Difficulty)
+	return nil
 }
 
 //sub -e entity uri uri uri
-func actionSubscribe(c *cli.Context) {
+func actionSubscribe(c *cli.Context) error {
 	cl := bw2bind.ConnectOrExit("")
 	if c.String("entity") == "" {
 		fmt.Println("You need to specify an entity to be (-e)")
@@ -1012,7 +993,7 @@ func actionSubscribe(c *cli.Context) {
 	}
 }
 
-func actionQuery(c *cli.Context) {
+func actionQuery(c *cli.Context) error {
 	bw2bind.SilenceLog()
 	cl := bw2bind.ConnectOrExit("")
 	if c.String("entity") == "" {
@@ -1037,6 +1018,7 @@ func actionQuery(c *cli.Context) {
 					m.Dump()
 				}
 			}
+			os.Exit(0)
 		}()
 	}
 	for {
@@ -1044,7 +1026,7 @@ func actionQuery(c *cli.Context) {
 	}
 }
 
-func actionMset(c *cli.Context) {
+func actionMset(c *cli.Context) error {
 	bw2bind.SilenceLog()
 	cl := bw2bind.ConnectOrExit("")
 	if c.String("entity") == "" {
@@ -1073,9 +1055,10 @@ func actionMset(c *cli.Context) {
 		fmt.Println("Set OK")
 		os.Exit(0)
 	}
+	return nil
 }
 
-func actionMget(c *cli.Context) {
+func actionMget(c *cli.Context) error {
 	bw2bind.SilenceLog()
 	cl := bw2bind.ConnectOrExit("")
 	if c.String("entity") == "" {
@@ -1141,9 +1124,10 @@ func actionMget(c *cli.Context) {
 			}
 		}
 	}
+	return nil
 }
 
-func actionMdel(c *cli.Context) {
+func actionMdel(c *cli.Context) error {
 	bw2bind.SilenceLog()
 	cl := bw2bind.ConnectOrExit("")
 	if c.String("entity") == "" {
@@ -1171,9 +1155,10 @@ func actionMdel(c *cli.Context) {
 		fmt.Println("Set OK")
 		os.Exit(0)
 	}
+	return nil
 }
 
-func actionDTrig(c *cli.Context) {
+func actionDTrig(c *cli.Context) error {
 	cl := bw2bind.ConnectOrExit("")
 	e := getAvailableEntity(c, "/home/immesys/.ssh/michael.key")
 	if e == nil {
@@ -1183,4 +1168,5 @@ func actionDTrig(c *cli.Context) {
 	cl.SetEntity(e.GetSigningBlob())
 	cl.StatLine()
 	cl.DevelopTrigger()
+	return nil
 }

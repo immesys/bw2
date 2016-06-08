@@ -13,25 +13,45 @@ the same frame format:
   tendigit = digit, digit, digit, digit, digit,
              digit, digit, digit, digit, digit.
   digit = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9".
-  command = "publ"  (* publish to a uri               *) |
-            "pers"  (* persist to a uri               *) |
-            "subs"  (* subscribe to a uri             *) |
-            "list"  (* list the children of a URI     *) |
-            "quer"  (* query a given URI              *) |
-            "tsub"  (* tap subscribe a URI            *) |
-            "tque"  (* tap query a given URI          *) |
-            "putd"  (* put a dot to a router          *) |
-            "pute"  (* put an entity to a router      *) |
-            "putc"  (* put a chain to a router        *) |
-            "makd"  (* make a dot                     *) |
-            "make"  (* make an entity                 *) |
-            "makc"  (* make a chain                   *) |
-            "bldc"  (* build a chain                  *) |
-            "adpd"  (* add a preferred dot            *) |
-            "adpc"  (* add a preferred chain          *) |
-            "dlpd"  (* delete a preferred dot         *) |
-            "dlpc"  (* delete a preferred chain       *) |
-            "sete"  (* set the entity the client uses *).
+  command = "publ"  (* publish to a uri                *) |
+            "pers"  (* persist to a uri                *) |
+            "subs"  (* subscribe to a uri              *) |
+            "list"  (* list the children of a URI      *) |
+            "quer"  (* query a given URI               *) |
+            "tsub"  (* tap subscribe a URI             *) |
+            "tque"  (* tap query a given URI           *) |
+            "putd"  (* put a dot to a router           *) |
+            "pute"  (* put an entity to a router       *) |
+            "putc"  (* put a chain to a router         *) |
+            "makd"  (* make a dot                      *) |
+            "make"  (* make an entity                  *) |
+            "makc"  (* make a chain                    *) |
+            "bldc"  (* build a chain                   *) |
+            "adpd"  (* add a preferred dot             *) |
+            "adpc"  (* add a preferred chain           *) |
+            "dlpd"  (* delete a preferred dot          *) |
+            "dlpc"  (* delete a preferred chain        *) |
+            "sete"  (* set the entity the client uses  *) |
+            "helo"  (* connected to local router       *) |
+            "pute"  (* publish entity to registry      *) |
+            "putc"  (* publish chain to registry       *) |
+            "ebal"  (* get balances for current entity *) |
+            "abal"  (* get balanc for address          *) |
+            "bcip"  (* block chain interaction params  *) |
+            "xfer"  (* transfer currency               *) |
+            "mksa"  (* make short alias                *) |
+            "mkla"  (* make long alias                 *) |
+            "resa"  (* resolve alias                   *) |
+            "usrv"  (* update a SRV record             *) |
+            "ndro"  (* new designated router offer     *) |
+            "adro"  (* accept designated router offer  *) |
+            "ldro"  (* list designated router offers   *) |
+            "rsro"  (* resolve registry object         *) |
+            "mkvw"  (* make a view                     *) |
+            "vsub"  (* subscribe to a view             *) |
+            "vpub"  (* publish to a view               *) |
+            "vlst"  (* list contents of a view         *) |
+            "usub"  (* unsubscribe                     *).
   field = KVfield | POfield | ROfield.
   fieldlen = digit, {digit}.
   keychar = "a"|"b"|"c"|"d"|"e"|"f"|"g"|"h"|"i"|"j"|"k"|"l"|
@@ -157,7 +177,7 @@ Fields:
 * kv(omitcreationdate) - bool: if true, do not include the creation date in this entity
 
 This creates a new entity, generating the keypair. It returns a `resp` frame
-with an error if something went wrong, otherwise it returns a `rslt` frame with
+with an error if something went wrong, otherwise it returns a `resp` frame with
 kv(vk) and po(1.0.1.2) for the created entity.
 
 ### makd - MakeDOT
@@ -176,7 +196,7 @@ Fields:
 
 This creates a new DOT, from the connection's entity to the given entity.
 It returns a `resp` frame with an error if something went wrong, otherwise it
-returns a `rslt` frame with kv(hash) and a ro for the created DOT.
+returns a `resp` frame with kv(hash) and a ro for the created DOT.
 
 ### makc - MakeChain
 Fields:
@@ -185,7 +205,7 @@ Fields:
 * MULTIPLE kv(dot) - the hash of a DOT to include in the chain, must appear in order
 
 This creates a new DOT chain made of the given dots. It returns a `resp` frame
-with an error if something went wrong, otherwise it returns a `rslt` frame with
+with an error if something went wrong, otherwise it returns a `resp` frame with
 kv(hash) and a po for the created DChain.
 
 # New commands for 2.1.x

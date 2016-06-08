@@ -83,6 +83,10 @@ The sequence number is a random unique 31 bit number that is used to connect
 replies to commands. Any response or result attached to the command will have
 the same sequence number, so it can be used to demultiplex on the client side.
 
+When a client first connects, the agent sends a `helo` frame containing the version
+of the agent. While existing frame syntax is rarely changed, newer commands are not
+available on old agents.
+
 ## Commands
 
 ### sete - SetEntity

@@ -10,7 +10,6 @@ import (
 	"gopkg.in/vmihailenco/msgpack.v2"
 
 	log "github.com/cihub/seelog"
-	"github.com/immesys/bw2/crypto"
 	"github.com/immesys/bw2/internal/core"
 	"github.com/immesys/bw2/objects"
 	"github.com/immesys/bw2/objects/advpo"
@@ -83,6 +82,7 @@ func _parseURI(t interface{}) (Expression, error) {
 	return nil, fmt.Errorf("unexpected URI structure: %T : %#v", t, t)
 }
 func _parseMeta(t interface{}) (Expression, error) {
+	//fmt.Printf("Parsing meta: %#v", t)
 	m, ok := t.(map[interface{}]interface{})
 	if !ok {
 		return nil, fmt.Errorf("unexpected meta structure %T : %#v", t, t)
@@ -94,7 +94,13 @@ func _parseMeta(t interface{}) (Expression, error) {
 		if !ok1 || !ok2 {
 			return nil, fmt.Errorf("expected map[string]string")
 		}
-		rv = append(rv, EqMeta(key, valueS))
+		switch key {
+		case "$has":
+			rv = append(rv, HasMeta(valueS))
+		default:
+			rv = append(rv, EqMeta(key, valueS))
+		}
+
 	}
 	return And(rv...), nil
 }
@@ -213,50 +219,6 @@ func ExpressionFromTree(t interface{}) (Expression, error) {
 	return _parseGlobal(t)
 }
 
-type nsExpression struct {
-	nsz     []string
-	realnsz []string
-}
-
-func Namespace(nsz ...string) Expression {
-	return &nsExpression{nsz: nsz, realnsz: nil}
-}
-func (n *nsExpression) checkReal(v *View) error {
-	if n.realnsz != nil {
-		return nil
-	}
-	for _, e := range n.nsz {
-		rebin, err := v.c.BW().ResolveKey(e)
-		if err != nil {
-			return err
-		}
-		n.realnsz = append(n.realnsz, crypto.FmtKey(rebin))
-	}
-	return nil
-}
-func (n *nsExpression) Namespaces() []string {
-	return n.nsz
-}
-func (n *nsExpression) Matches(uri string, v *View) bool {
-	err := n.checkReal(v)
-	if err != nil {
-		v.fatal(err)
-	}
-	ns := strings.Split(uri, "/")[0]
-	for _, e := range n.realnsz {
-		if e == ns {
-			return true
-		}
-	}
-	return false
-}
-func (n *nsExpression) CanonicalSuffixes() []string {
-	return []string{"*"}
-}
-func (n *nsExpression) MightMatch(uri string, v *View) bool {
-	return true //TODO
-}
-
 // Get the given key for the given fully qualified URI (including ns)
 func (v *View) Meta(ruri, key string) (*advpo.MetadataTuple, bool) {
 	//TODO going forward, when metadata sub is driven by canonical
@@ -359,175 +321,6 @@ func foldAndCanonicalSuffixes(lhs []string, rhsz ...[]string) []string {
 	nextOut:
 	}
 	return foldAndCanonicalSuffixes(dedup, rhsz[1:]...)
-}
-
-func (e *andExpression) CanonicalSuffixes() []string {
-	retv := [][]string{}
-	for _, s := range e.subex {
-		retv = append(retv, s.CanonicalSuffixes())
-	}
-	return foldAndCanonicalSuffixes(retv[0], retv[1:]...)
-}
-
-type orExpression struct {
-	subex []Expression
-}
-
-func (e *orExpression) Matches(uri string, v *View) bool {
-	for _, s := range e.subex {
-		if s.Matches(uri, v) {
-			return true
-		}
-	}
-	return false
-}
-func (e *orExpression) MightMatch(uri string, v *View) bool {
-	for _, s := range e.subex {
-		if s.MightMatch(uri, v) {
-			return true
-		}
-	}
-	return false
-}
-func (e *orExpression) CanonicalSuffixes() []string {
-	retv := []string{}
-	for _, s := range e.subex {
-		retv = append(retv, s.CanonicalSuffixes()...)
-	}
-	return retv
-}
-func (e *orExpression) Namespaces() []string {
-	sslcs := []string{}
-	for _, s := range e.subex {
-		sslcs = append(sslcs, s.Namespaces()...)
-	}
-	return sslcs
-}
-
-type metaEqExpression struct {
-	key   string
-	val   string
-	regex bool
-}
-
-func (e *metaEqExpression) Matches(uri string, v *View) bool {
-	val, ok := v.Meta(uri, e.key)
-	if !ok {
-		return false
-	}
-	if e.regex {
-		panic("have not done regex yet")
-	} else {
-		return val.Value == e.val
-	}
-}
-func (e *metaEqExpression) MightMatch(uri string, v *View) bool {
-	//You don't know until the final resource
-	return true
-}
-func (e *metaEqExpression) CanonicalSuffixes() []string {
-	return []string{"*"}
-}
-func (e *metaEqExpression) Namespaces() []string {
-	return []string{}
-}
-
-type uriEqExpression struct {
-	pattern string
-	regex   bool
-	ns      *string
-}
-
-func (e *uriEqExpression) Namespaces() []string {
-	if e.ns == nil {
-		return []string{}
-	} else {
-		return []string{*e.ns}
-	}
-}
-func (e *uriEqExpression) Matches(uri string, v *View) bool {
-	if e.regex {
-		rv := regexp.MustCompile(e.pattern).MatchString(uri)
-		return rv
-	} else {
-		panic("have not done thing yet")
-	}
-}
-func (e *uriEqExpression) MightMatch(uri string, v *View) bool {
-	if e.regex {
-		//I'm sure we can change this in future, but it is hard
-		return true
-	} else {
-		rhs := strings.Split(uri, "/")
-		lhs := strings.Split(e.pattern, "/")
-		//First check if NS matches (if present)
-		if lhs[0] != "" {
-			if rhs[0] != lhs[0] {
-				return false
-			}
-		}
-		li := 1
-		ri := 1
-		for li < len(lhs) && ri < len(rhs) {
-			if lhs[li] == "*" {
-				//Can arbitrarily expand
-				return true
-			}
-			if lhs[li] == "+" ||
-				lhs[li] == rhs[li] {
-				li++
-				ri++
-				continue
-			}
-			return false
-		}
-		//either lhs or rhs is finished
-		if li == len(lhs) {
-			//Won't match, no more room in lhs pattern
-			return false
-		}
-		//but if rhs finished we don't know
-		return true
-	}
-}
-func (e *uriEqExpression) CanonicalSuffixes() []string {
-	if e.regex {
-		return []string{"*"}
-	}
-	return []string{e.pattern}
-}
-
-func And(terms ...Expression) Expression {
-	return &andExpression{subex: terms}
-}
-func Or(terms ...Expression) Expression {
-	return &orExpression{subex: terms}
-}
-func EqMeta(key, value string) Expression {
-	return &metaEqExpression{key: key, val: value, regex: false}
-}
-func RegexURI(pattern string) Expression {
-	return &uriEqExpression{pattern: pattern, regex: true}
-}
-
-//If the URI does not begin with a slash it is considered a full
-//uri. If it begins with a slash it has an implicit namespace filled
-//in with the namespaces from NewView
-func MatchURI(pattern string) Expression {
-	var ns *string
-	if pattern[0] != '/' {
-		s := strings.Split(pattern, "/")[0]
-		ns = &s
-	} else {
-		ns = nil
-	}
-	return &uriEqExpression{pattern: pattern, ns: ns, regex: false}
-}
-func Prefix(pattern string) Expression {
-	if pattern[len(pattern)-1] != '/' {
-		pattern = pattern + "/"
-	}
-	return MatchURI(pattern + "*")
 }
 
 // func Service(name string) Expression {
@@ -1018,49 +811,20 @@ when you subscribe,
 */
 
 type Expression interface {
+	//Return a list of all namespaces that this expression would make
+	//you want to operate on
+	Namespaces() []string
+
 	//Given a complete resource name, does this expression
 	//permit it to be included in the view
 	Matches(uri string, v *View) bool
-	//Given a partial resource name (prefix) does this expression
-	//possibly permit it to be included in the view. Yes means maybe
-	//no means no.
-	MightMatch(uri string, v *View) bool
 
 	//Return a list of all URIs(sans namespaces) that are sufficient
 	//to evaluate this expression (minimum subscription set). Does not
 	//include metadata
 	CanonicalSuffixes() []string
-
-	//Return a list of all namespaces that this expression would make
-	//you want to operate on
-	Namespaces() []string
-}
-
-type andExpression struct {
-	subex []Expression
-}
-
-func (e *andExpression) Namespaces() []string {
-	sslcs := []string{}
-	for _, s := range e.subex {
-		sslcs = append(sslcs, s.Namespaces()...)
-	}
-	return sslcs
-}
-
-func (e *andExpression) Matches(uri string, v *View) bool {
-	for _, s := range e.subex {
-		if !s.Matches(uri, v) {
-			return false
-		}
-	}
-	return true
-}
-func (e *andExpression) MightMatch(uri string, v *View) bool {
-	for _, s := range e.subex {
-		if !s.MightMatch(uri, v) {
-			return false
-		}
-	}
-	return true
+	//Given a partial resource name (prefix) does this expression
+	//possibly permit it to be included in the view. Yes means maybe
+	//no means no.
+	MightMatch(uri string, v *View) bool
 }

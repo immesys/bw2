@@ -1,8 +1,9 @@
+// +build ignore
+
 package bc
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/immesys/bw2/util/bwe"
@@ -19,57 +20,6 @@ const (
 	BWDefaultGas       = "3000000"
 	FreshnessThreshold = 30 //seconds
 )
-
-const zerohex = "0000000000000000000000000000000000000000000000000000000000000000"
-
-//Get a (unprefixed) hex string
-func (b32 *Bytes32) Hex() string {
-	return common.Bytes2Hex(b32[:])
-}
-
-func (b32 *Bytes32) Zero() bool {
-	return *b32 == Bytes32{}
-}
-
-func (a *Address) Hex() string {
-	return common.Bytes2Hex(a[:])
-}
-
-func (u *UFI) Address() Address {
-	rv := Address{}
-	copy(rv[:], u[:20])
-	return rv
-}
-
-//Convert a (possibly 0x prefixed) hex string to bytes32
-//padding with zeroes on the right
-func HexToBytes32(hex string) Bytes32 {
-	if strings.HasPrefix(hex, "0x") {
-		hex = hex[2:]
-	}
-	if len(hex) > 64 {
-		panic("Hex string too long for bytes32")
-	}
-	if len(hex) < 64 {
-		hex = hex + zerohex[len(hex):]
-	}
-	return Bytes32(common.HexToHash(hex))
-}
-
-//Convert a (possibly 0x prefixed) hex string to bytes32
-//padding with zeroes on the right
-func HexToAddress(hex string) Address {
-	if strings.HasPrefix(hex, "0x") {
-		hex = hex[2:]
-	}
-	if len(hex) > 40 {
-		panic("Hex string too long for address")
-	}
-	if len(hex) < 40 {
-		hex = hex + zerohex[len(hex):40]
-	}
-	return Address(common.HexToAddress(hex))
-}
 
 // TODO add more
 type Block struct {
@@ -144,17 +94,6 @@ func blockFromCore(b *types.Block, l vm.Logs) *Block {
 	}
 }
 
-//Convert a byte slice to a bytes32. Panic if the slice
-//is too big
-func SliceToBytes32(s []byte) Bytes32 {
-	if len(s) > 32 {
-		panic("Byte slice too long for bytes32")
-	}
-	rv := Bytes32{}
-	copy(rv[:], s)
-	return rv
-}
-
 func (bc *blockChain) ChainFresh() bool {
 	return bc.HeadBlockAge() < FreshnessThreshold
 }
@@ -186,20 +125,6 @@ func (bc *blockChain) Backend() *eth.Ethereum {
 	return bc.eth
 }
 
-// func (bcc *bcClient) SetDefaultAccountNum(idx int) error {
-// 	if idx >= numMainKeys || idx < 0 {
-// 		return bwe.M(bwe.InvalidAccountNumber, fmt.Sprintf("bad account: %d", idx))
-// 	}
-// 	bcc.acc = idx
-// 	return nil
-// }
-// func (bcc *bcClient) DefaultAccountNum() int {
-// 	return bcc.acc
-// }
-// func (bcc *bcClient) DefaultAccount() (Address, error) {
-// 	a, e := bcc.GetAddress(bcc.acc)
-// 	return Address(a), e
-// }
 func (bcc *bcClient) GetAddress(idx int) (addr Address, err error) {
 	if idx >= MaxEntityAccounts {
 		return Address{}, bwe.M(bwe.InvalidAccountNumber, fmt.Sprintf("bad account: %d", idx))
@@ -371,7 +296,6 @@ func (bc *blockChain) CallOnBlocksBetween(after int64, before int64, cb func(*Bl
 */
 
 //For every nonzero topic present in topics ensure that the log's topic at the same index matches.
-
 func (l *logWrapper) MatchesTopicsStrict(topics []Bytes32) bool {
 	for i, t := range topics {
 		if (i >= len(l.Topics()) && t != Bytes32{}) {
@@ -469,6 +393,7 @@ func (bc *blockChain) SyncProgress() (peercount int, start, current, highest uin
 }
 
 func (bc *blockChain) CurrentBlock() uint64 {
+	currentBlock := self.BlockChain().CurrentBlock().NumberU64()
 	return bc.x.CurrentBlock().NumberU64()
 }
 

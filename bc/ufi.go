@@ -71,6 +71,7 @@ func EncodeABICall(ufi UFI, argvaluesi ...interface{}) (contract common.Address,
 			argvalues[idx] = common.Bytes2Hex(ifc)
 		case Bytes32:
 			argvalues[idx] = common.Bytes2Hex(ifc[:])
+			fmt.Println("we got: ", argvalues[idx])
 		case int64:
 			argvalues[idx] = big.NewInt(ifc).Text(10)
 		case *big.Int:
@@ -89,6 +90,7 @@ func EncodeABICall(ufi UFI, argvaluesi ...interface{}) (contract common.Address,
 	extra := make([]byte, 0)
 	endloc := num_args * 32
 	for idx, arg := range args {
+		fmt.Printf("idx %d arg= '%s'\n", idx, argvalues[idx])
 		switch arg {
 		case TUInt:
 			v := common.Big(argvalues[idx])
@@ -119,6 +121,7 @@ func EncodeABICall(ufi UFI, argvaluesi ...interface{}) (contract common.Address,
 			extra = append(extra, argv...)
 		case TBytes:
 			argv := common.FromHex(argvalues[idx])
+			fmt.Printf("argv: %064x\n", argv)
 			if len(argv) > 32 {
 				argv = argv[:32]
 			}

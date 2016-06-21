@@ -11,6 +11,7 @@ import (
 	"github.com/immesys/bw2/objects"
 	"github.com/immesys/bw2bc/common"
 	ethcrypto "github.com/immesys/bw2bc/crypto"
+	"github.com/immesys/bw2bc/crypto/secp256k1"
 	"golang.org/x/crypto/blowfish"
 	"golang.org/x/crypto/sha3"
 )
@@ -68,17 +69,17 @@ func base64Encode(src []byte) []byte {
 	return dst[:n]
 }
 func GetAccountHex(ro *objects.Entity, index int) (string, error) {
-    seed := make([]byte, 64)
-    copy(seed[0:32], ro.GetSK())
-    copy(seed[32:64], common.BigToBytes(big.NewInt(int64(index)), 256))
-    rand := sha3.Sum512(seed)
-    reader := bytes.NewReader(rand[:])
-    privateKeyECDSA, err := ecdsa.GenerateKey(ethcrypto.S256(), reader)
-    if err != nil {
-        panic(err)
-    }    
-    addr := ethcrypto.PubkeyToAddress(privateKeyECDSA.PublicKey)
-    return addr.Hex(), nil
+	seed := make([]byte, 64)
+	copy(seed[0:32], ro.GetSK())
+	copy(seed[32:64], common.BigToBytes(big.NewInt(int64(index)), 256))
+	rand := sha3.Sum512(seed)
+	reader := bytes.NewReader(rand[:])
+	privateKeyECDSA, err := ecdsa.GenerateKey(secp256k1.S256(), reader)
+	if err != nil {
+		panic(err)
+	}
+	addr := ethcrypto.PubkeyToAddress(privateKeyECDSA.PublicKey)
+	return addr.Hex(), nil
 }
 
 func expensiveBlowfishSetup(key []byte, cost uint32, csalt []byte) (*blowfish.Cipher, error) {
@@ -117,7 +118,7 @@ func printAddr(ent *objects.Entity, index int) {
 	copy(seed[32:64], common.BigToBytes(big.NewInt(int64(index)), 256))
 	rand := sha3.Sum512(seed)
 	reader := bytes.NewReader(rand[:])
-	privateKeyECDSA, err := ecdsa.GenerateKey(ethcrypto.S256(), reader)
+	privateKeyECDSA, err := ecdsa.GenerateKey(secp256k1.S256(), reader)
 	if err != nil {
 		panic(err)
 	}

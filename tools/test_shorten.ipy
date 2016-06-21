@@ -1,0 +1,13 @@
+#!/usr/bin/env ipython
+%run -i test_tooling.ipy
+
+#clear old objects
+!rm bwo/*
+!rm vars.js
+
+stage("ldcc('Alias', [], 'A', $$);")
+stage("setIvkValue(2, 'ether');($$)();")
+stage("ivk(A.SetAlias, ['0x796f000000000000000000000000000000000000000000000000000000000000','0x505050'], $$)")
+stage("ivk(A.CreateShortAlias,['0x60606060'], $$)")
+
+write_stages()

@@ -8,8 +8,8 @@ import (
 	"github.com/immesys/bw2/crypto"
 	"github.com/immesys/bw2/objects"
 	"github.com/immesys/bw2bc/common"
-	"github.com/immesys/bw2bc/core/types"
 	"github.com/immesys/bw2bc/crypto/sha3"
+	"github.com/immesys/bw2bc/eth"
 )
 
 func (bcc *bcClient) CreateRoutingOffer(acc int, dr *objects.Entity, nsvk []byte,
@@ -42,7 +42,7 @@ func (bcc *bcClient) CreateRoutingOffer(acc int, dr *objects.Entity, nsvk []byte
 	//And wait for it to confirm
 	//meh we need to rewrite this function
 	bcc.bc.GetTransactionDetailsInt(txhash, bcc.DefaultTimeout, bcc.DefaultConfirmations,
-		nil, func(bn uint64, rcpt *types.Receipt, err error) {
+		nil, func(bn uint64, rcpt *eth.RPCTransaction, err error) {
 			//Check to see if it all matches now:
 			rvz, err := bcc.bc.CallOffChain(StringToUFI(UFI_Affinity_AffinityOffers),
 				dr.GetVK(), nsvk)
@@ -88,7 +88,7 @@ func (bcc *bcClient) CreateSRVRecord(acc int, dr *objects.Entity, record string,
 	//And wait for it to confirm
 	//meh we need to rewrite this function
 	bcc.bc.GetTransactionDetailsInt(txhash, bcc.DefaultTimeout, bcc.DefaultConfirmations,
-		nil, func(bn uint64, rcpt *types.Receipt, err error) {
+		nil, func(bn uint64, rcpt *eth.RPCTransaction, err error) {
 			fmt.Println("A")
 			if err != nil {
 				confirmed(err)
@@ -197,7 +197,7 @@ func (bcc *bcClient) AcceptRoutingOffer(acc int, ns *objects.Entity, drvk []byte
 	//And wait for it to confirm
 	//meh we need to rewrite this function
 	bcc.bc.GetTransactionDetailsInt(txhash, bcc.DefaultTimeout, bcc.DefaultConfirmations,
-		nil, func(bn uint64, rcpt *types.Receipt, err error) {
+		nil, func(bn uint64, rcpt *eth.RPCTransaction, err error) {
 			if err != nil {
 				confirmed(err)
 				return

@@ -1,0 +1,109 @@
+#!/usr/bin/env ipython
+
+import sha3
+fsig = lambda x : sha3.sha3_256(x).hexdigest()[:8]
+
+import sys
+import json
+target = sys.argv[1]
+addr = sys.argv[2] if len(sys.argv) > 2 else ""
+if addr[0:2] == "0x":
+  addr = addr[2:]
+if len(addr) != 40:
+  print "Address looks wrong, using zero"
+  addr = "00" * 20
+
+op = !solc --abi {target}
+
+idx = 0
+
+def printufi(contractname, funcname, ufi):
+  if len(sys.argv) > 3 and sys.argv[3] == "gen":
+    print "UFI_%s_%s = \"%s\"" % (contractname, funcname, ufi)
+  else:
+    print "UFI %10s::%-30s %s" %(contractname, funcname, ufi )
+
+def printevent(contractname, funcname, hash):
+  if len(sys.argv) > 3 and sys.argv[3] == "gen":
+    print "EventSig_%s_%s = \"%s\"" % (contractname, funcname, hash)
+  else:
+    print "Evt %10s::%-30s %s" %(contractname, funcname, hash)
+
+def tokfortype(type):
+  if type.startswith("uint"):
+    return "1"
+  if type.startswith("int"):
+    return "2"
+  if type == "string":
+    return "3"
+  if type == "bytes":
+    return "5"
+  if type.startswith("bytes"):
+    return "4" #static
+
+  return "?"
+
+
+def doblock(name):
+  global idx
+  global op
+  abi = json.loads(op[idx])
+  print "UFIs for ",name
+  print "// UFIs for", name
+  print "UFI_%s_Address = \"%s\"" %(name, addr)
+  for f in abi:
+      if f["type"] == "constructor":
+        continue
+      sig = str(f["name"])+"("
+      hsig = sig
+      args = []
+      hargs = []
+      rets = []
+      toks = ""
+      for inp in f["inputs"]:
+        args.append(str(inp["type"]))
+        hargs.append(str(inp["type"] + " "+inp["name"]))
+        toks += tokfortype(str(inp["type"]))
+      toks += "0"
+      if "outputs" in f:
+        for outs in f["outputs"]:
+          rets.append(str(outs["type"]))
+          toks += tokfortype(str(outs["type"]))
+      toks += "0" * (16-len(toks))
+      sig += ",".join(args) + ")"
+      hsig += ", ".join(hargs) + ")"
+      retsig = ",".join(rets)
+      hash = fsig(sig)
+      lhash = sha3.sha3_256(sig).hexdigest()
+
+      ufi = addr + hash + toks
+      if len(ufi) != 64:
+        print "WTF %d", len(ufi)
+
+      if f["type"] == "function":
+        print "//",hsig,"->",retsig
+        printufi(name, f["name"], ufi)
+      elif f["type"] == "event":
+        print "// EVENT ",hsig
+        printevent(name, f["name"], lhash)
+
+
+  print
+
+
+
+def doall():
+  global idx
+  global op
+  while True:
+    if idx >= len(op):
+      return
+    if op[idx].startswith("=="):
+      n = op[idx].split()[1]
+      idx += 2
+      doblock(n)
+    else:
+      idx += 1
+
+
+doall()

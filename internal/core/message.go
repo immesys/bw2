@@ -380,6 +380,7 @@ func AnalyzeAccessDOTChain(mtype int, targetURI string, dc *objects.DChain) (err
 func (m *Message) Verify(res Resolver) *StatusMessage {
 	//Return cached code if you can
 	if m.status.Code != bwe.Unchecked {
+		log.Infof("V: cached result: %d", m.status.Code)
 		return &m.status
 	}
 
@@ -398,6 +399,7 @@ func (m *Message) Verify(res Resolver) *StatusMessage {
 	}
 	if !urivalid {
 		m.status.Code = bwe.BadURI
+		log.Infof("V: invalid URI")
 		return &m.status
 	}
 
@@ -406,6 +408,7 @@ func (m *Message) Verify(res Resolver) *StatusMessage {
 	if m.OriginVK != nil && bytes.Equal(*m.OriginVK, m.MVK) {
 		fromMVK = true
 		m.status.Code = bwe.Okay
+		log.Infof("V: from MVK")
 		goto endperm
 	}
 
@@ -447,7 +450,9 @@ func (m *Message) Verify(res Resolver) *StatusMessage {
 		if azErr == nil {
 			m.status.Code = bwe.Okay
 		} else {
+			log.Infof("AZVK error: %s", azErr.(*bwe.BWStatus).Error())
 			m.status.Code = azErr.(*bwe.BWStatus).Code
+			log.Infof("V: azErr : %d", m.status.Code)
 			goto endperm
 		}
 		m.MergedTopic = azURI

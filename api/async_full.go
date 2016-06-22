@@ -208,7 +208,14 @@ func (c *BosswaveClient) Subscribe(params *SubscribeParams,
 		actionCB(err, id)
 	}
 	var err error
-	if err = c.doAutoChain(params.MVK, params.URISuffix, "C", params.AutoChain, &params.PrimaryAccessChain); err != nil {
+	perms := "C"
+	if strings.Contains(params.URISuffix, "+") {
+		perms = "C+"
+	}
+	if strings.Contains(params.URISuffix, "*") {
+		perms = "C*"
+	}
+	if err = c.doAutoChain(params.MVK, params.URISuffix, perms, params.AutoChain, &params.PrimaryAccessChain); err != nil {
 		actionCB(err, core.UniqueMessageID{})
 		return
 	}

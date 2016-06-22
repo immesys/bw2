@@ -207,6 +207,14 @@ func handleSession(cl *BosswaveClient, conn net.Conn) {
 				s := msg.Verify(cl.BW())
 				if s.Code != bwe.Okay {
 					log.Infof("message failed verification: %#v", msg)
+					log.Infof("pac src %v\n", crypto.FmtKey(msg.PrimaryAccessChain.GetGiverVK()))
+					log.Infof("pac dst %v\n", crypto.FmtKey(msg.PrimaryAccessChain.GetReceiverVK()))
+					log.Infof("roz are %#v\n", msg.RoutingObjects)
+					if msg.OriginVK != nil {
+						log.Infof("msg src %\v\n", crypto.FmtKey(*msg.OriginVK))
+					} else {
+						log.Infof("msg has no origin VK header\n")
+					}
 					errframe(nf.seqno, s.Code, "message failed ingress verification")
 					return
 				}

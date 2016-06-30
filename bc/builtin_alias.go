@@ -1,7 +1,6 @@
 package bc
 
 import (
-	"fmt"
 	"math/big"
 
 	"github.com/immesys/bw2/util/bwe"
@@ -52,7 +51,6 @@ func (bc *blockChain) ResolveShortAlias(alias uint64) (res Bytes32, iszero bool,
 
 func (bc *blockChain) ResolveAlias(key Bytes32) (res Bytes32, iszero bool, err error) {
 	// First check what the registry thinks of the DOTHash
-	fmt.Printf("key is %032x\n", key)
 	rvz, err := bc.CallOffChain(StringToUFI(UFI_Alias_Resolve), common.Bytes2Big(key[:]))
 	if err != nil || len(rvz) != 1 {
 		return Bytes32{}, true, bwe.WrapM(bwe.UFIInvocationError, "Expected 1 rv: ", err)

@@ -244,7 +244,6 @@ func (bc *blockChain) CallOffChain(ufi UFI, params ...interface{}) (ret []interf
 		Value    rpc.HexNumber   `json:"value"`
 		Data     string          `json:"data"`
 	}
-	fmt.Printf("hx: %v\n", common.ToHex(calldata))
 	ca := eth.CallArgs{To: &addr,
 		Gas:  rpc.NewHexNumber(BWDefaultGasBig),
 		Data: common.ToHex(calldata),
@@ -256,7 +255,6 @@ func (bc *blockChain) CallOffChain(ufi UFI, params ...interface{}) (ret []interf
 	// 	return result, err
 	// }
 	res, err := bc.api_pubchain.Call(ca, -1)
-	fmt.Printf("res %v\nerr %v\n", res, err)
 	if err != nil {
 		return nil, bwe.WrapC(bwe.UFIInvocationError, err)
 	}
@@ -282,7 +280,6 @@ func (bc *blockChain) FindLogsBetween(since int64, until int64, hexaddr string, 
 		}
 		ts[i1] = el
 	}
-	fmt.Printf("ts is %+v\n", ts)
 	f.SetTopics(ts)
 	f.SetBeginBlock(since)
 	f.SetEndBlock(until)
@@ -355,7 +352,6 @@ func (bcc *bcClient) CallOnChain(acc int, ufi UFI, value, gas, gasPrice string, 
 }
 
 func (bcc *bcClient) Transact(accidx int, to, value, gas, gasPrice, code string) (txhash string, err error) {
-	fmt.Printf("TRANSACT CALLED code: '%s'\n", code)
 	acc, err := bcc.GetAddress(accidx)
 	if err != nil {
 		return "", err
@@ -460,10 +456,9 @@ func (bc *blockChain) GetTransactionDetailsInt(txhash string, timeout uint64, co
 	go func() {
 		for {
 			curblock := bc.CurrentBlock()
-			fmt.Println("Waiting for appearance of", txhash, "oblock is", startblock, "curblock is", curblock)
+			//log.Infof("Waiting for appearance of", txhash, "oblock is", startblock, "curblock is", curblock)
 			curtime := time.Now().UnixNano() / 1000000000
 			rpct, err := bc.api_pubtx.GetTransactionByHash(common.HexToHash(txhash))
-			fmt.Printf("got rpct: %#v %#v\n", rpct, err)
 			if err != nil {
 				panic("hmm2?" + err.Error())
 			}

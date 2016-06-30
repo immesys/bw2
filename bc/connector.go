@@ -251,7 +251,13 @@ func (bc *blockChain) DebugTXPoolLoop() {
 	for {
 		time.Sleep(2 * time.Second)
 		p := bc.api_txpool.Inspect()
-		fmt.Println("P:", p)
+		for k, v := range p["pending"] {
+			fmt.Println("P1: ", k, v)
+		}
+		for k, v := range p["queued"] {
+			fmt.Println("P2: ", k, v)
+		}
+		//fmt.Println("P:", p)
 		//	peers, e := bc.api_pubadmin.Peers()
 		//	if e != nil {
 		//		panic(e)

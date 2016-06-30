@@ -115,7 +115,7 @@ func (bcc *bcClient) SetAlias(acc int, key Bytes32, val Bytes32, confirmed func(
 		return
 	}
 
-	txhash, err := bcc.CallOnChain(acc, StringToUFI(UFI_Alias_SetAlias), AliasCreateCost, "", "", val)
+	txhash, err := bcc.CallOnChain(acc, StringToUFI(UFI_Alias_SetAlias), AliasCreateCost, "", "", key, val)
 	if err != nil {
 		confirmed(err)
 		return

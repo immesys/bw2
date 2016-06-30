@@ -3,19 +3,21 @@ package api
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	log "github.com/cihub/seelog"
 	"github.com/immesys/bw2/bc"
 )
 
 type Lagger struct {
-	doneNumber   int64
-	expectParent bc.Bytes32
-	subscribers  []func(b *bc.Block)
-	onReset      []func()
-	smu          sync.Mutex
-	bchain       bc.BlockChainProvider
-	caughtup     bool
+	doneNumber    int64
+	expectParent  bc.Bytes32
+	subscribers   []func(b *bc.Block)
+	onReset       []func()
+	smu           sync.Mutex
+	bchain        bc.BlockChainProvider
+	caughtup      bool
+	lastPrintTime time.Time
 }
 
 const LagConfirmations = 3
@@ -64,9 +66,15 @@ func (lag *Lagger) onBlock(b *bc.Block) {
 		}
 	}
 }
+func (lag *Lagger) printrblock(block uint64, doneNumber int64) {
+	if time.Now().Sub(lag.lastPrintTime) > 7*time.Second {
+		log.Infof("received block %d (lagged=%d)", block, doneNumber)
+		lag.lastPrintTime = time.Now()
+	}
+}
 func (lag *Lagger) BeginLoop() {
 	lag.bchain.CallOnNewBlocks(func(b *bc.Block) bool {
-		log.Infof("received block %d (lagged=%d)", b.Number, lag.doneNumber)
+		lag.printrblock(b.Number, lag.doneNumber)
 		if !lag.caughtup {
 			st := lag.doneNumber
 			if st < 0 {

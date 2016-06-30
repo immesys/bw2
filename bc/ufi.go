@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/immesys/bw2/util/bwe"
 	"github.com/immesys/bw2bc/common"
 )
 
@@ -71,11 +72,10 @@ func EncodeABICall(ufi UFI, argvaluesi ...interface{}) (contract common.Address,
 			argvalues[idx] = common.Bytes2Hex(ifc)
 		case Bytes32:
 			argvalues[idx] = common.Bytes2Hex(ifc[:])
-			fmt.Println("we got: ", argvalues[idx])
 		case int64:
-			argvalues[idx] = big.NewInt(ifc).Text(10)
+			argvalues[idx] = big.NewInt(ifc).Text(16)
 		case *big.Int:
-			argvalues[idx] = ifc.Text(10)
+			argvalues[idx] = ifc.Text(16)
 		default:
 			panic(ifc)
 		}
@@ -89,15 +89,24 @@ func EncodeABICall(ufi UFI, argvaluesi ...interface{}) (contract common.Address,
 	num_args := len(args)
 	extra := make([]byte, 0)
 	endloc := num_args * 32
+	if num_args != len(argvalues) {
+		err = bwe.M(bwe.InvalidUFI, "Incorrect number of arguments for UFI")
+		return
+	}
 	for idx, arg := range args {
-		fmt.Printf("idx %d arg= '%s'\n", idx, argvalues[idx])
 		switch arg {
 		case TUInt:
-			v := common.Big(argvalues[idx])
+			v, ok := big.NewInt(0).SetString(argvalues[idx], 16)
+			if !ok {
+				err = bwe.M(bwe.InvalidUFI, "Could not parse argument")
+			}
 			v = common.U256(v)
 			data = append(data, common.BigToBytes(v, 256)...)
 		case TInt:
-			v := common.Big(argvalues[idx])
+			v, ok := big.NewInt(0).SetString(argvalues[idx], 16)
+			if !ok {
+				err = bwe.M(bwe.InvalidUFI, "Could not parse argument")
+			}
 			v = common.S256(v)
 			data = append(data, common.BigToBytes(v, 256)...)
 		case TString:
@@ -121,7 +130,6 @@ func EncodeABICall(ufi UFI, argvaluesi ...interface{}) (contract common.Address,
 			extra = append(extra, argv...)
 		case TBytes:
 			argv := common.FromHex(argvalues[idx])
-			fmt.Printf("argv: %064x\n", argv)
 			if len(argv) > 32 {
 				argv = argv[:32]
 			}

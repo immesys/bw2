@@ -5,7 +5,7 @@ import (
 
 	"github.com/immesys/bw2/objects"
 	"github.com/immesys/bw2/util/bwe"
-	"github.com/immesys/bw2bc/core/types"
+	"github.com/immesys/bw2bc/eth"
 )
 
 const (
@@ -36,7 +36,7 @@ func (bcc *bcClient) PublishEntity(acc int, ent *objects.Entity, confirmed func(
 	}
 	//And wait for it to confirm
 	bcc.bc.GetTransactionDetailsInt(txhash, bcc.DefaultTimeout, bcc.DefaultConfirmations,
-		nil, func(bn uint64, rcpt *types.Receipt, err error) {
+		nil, func(bn uint64, rcpt *eth.RPCTransaction, err error) {
 			if err != nil {
 				confirmed(err)
 				return
@@ -73,7 +73,7 @@ func (bcc *bcClient) PublishDOT(acc int, dot *objects.DOT, confirmed func(err er
 	}
 	//And wait for it to confirm
 	bcc.bc.GetTransactionDetailsInt(txhash, bcc.DefaultTimeout, bcc.DefaultConfirmations,
-		nil, func(bn uint64, rcpt *types.Receipt, err error) {
+		nil, func(bn uint64, rcpt *eth.RPCTransaction, err error) {
 			if err != nil {
 				confirmed(err)
 				return
@@ -110,7 +110,7 @@ func (bcc *bcClient) PublishAccessDChain(acc int, chain *objects.DChain, confirm
 	}
 	//And wait for it to confirm
 	bcc.bc.GetTransactionDetailsInt(txhash, bcc.DefaultTimeout, bcc.DefaultConfirmations,
-		nil, func(bn uint64, rcpt *types.Receipt, err error) {
+		nil, func(bn uint64, rcpt *eth.RPCTransaction, err error) {
 			if err != nil {
 				confirmed(err)
 				return

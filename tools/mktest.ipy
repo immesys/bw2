@@ -1,0 +1,116 @@
+#!/usr/bin/env ipython
+%run -i test_tooling.ipy
+
+#clear old objects
+!rm bwo/*
+!rm vars.js
+
+
+# Test 1 - entities
+def include_test1():
+  Nsrc, VKsrc, Fsrc = mkE()
+  Ndst, VKdst, Fdst = mkE(expired=True)
+  Ndst2, VKdst2, Fdst2 = mkE()
+  Ndr, VKdr, Fdr = mkE(dr=[VKsrc, VKdst])
+
+  mkbwvar(Fsrc, "t1_e_src")
+  mkbwvar(Fsrc, "t1_e_src_corrupt",corrupt=True)
+  mkbwvar(Fdst, "t1_e_dst_expired")
+  mkbwvar(Fdst, "t1_e_dst_expired_corrupt",corrupt=True)
+  mkbwvar(Fdr, "t1_e_dr")
+
+  stage("ldcc('Registry',[],'R', $$);")
+  printreg("pretest")
+  stage("ivk(R.doent, [t1_e_src], $$);")
+  printreg("t1","expect s1 to be 2")
+  # do corrupt one
+  stage("ivk(R.doent, [t1_e_src_corrupt], $$)")
+  printreg("t1c","expect s1 to be 1")
+  # do expired
+  stage("ivk(R.doent, [t1_e_dst_expired], $$)")
+  printreg("t1x", "expect s1 to be 2")
+  # do expired corurpt
+  stage("ivk(R.doent, [t1_e_dst_expired_corrupt], $$)")
+  printreg("t1xc", "expect s1 to be 1")
+  stage("ivk(R.doent, [t1_e_dr], $$)")
+  printreg("t1ent", "expect s0 to be 2 and s1 to be !=0 and some vks in s3 and s4")
+
+  # All the entities for these dots are in the registry.
+
+  # make this one expired
+  Ndot, Hdot, Fdot = mkD(Fsrc, Fdst, "PC*", "castle.bw2.io/foo/as", expired=True)
+  mkbwvar(Fdot, "t1b_dot_ex")
+  stage("ivk(R.dodot, [t1b_dot_ex], $$)")
+  printreg("t1b-dot-ex", "expect s0 to be 2")
+
+  # this dot is not expired
+  Ndot2, Hdot2, Fdot2 = mkD(Fsrc, Fdst2, "PC*", "castle.bw2.io/foo/as")
+  mkbwvar(Fdot2, "t1b_dot")
+  stage("ivk(R.dodot, [t1b_dot], $$)")
+  printreg("t1b-dot", "expect s0 to be 2")
+
+# Test2 chains
+def include_test2():
+  _, mVK, mF = mkE()
+  mkbwvar(mF, "t2_mvk")
+  _, aVK, aF = mkE()
+  mkbwvar(aF, "t2_a")
+  _, bVK, bF = mkE()
+  mkbwvar(bF, "t2_b")
+
+  stage("ldcc('Registry',[],'R', $$);")
+  printreg("pretest")
+  stage("ivk(R.AddEntity, [t2_mvk], $$);")
+  printreg("t2-mvk")
+  stage("ivk(R.AddEntity, [t2_a], $$);")
+  printreg("t2-a")
+  stage("ivk(R.AddEntity, [t2_b], $$);")
+  printreg("t2-b")
+
+  _, maH, maF = mkD(mF, aF, "PC*", mF, "foo/bar/baz")
+  mkbwvar(maF, "t2_d_ma")
+  _, abH, abF = mkD(aF, bF, "PC*", mF, "foo/bar/baz")
+  mkbwvar(abF, "t2_d_ab")
+
+  stage("ivk(R.AddDOT, [t2_d_ma], $$);")
+  printreg("t2-d_ma")
+  stage("ivk(R.AddDOT, [t2_d_ab], $$);")
+  printreg("t2-d_ab")
+
+  _, mvC, mbF = mkC(mF, "PC", bF, "foo/bar/baz")
+  mkbwvar(mbF, "t2_c_mb")
+  stage("ivk(R.AddChain, [t2_c_mb], $$);")
+  printreg("t2-c_mb")
+
+# Test3 long chains
+def include_test3():
+  eDRS=5
+  dDRS=5
+  N=50
+  dotfiles = []
+  stage("ldcc('Registry',[],'R', $$);")
+  printreg("pretest")
+  for i in xrange(N):
+    _,_,dF = mkE(dr=fakeDRs(eDRS))
+    n = "ent_%d" % i
+    mkbwvar(dF,n)
+    dotfiles.append(dF)
+    stage("ivk(R.AddEntity, ["+n+"],$$);")
+    printreg(n)
+  mvkF = dotfiles[0]
+  for i in xrange(1,N):
+    frm = dotfiles[i-1]
+    to = dotfiles[i]
+    n = "dot_%d" % i
+    _, _, F = mkD(frm, to, "PC*", mvkF, "foo/bar/baz", dr=fakeDRs(dDRS))
+    mkbwvar(F, n)
+    stage("ivk(R.AddDOT, ["+n+"], $$);")
+    printreg(n)
+  _, _, cF = mkC(mvkF, "PC", dotfiles[-1], "foo/bar/baz")
+  mkbwvar(cF, "t3_chain")
+  stage("ivk(R.AddChain, [t3_chain], $$);")
+  printreg("t3-chain")
+
+
+include_test3()
+write_stages()

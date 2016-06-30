@@ -244,31 +244,6 @@ func (c *BosswaveClient) CL() *core.Client {
 	return c.cl
 }
 
-//Connect to a peer by IP address without knowing VK
-/*
-func (c *BosswaveClient) GetPeerByTrustedTarget(target string) (*PeerClient, error) {
-	peer, err := ConnectToPeer(nil, target, true)
-	if err != nil {
-		return nil, err
-	}
-	return peer, nil
-}
-*/
-
-//InjectPeer puts the given peer into the caches so that it will be resolved
-//it returns the name of the peer that can be used later
-/*
-func (c *BosswaveClient) InjectPeer(p *PeerClient) string {
-	bw := c.BW()
-	bw.cachelock.Lock()
-	defer bw.cachelock.Unlock()
-	vks := crypto.FmtKey(p.GetRemoteVK())
-	bw.Namecache[vks] = p.GetRemoteVK()
-	bw.DRVKcache[vks] = p.GetRemoteVK()
-	bw.Targetcache[vks] = p.GetTarget()
-	return vks
-}
-*/
 //GetPeer gets the peer for the given NSVK, NOT THE PEER VK
 func (c *BosswaveClient) GetPeer(nsvk []byte) (*PeerClient, error) {
 	drvk, err := c.bw.LookupDesignatedRouter(nsvk)
@@ -284,7 +259,7 @@ func (c *BosswaveClient) GetPeer(nsvk []byte) (*PeerClient, error) {
 		if err != nil {
 			return nil, err
 		}
-		peer, err = c.ConnectToPeer(drvk, tgt, false)
+		peer, err = c.ConnectToPeer(drvk, tgt)
 		if err != nil {
 			return nil, err
 		}

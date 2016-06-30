@@ -33,34 +33,36 @@ func main() {
 	_ = randEnt
 	var lasttime int64
 	var lastdiff uint64
-
-	chain.CallOnNewBlocks(func(b *bc.Block) bool {
-		/*fmt.Println("Entity accounts: ")
-		for idx, acc := range addrs {
-			_, balstr, err := chain.GetBalance(idx)
-			if err != nil {
-				panic(err)
-			}
-			if idx <= 2 {
-				fmt.Printf(" %2d - %s : %s\n", idx, acc.Hex(), balstr)
-			}
-		}*/
-		dt := b.Time - lasttime
-		lasttime = b.Time
-		dd := int64(b.Difficulty) - int64(lastdiff)
-		lastdiff = b.Difficulty
-		fmt.Printf("Got block %d +%ds  diff=%d (%+d)\n", b.Number, dt, b.Difficulty, dd)
-		return false
-	})
-	client.SetDefaultConfirmations(1)
+	_ = client
+	_ = lasttime
+	_ = lastdiff
+	// chain.CallOnNewBlocks(func(b *bc.Block) bool {
+	// 	/*fmt.Println("Entity accounts: ")
+	// 	for idx, acc := range addrs {
+	// 		_, balstr, err := chain.GetBalance(idx)
+	// 		if err != nil {
+	// 			panic(err)
+	// 		}
+	// 		if idx <= 2 {
+	// 			fmt.Printf(" %2d - %s : %s\n", idx, acc.Hex(), balstr)
+	// 		}
+	// 	}*/
+	// 	dt := b.Time - lasttime
+	// 	lasttime = b.Time
+	// 	dd := int64(b.Difficulty) - int64(lastdiff)
+	// 	lastdiff = b.Difficulty
+	// 	fmt.Printf("Got block %d +%ds  diff=%d (%+d)\n", b.Number, dt, b.Difficulty, dd)
+	// 	return false
+	// })
+	// client.SetDefaultConfirmations(1)
 
 	//then := chain.CurrentBlock()
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt)
 	go func() {
-		<-chain.AfterBlockAgeLT(20)
+		//	<-chain.AfterBlockAgeLT(20)
 		<-time.After(2 * time.Second)
-		fmt.Println("submitting")
+		fmt.Println("Head age: ", chain.HeadBlockAge())
 		/*	client.CreateRoutingOffer(entity, randEnt.GetVK(), func(err error) {
 			fmt.Printf("\033[61mGOT RESULT OF CRO: %+v\n\033[0m", err)
 			go func() {
@@ -74,10 +76,10 @@ func main() {
 				}
 			}()
 		})*/
-//		fmt.Println("doing srv record\n")
-//		client.CreateSRVRecord(0, entity, "5.6.7.8:3000", func(err error) {
-//			fmt.Printf("Create serv record: %+v\n", err)
-//		})
+		//		fmt.Println("doing srv record\n")
+		//		client.CreateSRVRecord(0, entity, "5.6.7.8:3000", func(err error) {
+		//			fmt.Printf("Create serv record: %+v\n", err)
+		//		})
 
 		/*	client.CreateShortAlias(bc.Bytes32{1, 2, 3, 3}, func(alias uint64, err error) {
 			fmt.Printf("!!!!!!!!!!!!!!!!rv: %+v %+v\n", alias, err)
@@ -86,8 +88,8 @@ func main() {
 
 	for {
 		time.Sleep(5000 * time.Millisecond)
-		peer, st, cur, max := chain.SyncProgress()
-		fmt.Printf("syncprogress: %v %v %v %v - CUR %v\n", peer, st, cur, max, chain.CurrentBlock())
+		//	peer, st, cur, max := chain.SyncProgress()
+		//	fmt.Printf("syncprogress: %v %v %v %v - CUR %v\n", peer, st, cur, max, chain.CurrentBlock())
 		select {
 		case <-sig:
 			time.Sleep(1 * time.Second)

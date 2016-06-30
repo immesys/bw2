@@ -27,6 +27,7 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	log "github.com/cihub/seelog"
 	"github.com/immesys/bw2/crypto"
@@ -35,71 +36,128 @@ import (
 )
 
 type PeerClient struct {
-	seqno    uint64
-	conn     net.Conn
-	txmtx    sync.Mutex
-	replyCB  map[uint64]func(*nativeFrame)
-	remoteVK []byte
-	target   string
-	bwcl     *BosswaveClient
+	seqno      uint64
+	conn       net.Conn
+	txmtx      sync.Mutex
+	replyCB    map[uint64]func(*nativeFrame)
+	expectedVK []byte
+	target     string
+	bwcl       *BosswaveClient
+	asublock   sync.Mutex
+	activesubs map[uint64]*core.Message
 }
 
-func (cl *BosswaveClient) ConnectToPeer(vk []byte, target string, skipauth bool) (*PeerClient, error) {
+func (cl *PeerClient) reconnectPeer() error {
 	roots := x509.NewCertPool()
-	conn, err := tls.Dial("tcp", target, &tls.Config{
+	conn, err := tls.Dial("tcp", cl.target, &tls.Config{
 		InsecureSkipVerify: true,
 		RootCAs:            roots,
 	})
 	if err != nil {
-		return nil, err
+		return err
 	}
 	cs := conn.ConnectionState()
 	if len(cs.PeerCertificates) != 1 {
 		log.Criticalf("peer connection weird response")
-		return nil, errors.New("Wrong certificates")
+		return errors.New("Wrong certificates")
 	}
 	proof := make([]byte, 96)
 	_, err = io.ReadFull(conn, proof)
 	if err != nil {
-		return nil, errors.New("failed to read proof: " + err.Error())
+		return errors.New("failed to read proof: " + err.Error())
 	}
 	proofOK := crypto.VerifyBlob(proof[:32], proof[32:], cs.PeerCertificates[0].Signature)
 	if !proofOK {
-		return nil, errors.New("peer verification failed")
+		return errors.New("peer verification failed")
 	}
-	if !skipauth {
-		if !bytes.Equal(proof[:32], vk) {
-			return nil, errors.New("peer has a different VK")
-		}
+	if !bytes.Equal(proof[:32], cl.expectedVK) {
+		return errors.New("peer has a different VK")
 	}
+	cl.conn = conn
+	return nil
+}
+
+func (cl *BosswaveClient) ConnectToPeer(vk []byte, target string) (*PeerClient, error) {
 
 	rv := PeerClient{
-		conn:     conn,
-		replyCB:  make(map[uint64]func(*nativeFrame)),
-		remoteVK: proof[:32],
-		target:   target,
-		bwcl:     cl,
+		conn:       nil,
+		replyCB:    make(map[uint64]func(*nativeFrame)),
+		target:     target,
+		bwcl:       cl,
+		expectedVK: vk,
+		activesubs: make(map[uint64]*core.Message),
+	}
+	err := rv.reconnectPeer()
+	if err != nil {
+		return nil, err
 	}
 	go rv.rxloop()
 	return &rv, nil
 }
 
 func (pc *PeerClient) Destroy() {
+	//We don't care about our subs
+	pc.asublock.Lock()
+	pc.activesubs = make(map[uint64]*core.Message)
+	pc.asublock.Unlock()
 	pc.conn.Close()
 }
 func (pc *PeerClient) GetTarget() string {
 	return pc.target
 }
 func (pc *PeerClient) GetRemoteVK() []byte {
-	return pc.remoteVK
+	return pc.expectedVK
+}
+func (pc *PeerClient) regenSubs() {
+	pc.asublock.Lock()
+	defer pc.asublock.Unlock()
+	for seqno, msg := range pc.activesubs {
+		nf := nativeFrame{
+			cmd:   nCmdMessage,
+			body:  msg.Encoded,
+			seqno: seqno,
+		}
+		pc.txmtx.Lock()
+		cb := pc.replyCB[seqno]
+		//We don't really want result or status frames
+		filter := func(f *nativeFrame) {
+			switch f.cmd {
+			case nCmdResult:
+				fallthrough
+			case nCmdEnd:
+				cb(f)
+			}
+		}
+		pc.txmtx.Unlock()
+		pc.transact(&nf, filter)
+	}
 }
 func (pc *PeerClient) rxloop() {
 	hdr := make([]byte, 17)
 	for {
 		_, err := io.ReadFull(pc.conn, hdr)
 		if err != nil {
-			log.Info("peer client: ", err)
-			return
+			log.Infof("PEER CONNECTION to %s: %s", pc.target, err)
+			pc.asublock.Lock()
+			numsubs := len(pc.activesubs)
+			pc.asublock.Unlock()
+			if numsubs > 0 {
+				for {
+					log.Infof("We have active subs, attempting to reconnect to peer: %s", pc.target)
+					err := pc.reconnectPeer()
+					if err == nil {
+						log.Infof("Peer reconnected: %s", pc.target)
+						pc.regenSubs()
+						break
+					} else {
+						time.Sleep(5 * time.Second)
+					}
+				}
+				continue
+			} else {
+				return
+			}
+
 		}
 		ln := binary.LittleEndian.Uint64(hdr)
 		seqno := binary.LittleEndian.Uint64(hdr[8:])
@@ -108,7 +166,7 @@ func (pc *PeerClient) rxloop() {
 		_, err = io.ReadFull(pc.conn, body)
 		if err != nil {
 			log.Info("peer client: ", err)
-			return
+			continue
 		}
 		fr := nativeFrame{
 			length: ln,
@@ -143,12 +201,14 @@ func (pc *PeerClient) transact(f *nativeFrame, onRX func(f *nativeFrame)) {
 	if err != nil {
 		log.Info("peer write error: ", err.Error())
 		pc.conn.Close()
+		onRX(nil)
 		return
 	}
 	_, err = pc.conn.Write(f.body)
 	if err != nil {
 		log.Info("peer write error: ", err.Error())
 		pc.conn.Close()
+		onRX(nil)
 	}
 }
 func (pc *PeerClient) PublishPersist(m *core.Message, actionCB func(err error)) {
@@ -159,6 +219,10 @@ func (pc *PeerClient) PublishPersist(m *core.Message, actionCB func(err error)) 
 	}
 	pc.transact(&nf, func(f *nativeFrame) {
 		defer pc.removeCB(nf.seqno)
+		if f == nil {
+			actionCB(bwe.M(bwe.PeerError, "Peer disconnected"))
+			return
+		}
 		if len(f.body) < 2 {
 			actionCB(bwe.M(bwe.PeerError, "short response frame"))
 			return
@@ -200,6 +264,9 @@ func (pc *PeerClient) Subscribe(m *core.Message,
 				mid := binary.LittleEndian.Uint64(f.body[2:])
 				sig := binary.LittleEndian.Uint64(f.body[10:])
 				umid := core.UniqueMessageID{Mid: mid, Sig: sig}
+				pc.asublock.Lock()
+				pc.activesubs[nf.seqno] = m
+				pc.asublock.Unlock()
 				actionCB(nil, umid)
 			}
 			return
@@ -219,6 +286,9 @@ func (pc *PeerClient) Subscribe(m *core.Message,
 			return
 		case nCmdEnd:
 			//This will be signalled when we unsubscribe
+			pc.asublock.Lock()
+			delete(pc.activesubs, nf.seqno)
+			pc.asublock.Unlock()
 			messageCB(nil)
 			pc.removeCB(nf.seqno)
 		}

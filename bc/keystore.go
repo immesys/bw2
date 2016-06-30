@@ -9,8 +9,10 @@ import (
 	"sync"
 
 	"github.com/immesys/bw2/objects"
+	"github.com/immesys/bw2bc/accounts"
 	"github.com/immesys/bw2bc/common"
 	ethcrypto "github.com/immesys/bw2bc/crypto"
+	"github.com/immesys/bw2bc/crypto/secp256k1"
 	"github.com/pborman/uuid"
 	"golang.org/x/crypto/sha3"
 )
@@ -20,8 +22,8 @@ const MaxEntityAccounts = 16
 const namespace = "66d4d61e-957e-4a4a-9959-c0eeb46cbf68"
 
 type entityKeyStore struct {
-	ekeys map[Bytes32][]*ethcrypto.Key
-	akeys map[common.Address]*ethcrypto.Key
+	ekeys map[Bytes32][]*accounts.Key
+	akeys map[common.Address]*accounts.Key
 	alist []common.Address
 	ents  []*objects.Entity
 	mu    sync.Mutex
@@ -29,8 +31,8 @@ type entityKeyStore struct {
 
 func NewEntityKeyStore() *entityKeyStore {
 	rv := &entityKeyStore{
-		ekeys: make(map[Bytes32][]*ethcrypto.Key),
-		akeys: make(map[common.Address]*ethcrypto.Key),
+		ekeys: make(map[Bytes32][]*accounts.Key),
+		akeys: make(map[common.Address]*accounts.Key),
 	}
 	return rv
 }
@@ -59,7 +61,7 @@ func (eks *entityKeyStore) AddEntity(ent *objects.Entity) {
 		}
 	}
 	eks.ents = append(eks.ents, ent)
-	mainkeys := make([]*ethcrypto.Key, MaxEntityAccounts)
+	mainkeys := make([]*accounts.Key, MaxEntityAccounts)
 
 	for i := 0; i < MaxEntityAccounts; i++ {
 		mainkeys[i], _ = createKeyByIndex(ent, i)
@@ -96,20 +98,20 @@ func (eks *entityKeyStore) GetKeyAddresses() ([]common.Address, error) {
 	*/
 }
 
-func createKeyByIndex(ent *objects.Entity, index int) (*ethcrypto.Key, error) {
+func createKeyByIndex(ent *objects.Entity, index int) (*accounts.Key, error) {
 	seed := make([]byte, 64)
 	copy(seed[0:32], ent.GetSK())
 	copy(seed[32:64], common.BigToBytes(big.NewInt(int64(index)), 256))
 	rand := sha3.Sum512(seed)
 	reader := bytes.NewReader(rand[:])
-	privateKeyECDSA, err := ecdsa.GenerateKey(ethcrypto.S256(), reader)
+	privateKeyECDSA, err := ecdsa.GenerateKey(secp256k1.S256(), reader)
 	if err != nil {
 		return nil, err
 	}
 	//namespace is public key
 	ns := uuid.Parse(namespace)
 	id := uuid.NewSHA1(ns, seed)
-	key := &ethcrypto.Key{
+	key := &accounts.Key{
 		Id:         id,
 		Address:    ethcrypto.PubkeyToAddress(privateKeyECDSA.PublicKey),
 		PrivateKey: privateKeyECDSA,
@@ -117,11 +119,11 @@ func createKeyByIndex(ent *objects.Entity, index int) (*ethcrypto.Key, error) {
 	return key, nil
 }
 
-func (eks *entityKeyStore) GenerateNewKey(r io.Reader, s string) (*ethcrypto.Key, error) {
+func (eks *entityKeyStore) GenerateNewKey(r io.Reader, s string) (*accounts.Key, error) {
 	return nil, fmt.Errorf("Unsupported operation")
 }
 
-func (eks *entityKeyStore) GetKey(addr common.Address, auth string) (*ethcrypto.Key, error) {
+func (eks *entityKeyStore) GetKey(addr common.Address, filename string, auth string) (*accounts.Key, error) {
 	eks.mu.Lock()
 	defer eks.mu.Unlock()
 	k, ok := eks.akeys[addr]
@@ -131,15 +133,11 @@ func (eks *entityKeyStore) GetKey(addr common.Address, auth string) (*ethcrypto.
 	return nil, fmt.Errorf("Addr not found: %x", addr)
 }
 
-func (eks *entityKeyStore) StoreKey(k *ethcrypto.Key, auth string) error {
+func (eks *entityKeyStore) StoreKey(filename string, k *accounts.Key, auth string) error {
 	panic(k)
 	//return fmt.Errorf("Unsupported operation")
 }
-func (eks *entityKeyStore) DeleteKey(k common.Address, auth string) error {
-	panic(k)
-	//return fmt.Errorf("Unsupported operation")
-}
-func (eks *entityKeyStore) Cleanup(k common.Address) error {
-	panic(k)
-	//return fmt.Errorf("Unsupported operation")
+
+func (eks *entityKeyStore) JoinPath(filename string) string {
+	panic("joinpath called")
 }

@@ -46,6 +46,12 @@ type BlockChainClient interface {
 	//Accept a designated router offer. This will overwrite previous acceptances
 	AcceptRoutingOffer(acc int, ns *objects.Entity, drvk []byte, confirmed func(err error))
 
+	//Undo a routing binding from the NS side
+	RetractRoutingAcceptance(acc int, ns *objects.Entity, drvk []byte, confirmed func(err error))
+
+	//Undo a routing binding from the DR side
+	RetractRoutingOffer(acc int, dr *objects.Entity, nsvk []byte, confirmed func(err error))
+
 	//Create the service record (host:port) for the given designated router
 	CreateSRVRecord(acc int, dr *objects.Entity, record string, confirmed func(err error))
 

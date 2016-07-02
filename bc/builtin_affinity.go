@@ -7,6 +7,7 @@ import (
 
 	"github.com/immesys/bw2/crypto"
 	"github.com/immesys/bw2/objects"
+	"github.com/immesys/bw2/util/bwe"
 	"github.com/immesys/bw2bc/common"
 	"github.com/immesys/bw2bc/crypto/sha3"
 	"github.com/immesys/bw2bc/eth"
@@ -51,7 +52,7 @@ func (bcc *bcClient) CreateRoutingOffer(acc int, dr *objects.Entity, nsvk []byte
 				return
 			}
 			if rvz[0].(*big.Int).Cmp(nonce) != 0 {
-				confirmed(fmt.Errorf("Nonce did not match %v vs %v", nonce.Text(10), rvz[0].(*big.Int).Text(10)))
+				confirmed(bwe.M(bwe.BlockChainGenericError, fmt.Sprintf("Nonce did not match %v vs %v", nonce.Text(10), rvz[0].(*big.Int).Text(10))))
 				return
 			}
 			confirmed(nil)
@@ -89,12 +90,10 @@ func (bcc *bcClient) CreateSRVRecord(acc int, dr *objects.Entity, record string,
 	//meh we need to rewrite this function
 	bcc.bc.GetTransactionDetailsInt(txhash, bcc.DefaultTimeout, bcc.DefaultConfirmations,
 		nil, func(bn uint64, rcpt *eth.RPCTransaction, err error) {
-			fmt.Println("A")
 			if err != nil {
 				confirmed(err)
 				return
 			}
-			fmt.Println("B")
 			//Check to see if it all matches now:
 			rvz, err := bcc.bc.CallOffChain(StringToUFI(UFI_Affinity_DRSRV),
 				dr.GetVK())
@@ -102,16 +101,10 @@ func (bcc *bcClient) CreateSRVRecord(acc int, dr *objects.Entity, record string,
 				confirmed(err)
 				return
 			}
-			fmt.Println("C")
 			if string(rvz[0].([]byte)) != record {
-				fmt.Println("E")
-				confirmed(fmt.Errorf("SRV record didn't match"))
+				confirmed(bwe.M(bwe.BlockChainGenericError, "SRV record didn't match"))
 				return
-			} else {
-				fmt.Println("D")
-				fmt.Printf("record confirmed %s == %s\n", string(rvz[0].([]byte)), record)
 			}
-			fmt.Println("F")
 			confirmed(nil)
 		})
 }
@@ -168,6 +161,111 @@ func (bc *blockChain) FindRoutingAffinities(drvk []byte) (nsvks [][]byte) {
 	return rv
 }
 
+func (bcc *bcClient) RetractRoutingOffer(acc int, dr *objects.Entity, nsvk []byte, confirmed func(err error)) {
+	//DR side
+	rv, err := bcc.bc.CallOffChain(StringToUFI(UFI_Affinity_DRNonces), dr.GetVK())
+	if err != nil {
+		panic(err)
+	}
+	nonce := rv[0].(*big.Int)
+	nonce.Add(nonce, big.NewInt(1))
+
+	//Lets create the signature
+	d := sha3.NewKeccak256()
+	d.Write([]byte("RetractRoutingDR"))
+	d.Write(dr.GetVK())
+	d.Write(nsvk)
+	d.Write(common.BigToBytes(nonce, 256))
+	hsh := d.Sum(nil)
+	sig := make([]byte, 64)
+	crypto.SignBlob(dr.GetSK(), dr.GetVK(), sig, hsh)
+
+	//Then let us try create offer
+	txhash, err := bcc.CallOnChain(acc, StringToUFI(UFI_Affinity_RetractRoutingDR), "", "", "",
+		dr.GetVK(), nsvk, nonce, sig)
+	if err != nil {
+		confirmed(err)
+		return
+	}
+	//And wait for it to confirm
+	bcc.bc.GetTransactionDetailsInt(txhash, bcc.DefaultTimeout, bcc.DefaultConfirmations,
+		nil, func(bn uint64, rcpt *eth.RPCTransaction, err error) {
+			//Check to see if it all matches now:
+			rvz, err := bcc.bc.CallOffChain(StringToUFI(UFI_Affinity_AffinityOffers),
+				dr.GetVK(), nsvk)
+			if err != nil {
+				confirmed(err)
+				return
+			}
+			if rvz[0].(*big.Int).Cmp(big.NewInt(0)) != 0 {
+				confirmed(bwe.M(bwe.BlockChainGenericError, "DROffer still stands: "+nonce.Text(10)+" "+rvz[0].(*big.Int).Text(10)))
+				return
+			}
+			confirmed(nil)
+		})
+}
+
+func (bcc *bcClient) RetractRoutingAcceptance(acc int, ns *objects.Entity, drvk []byte, confirmed func(err error)) {
+	//NS side
+	//Check to see if the offer is actually active
+	rvz, err := bcc.bc.CallOffChain(StringToUFI(UFI_Affinity_DesignatedRouterFor),
+		ns.GetVK())
+	if err != nil {
+		confirmed(err)
+		return
+	}
+	if !bytes.Equal(rvz[0].([]byte), drvk) {
+		confirmed(bwe.M(bwe.BlockChainGenericError, "The given routing offer is not active"))
+	}
+
+	rv, err := bcc.bc.CallOffChain(StringToUFI(UFI_Affinity_NSNonces), ns.GetVK())
+	if err != nil {
+		panic(err)
+	}
+	nonce := rv[0].(*big.Int)
+	nonce.Add(nonce, big.NewInt(1))
+	//Lets create the signature
+	d := sha3.NewKeccak256()
+	d.Write([]byte("RetractRoutingNS"))
+	d.Write(ns.GetVK())
+	d.Write(drvk)
+	d.Write(common.BigToBytes(nonce, 256))
+	hsh := d.Sum(nil)
+	sig := make([]byte, 64)
+	crypto.SignBlob(ns.GetSK(), ns.GetVK(), sig, hsh)
+
+	//Then let us try reject offer
+	txhash, err := bcc.CallOnChain(acc, StringToUFI(UFI_Affinity_RetractRoutingNS), "", "", "",
+		ns.GetVK(), drvk, nonce, sig)
+	if err != nil {
+		confirmed(err)
+		return
+	}
+
+	//And wait for it to confirm
+	//meh we need to rewrite this function
+	bcc.bc.GetTransactionDetailsInt(txhash, bcc.DefaultTimeout, bcc.DefaultConfirmations,
+		nil, func(bn uint64, rcpt *eth.RPCTransaction, err error) {
+			if err != nil {
+				confirmed(err)
+				return
+			}
+			//Check to see if it all matches now:
+			rvz, err := bcc.bc.CallOffChain(StringToUFI(UFI_Affinity_DesignatedRouterFor),
+				ns.GetVK())
+			if err != nil {
+				confirmed(err)
+				return
+			}
+			if bytes.Equal(rvz[0].([]byte), drvk) {
+				confirmed(bwe.M(bwe.BlockChainGenericError, "Designated router record still exists"))
+			} else {
+				confirmed(nil)
+			}
+		})
+
+}
+
 func (bcc *bcClient) AcceptRoutingOffer(acc int, ns *objects.Entity, drvk []byte, confirmed func(err error)) {
 	//First lets find out what our nonce is
 	fmt.Printf("ADRO ns=%s dr=%s\n", crypto.FmtKey(ns.GetVK()), crypto.FmtKey(drvk))
@@ -212,7 +310,7 @@ func (bcc *bcClient) AcceptRoutingOffer(acc int, ns *objects.Entity, drvk []byte
 			if bytes.Equal(rvz[0].([]byte), drvk) {
 				confirmed(nil)
 			} else {
-				confirmed(fmt.Errorf("Designated router record did not match"))
+				confirmed(bwe.M(bwe.BlockChainGenericError, "Designated router record did not match"))
 			}
 		})
 }
@@ -223,7 +321,7 @@ func (bc *blockChain) GetDesignatedRouterFor(nsvk []byte) ([]byte, error) {
 		return nil, err
 	}
 	if bytes.Equal(rvz[0].([]byte), make([]byte, 32)) {
-		return nil, fmt.Errorf("Designated router not found")
+		return nil, bwe.M(bwe.BlockChainGenericError, "Designated router not found")
 	}
 	return rvz[0].([]byte), nil
 }
@@ -234,7 +332,7 @@ func (bc *blockChain) GetSRVRecordFor(drvk []byte) (string, error) {
 		return "", err
 	}
 	if len(rvz[0].([]byte)) == 0 {
-		return "", fmt.Errorf("SRV record not found")
+		return "", bwe.M(bwe.BlockChainGenericError, "SRV record not found")
 	}
 	//fmt.Println("srv lookup: ", string(rvz[0].([]byte)))
 	return string(rvz[0].([]byte)), nil

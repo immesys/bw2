@@ -399,6 +399,44 @@ func main() {
 			},
 		},
 		{
+			Name:    "revokeDROffer",
+			Aliases: []string{"rdro"},
+			Usage:   "revoke a designated router offer",
+			Action:  cli.ActionFunc(actionRDRO),
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name:  "dr",
+					Usage: "the designated router entity",
+					Value: "",
+				},
+				cli.StringFlag{
+					Name:  "ns",
+					Usage: "the namespace entity to revoke",
+					Value: "",
+				},
+				bflag,
+			},
+		},
+		{
+			Name:    "revokeAcceptedDROffer",
+			Aliases: []string{"radro"},
+			Usage:   "revoke an acceptance of a designated router offer",
+			Action:  cli.ActionFunc(actionRADRO),
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name:  "dr",
+					Usage: "the designated router that made the offer",
+					Value: "",
+				},
+				cli.StringFlag{
+					Name:  "ns",
+					Usage: "the namespace entity that accepted the offer",
+					Value: "",
+				},
+				bflag,
+			},
+		},
+		{
 			Name:   "usrv",
 			Usage:  "accept a designated router SRV record",
 			Action: cli.ActionFunc(actionUSRV),

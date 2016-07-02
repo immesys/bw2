@@ -27,6 +27,8 @@ CmdResolveAlias        = "resa"
 CmdNewDROffer          = "ndro"
 CmdAcceptDROffer       = "adro"
 CmdResolveAnything     = "resx"
+CmdRevokeDROffer					 = "rdro"
+CmdRevokeDRAccept 	= "rdra"
 */
 
 func (bf *boundFrame) cmdPutDot() {
@@ -504,6 +506,34 @@ func (bf *boundFrame) cmdUnsubscribe() {
 	}
 	bf.bwcl.Unsubscribe(*core.UniqueMessageIDFromString(handle), bf.mkFinalGenericActionCB())
 
+}
+func (bf *boundFrame) cmdRevokeDROffer() {
+	bf.checkChainAge()
+	acc := bf.loadAccount()
+	ent := bf.loadEntityPoOrUs()
+	nsvkS, nsvkok := bf.f.GetFirstHeader("nsvk")
+	if !nsvkok {
+		panic(bwe.M(bwe.InvalidOOBCommand, "missing kv(nsvk)"))
+	}
+	nsvk, err := bf.bwcl.BW().ResolveKey(nsvkS)
+	if err != nil {
+		panic(err)
+	}
+	bf.bwcl.BCC().RetractRoutingOffer(acc, ent, nsvk, bf.mkFinalGenericActionCB())
+}
+func (bf *boundFrame) cmdRevokeDRAccept() {
+	bf.checkChainAge()
+	acc := bf.loadAccount()
+	ent := bf.loadEntityPoOrUs()
+	drvkS, drvkok := bf.f.GetFirstHeader("drvk")
+	if !drvkok {
+		panic(bwe.M(bwe.InvalidOOBCommand, "missing kv(drvk)"))
+	}
+	drvk, err := bf.bwcl.BW().ResolveKey(drvkS)
+	if err != nil {
+		panic(err)
+	}
+	bf.bwcl.BCC().RetractRoutingAcceptance(acc, ent, drvk, bf.mkFinalGenericActionCB())
 }
 func (bf *boundFrame) cmdDevelop() {
 	// bf.checkChainAge()

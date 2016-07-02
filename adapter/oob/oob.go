@@ -450,6 +450,10 @@ func (bf *boundFrame) Handle() {
 		bf.cmdSubView()
 	case objects.CmdUnsubscribe:
 		bf.cmdUnsubscribe()
+	case objects.CmdRevokeDROffer:
+		bf.cmdRevokeDROffer()
+	case objects.CmdRevokeDRAccept:
+		bf.cmdRevokeDRAccept()
 	case "devl":
 		bf.cmdDevelop()
 	default:

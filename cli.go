@@ -307,6 +307,78 @@ func actionMkDRO(c *cli.Context) error {
 	doChainOp(cl, dchan)
 	return nil
 }
+func actionRDRO(c *cli.Context) error {
+	cl := bw2bind.ConnectOrExit("")
+	nsp := c.String("ns")
+	if nsp == "" {
+		fmt.Println("'ns' parameter required")
+		os.Exit(1)
+	}
+	ns, ok := getEntityParamVK(cl, c, nsp)
+	if !ok {
+		fmt.Println("Could not resolve ns param")
+		os.Exit(1)
+	}
+	dr := getAvailableEntity(c, c.String("dr"))
+	if dr == nil {
+		fmt.Println("Could not load designated router")
+		os.Exit(1)
+	}
+	//If a bankroll is specified, we will use that to pay
+	if c.String("bankroll") != "" {
+		br := getBankroll(c, cl)
+		cl.SetEntity(br)
+	} else {
+		cl.SetEntity(dr.GetSigningBlob())
+	}
+	dchan := make(chan string, 1)
+	go func() {
+		err := cl.RevokeDesignatedRouterOffer(0, ns, dr)
+		if err == nil {
+			dchan <- "Designated router offer revoked and confirmed"
+		} else {
+			dchan <- "Error revoking routing offer: " + err.Error()
+		}
+	}()
+	doChainOp(cl, dchan)
+	return nil
+}
+func actionRADRO(c *cli.Context) error {
+	cl := bw2bind.ConnectOrExit("")
+	drp := c.String("dr")
+	if drp == "" {
+		fmt.Println("'dr' parameter required")
+		os.Exit(1)
+	}
+	dr, ok := getEntityParamVK(cl, c, drp)
+	if !ok {
+		fmt.Println("Could not resolve dr param")
+		os.Exit(1)
+	}
+	ns := getAvailableEntity(c, c.String("ns"))
+	if ns == nil {
+		fmt.Println("Could not load 'ns' entity")
+		os.Exit(1)
+	}
+	//If a bankroll is specified, we will use that to pay
+	if c.String("bankroll") != "" {
+		br := getBankroll(c, cl)
+		cl.SetEntity(br)
+	} else {
+		cl.SetEntity(ns.GetSigningBlob())
+	}
+	dchan := make(chan string, 1)
+	go func() {
+		err := cl.RevokeAcceptanceOfDesignatedRouterOffer(0, dr, ns)
+		if err == nil {
+			dchan <- "Designated router offer acceptance revoked and confirmed"
+		} else {
+			dchan <- "Error revoking accepted routing offer: " + err.Error()
+		}
+	}()
+	doChainOp(cl, dchan)
+	return nil
+}
 func actionLsDRO(c *cli.Context) error {
 	cl := bw2bind.ConnectOrExit("")
 	nsp := c.String("ns")

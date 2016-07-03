@@ -134,10 +134,9 @@ func (c *BosswaveClient) Publish(params *PublishParams,
 
 	if params.DoVerify {
 		//log.Info("verifying")
-		s := m.Verify(c.BW())
-		if s.Code != bwe.Okay {
-			log.Info("verification failed")
-			cb(bwe.M(s.Code, "message verification failed"))
+		err := m.Verify(c.BW())
+		if err != nil {
+			cb(err)
 			return
 		}
 	}
@@ -212,9 +211,9 @@ func (c *BosswaveClient) Subscribe(params *SubscribeParams,
 	c.checkAddOriginVK(m)
 	c.finishMessage(m)
 	if params.DoVerify {
-		s := m.Verify(c.BW())
-		if s.Code != bwe.Okay {
-			actionCB(bwe.C(s.Code), false, core.UniqueMessageID{})
+		err := m.Verify(c.BW())
+		if err != nil {
+			actionCB(err, false, core.UniqueMessageID{})
 			return
 		}
 	}
@@ -365,9 +364,9 @@ func (c *BosswaveClient) List(params *ListParams,
 	c.finishMessage(m)
 
 	if params.DoVerify {
-		s := m.Verify(c.BW())
-		if s.Code != bwe.Okay {
-			actionCB(bwe.M(s.Code, "Message failed local verification"))
+		err := m.Verify(c.BW())
+		if err != nil {
+			actionCB(err)
 			return
 		}
 	}
@@ -425,9 +424,9 @@ func (c *BosswaveClient) Query(params *QueryParams,
 	c.finishMessage(m)
 
 	if params.DoVerify {
-		s := m.Verify(c.BW())
-		if s.Code != bwe.Okay {
-			actionCB(bwe.M(s.Code, "message failed local verification"))
+		err := m.Verify(c.BW())
+		if err != nil {
+			actionCB(err)
 			return
 		}
 	}
@@ -440,11 +439,11 @@ func (c *BosswaveClient) Query(params *QueryParams,
 				resultCB(nil)
 				return
 			}
-			sm := m.Verify(c.BW())
-			if sm.Code == bwe.Okay {
+			err := m.Verify(c.BW())
+			if err == nil {
 				resultCB(m)
 			} else {
-				log.Info("dropping local query result (failed verify)")
+				log.Infof("dropping local query result (failed verify %s)", err.Error())
 			}
 		})
 	} else { //Remote delivery

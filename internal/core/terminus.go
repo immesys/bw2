@@ -28,7 +28,6 @@ package core
 // messages will be verified by outer layers
 
 import (
-	"fmt"
 	"math/rand"
 	"strings"
 	"sync"
@@ -164,7 +163,7 @@ func (s *snode) addSub(parts []string, sub subscription) (UniqueMessageID, *snod
 //messages. i.e subscriptions must be unique within a client
 func (tm *Terminus) AddSub(topic string, s subscription) UniqueMessageID {
 	parts := strings.Split(topic, "/")
-	fmt.Println("Add subscription: ", parts)
+	log.Infof("Add subscription: %v", parts)
 	subid, node := tm.stree.addSub(parts, s)
 	if subid == s.subid { //This was a new subscription
 		tm.rstree_lock.Lock()
@@ -262,21 +261,35 @@ func (cl *Client) Persist(m *Message) {
 func (cl *Client) Query(m *Message, cb func(m *Message)) {
 	rc := make(chan store.SM, 3)
 	go store.GetMatchingMessage(m.Topic, rc)
-	for {
-		select {
-		case sm, ok := <-rc:
-			if ok {
-				m, err := LoadMessage(sm.Body)
-				if err != nil {
-					panic("Not expecting error from unpersist: " + err.Error())
-				}
-				cb(m)
-			} else {
-				cb(nil)
-				return
-			}
+	for sm := range rc {
+		//We could check validity of the message, but whoever
+		//we send this to will do that. We just check expiry because
+		//it is cheap
+		m, err := LoadMessage(sm.Body)
+		if err != nil {
+			panic("Not expecting error from unpersist: " + err.Error())
+		}
+		if !m.ExpireTime.Before(time.Now()) {
+			cb(m)
 		}
 	}
+	cb(nil)
+	/*
+		for {
+			select {
+			case sm, ok := <-rc:
+				if ok {
+					m, err := LoadMessage(sm.Body)
+					if err != nil {
+						panic("Not expecting error from unpersist: " + err.Error())
+					}
+					cb(m)
+				} else {
+					cb(nil)
+					return
+				}
+			}
+		}*/
 }
 
 func (cl *Client) List(m *Message, cb func(s string, ok bool)) {

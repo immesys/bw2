@@ -116,7 +116,7 @@ func getAccountParam(bwcl *bw2bind.BW2Client, c *cli.Context, param string) stri
 	//First try it as an entity file:
 	se := loadSigningEntityFile(param)
 	if se != nil {
-		rv, _ := se.GetAccountHex(0)
+		rv, _ := coldstore.GetAccountHex(se, 0)
 		return rv
 	}
 	//Then try it as hex directly
@@ -1038,7 +1038,9 @@ func actionQuery(c *cli.Context) {
 		os.Exit(1)
 	}
 	cl.SetEntity(e.GetSigningBlob())
+	wg := sync.WaitGroup{}
 	for _, uri := range c.Args() {
+		wg.Add(1)
 		ch := cl.QueryOrExit(&bw2bind.QueryParams{
 			URI:       uri,
 			AutoChain: true,
@@ -1049,9 +1051,22 @@ func actionQuery(c *cli.Context) {
 					m.Dump()
 				}
 			}
+			wg.Done()
 		}()
 	}
-	for {
-		time.Sleep(10 * time.Second)
-	}
+	wg.Wait()
+}
+func actionRevoke(c *cli.Context) {
+	// --with entity
+	// --entity <alias/vk>
+	// --dot <dothash/alias>
+	// --nopublish
+}
+func actionRetractADRO(c *cli.Context) {
+	// --ns namespace entity
+	// --dr dr vk / alias
+}
+func actionRetractDRO(c *cli.Context) {
+	// --dr namespace entity
+	// --ns vk / alias
 }

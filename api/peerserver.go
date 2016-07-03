@@ -29,7 +29,6 @@ import (
 	"math/big"
 	"net"
 	"os"
-	"strconv"
 	"sync"
 	"time"
 
@@ -205,10 +204,10 @@ func handleSession(cl *BosswaveClient, conn net.Conn) {
 					errframe(nf.seqno, bwe.AffinityMismatch, err.Error())
 					return
 				}
-				s := msg.Verify(cl.BW())
-				if s.Code != bwe.Okay {
-					log.Info("message failed verification")
-					errframe(nf.seqno, s.Code, "see code("+strconv.Itoa(s.Code)+")")
+				err = msg.Verify(cl.BW())
+				if err != nil {
+					bws := bwe.AsBW(err)
+					errframe(nf.seqno, bws.Code, bws.Msg)
 					return
 				}
 				//log.Info("message verified ok")

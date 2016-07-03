@@ -55,12 +55,43 @@ type BW struct {
 	bchain bc.BlockChainProvider
 
 	//This is all for resolution caching
-	cachemu sync.Mutex
+	cachemu sync.RWMutex
 
 	lag       *Lagger
 	cachesize int
 	//from vk -> to vk -> []dothash
 	dotcache map[bc.Bytes32]map[bc.Bytes32][]bc.Bytes32
+	//registry caching
+	// vk -> entity
+	entityCache map[bc.Bytes32]*registryEntityResult
+	// dothash -> dot
+	dotHashCache map[bc.Bytes32]*registryDOTResult
+	// dot from vk -> same result object
+	dotFromCache map[bc.Bytes32]*registryDOTResult
+	// dot to vk -> same result object
+	dotToCache map[bc.Bytes32]*registryDOTResult
+}
+
+type registryEntityResult struct {
+	ro    *objects.Entity
+	s     int
+	valid bool
+	//This will only be for s != StateError
+	err error
+}
+
+type registryDOTResult struct {
+	ro    *objects.DOT
+	s     int
+	valid bool
+	//This will only be for s != StateError
+	err error
+}
+
+type registryChainResult struct {
+	ro    *objects.DChain
+	s     int
+	valid bool
 }
 
 func (bw *BW) BC() bc.BlockChainProvider {

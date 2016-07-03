@@ -19,26 +19,20 @@ package objects
 
 import (
 	"bytes"
-	"crypto/ecdsa"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
-	"math/big"
 	"runtime/debug"
 	"strconv"
 	"time"
-
-	"golang.org/x/crypto/sha3"
 
 	log "github.com/cihub/seelog"
 	"github.com/immesys/bw2/crypto"
 	"github.com/immesys/bw2/util"
 	"github.com/immesys/bw2/util/bwe"
-	"github.com/immesys/bw2bc/common"
-	ethcrypto "github.com/immesys/bw2bc/crypto"
 )
 
 //RoutingObject is the interface that is common among all objects that
@@ -91,22 +85,6 @@ func (ro *DChain) IsPayloadObject() bool {
 }
 func (ro *Entity) IsPayloadObject() bool {
 	return false
-}
-func (ro *Entity) GetAccountHex(index int) (string, error) {
-	if ro.sk == nil || len(ro.sk) != 32 {
-		return "", bwe.M(bwe.BadOperation, "No signing key for account extrapolation")
-	}
-	seed := make([]byte, 64)
-	copy(seed[0:32], ro.GetSK())
-	copy(seed[32:64], common.BigToBytes(big.NewInt(int64(index)), 256))
-	rand := sha3.Sum512(seed)
-	reader := bytes.NewReader(rand[:])
-	privateKeyECDSA, err := ecdsa.GenerateKey(ethcrypto.S256(), reader)
-	if err != nil {
-		panic(err)
-	}
-	addr := ethcrypto.PubkeyToAddress(privateKeyECDSA.PublicKey)
-	return addr.Hex(), nil
 }
 
 // DChain is a list of DOT hashes
@@ -1873,6 +1851,16 @@ type Revocation struct {
 	comment   string
 }
 
+func CreateRevocation(authVK []byte, target []byte, comment string) *Revocation {
+	n := time.Now()
+	rv := &Revocation{
+		vk:      authVK,
+		target:  target,
+		created: &n,
+		comment: comment,
+	}
+	return rv
+}
 func (ro *Revocation) GetHash() []byte {
 	if len(ro.hash) != 32 {
 		panic("Bad Revocation Hash")
@@ -2034,6 +2022,8 @@ func (ro *Revocation) Encode(sk []byte) {
 		buf = append(buf, []byte(ro.comment)...)
 	}
 	buf = append(buf, 0x00)
+	hash := sha256.Sum256(buf)
+	ro.hash = hash[:]
 	sig := make([]byte, 64)
 	crypto.SignBlob(sk, ro.vk, sig, buf)
 	buf = append(buf, sig...)

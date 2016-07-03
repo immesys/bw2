@@ -80,6 +80,9 @@ type BlockChainClient interface {
 
 	//Publish the given DChain. The dots and entities must be published already
 	PublishAccessDChain(acc int, chain *objects.DChain, confirmed func(err error))
+
+	//Publish the given revocation. The target must be published already
+	PublishRevocation(acc int, rvk *objects.Revocation, confirmed func(err error))
 }
 type BlockChainProvider interface {
 
@@ -190,4 +193,7 @@ type BlockChainProvider interface {
 	//and expiry from all the DOTs and Entities. Will error if any
 	//dots or entities do not resolve.
 	ResolveAccessDChain(chainhash []byte) (*objects.DChain, int, error)
+
+	//Check what the first alias made for the given value is
+	UnresolveAlias(value Bytes32) (key Bytes32, iszero bool, err error)
 }

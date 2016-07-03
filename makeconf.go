@@ -59,7 +59,7 @@ func makeConf(c *cli.Context) {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-	lpath := "bw2.log"
+	lpath := configdir + "/" + "bw2.log"
 	if c.String("logfile") != "" {
 		lpath = c.String("logfile")
 	}

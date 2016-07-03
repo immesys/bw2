@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/gob"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"path"
 	"strings"
@@ -58,16 +59,43 @@ func (bw *BW) startResolutionLoop() {
 		//Check the logs for DOTs
 		for _, l := range b.Logs {
 			log.Tracef("Found log from %x \n %s", l.ContractAddress(), l.String())
-			topicz := []bc.Bytes32{bc.HexToBytes32(bc.EventSig_Registry_NewDOT)}
-			if l.ContractAddress() == bc.HexToAddress(bc.UFI_Registry_Address) &&
-				l.MatchesTopicsStrict(topicz) {
-				log.Tracef("Found a DOT: \n%s", l)
-				dh := l.Topics()[1]
-				dot, _, err := bw.ResolveDOT(dh[:])
-				if err != nil {
-					panic(err)
+			if l.ContractAddress() == bc.HexToAddress(bc.UFI_Registry_Address) {
+				switch {
+				case l.MatchesTopicsStrict([]bc.Bytes32{
+					bc.HexToBytes32(bc.EventSig_Registry_NewDOT)}):
+					log.Tracef("Found a DOT: \n%s", l)
+					dh := l.Topics()[1]
+					dot, _, err := bw.ResolveDOT(dh[:])
+					if err != nil {
+						panic(err)
+					}
+					bw.CacheDOT(dot)
+
+				case l.MatchesTopicsStrict([]bc.Bytes32{
+					bc.HexToBytes32(bc.EventSig_Registry_NewDOTRevocation)}):
+					log.Tracef("Found a DOT revocation: \n%s", l)
+					bw.cachemu.Lock()
+					dh := l.Topics()[1]
+					entry, ok := bw.dotHashCache[dh]
+					if ok {
+						entry.valid = false
+					}
+					bw.cachemu.Unlock()
+				case l.MatchesTopicsStrict([]bc.Bytes32{
+					bc.HexToBytes32(bc.EventSig_Registry_NewEntityRevocation)}):
+					vk := l.Topics()[1]
+					fE, ok := bw.dotFromCache[vk]
+					if ok {
+						fmt.Println("invalidated DOT fcache entry")
+						fE.valid = false
+					}
+					tE, ok := bw.dotToCache[vk]
+					if ok {
+						fmt.Println("invalidated DOT tcache entry")
+						tE.valid = false
+					}
+					bw.cachemu.Unlock()
 				}
-				bw.CacheDOT(dot)
 			}
 		}
 	}, func() {
@@ -263,6 +291,16 @@ func NullTerminatedByteSliceToString(bs []byte) string {
 	}
 	return buffer.String()
 }
+func (bw *BW) UnresolveAlias(val []byte) (string, bool, error) {
+	if len(val) > 32 {
+		return "", false, nil
+	}
+	key, iszero, err := bw.BC().UnresolveAlias(bc.SliceToBytes32(val))
+	if err != nil || iszero {
+		return "", false, err
+	}
+	return NullTerminatedByteSliceToString(key[:]), true, nil
+}
 func (bw *BW) ExpandAliases(in string) (string, error) {
 	var buffer bytes.Buffer
 	for i, w := 0, 0; i < len(in); i += w {
@@ -325,6 +363,65 @@ func (bw *BW) ResolveKey(name string) ([]byte, error) {
 	return res[:], nil
 }
 
+// Although this is in resolution, we actually evaluate expiry based on the
+// real wall time. Err is actually a useful value that can be used higher up
+// plus we validate the entities in the DOT too
+func (bw *BW) GetDOTState(d *objects.DOT) (err error) {
+	if d.GetExpiry() != nil {
+		if d.GetExpiry().Before(time.Now()) {
+			return bwe.M(bwe.ExpiredDOT, "DOT "+crypto.FmtHash(d.GetHash())+" is expired by our clock")
+		}
+	}
+	_, state, err := bw.ResolveDOT(d.GetHash())
+	switch state {
+	case StateRevoked:
+		return bwe.M(bwe.RevokedDOT, "DOT "+crypto.FmtHash(d.GetHash())+" is revoked")
+	case StateExpired:
+		return bwe.M(bwe.ExpiredDOT, "DOT "+crypto.FmtHash(d.GetHash())+" is expired in the registry")
+	case StateValid:
+		fE, _, _ := bw.ResolveEntity(d.GetGiverVK())
+		if fE == nil {
+			return bwe.M(bwe.RegistryEntityResolutionFailed, "Unexpected missing entity")
+		}
+		eF := bw.GetEntityState(fE)
+		if eF != nil {
+			return eF
+		}
+		tE, _, _ := bw.ResolveEntity(d.GetReceiverVK())
+		if tE == nil {
+			return bwe.M(bwe.RegistryEntityResolutionFailed, "Unexpected missing entity")
+		}
+		eT := bw.GetEntityState(tE)
+		if eT != nil {
+			return eT
+		}
+		return nil
+	default:
+		return bwe.WrapC(bwe.RegistryDOTResolutionFailed, err)
+	}
+}
+
+// Although this is in resolution, we actually evaluate expiry based on the
+// real wall time. Err is actually a useful value that can be used higher up
+func (bw *BW) GetEntityState(e *objects.Entity) (err error) {
+	if e.GetExpiry() != nil {
+		if e.GetExpiry().Before(time.Now()) {
+			return bwe.M(bwe.ExpiredEntity, "Entity "+crypto.FmtKey(e.GetVK())+" is expired by our clock")
+		}
+	}
+	_, state, err := bw.ResolveEntity(e.GetVK())
+	switch state {
+	case StateRevoked:
+		return bwe.M(bwe.RevokedEntity, "Entity "+crypto.FmtKey(e.GetVK())+" is revoked")
+	case StateExpired:
+		return bwe.M(bwe.ExpiredEntity, "Entity "+crypto.FmtKey(e.GetVK())+" is expired in the registry")
+	case StateValid:
+		return nil
+	default:
+		return bwe.WrapC(bwe.RegistryEntityResolutionFailed, err)
+	}
+}
+
 func (bw *BW) ResolveRO(aliasorhash string) (ros objects.RoutingObject, state int, err error) {
 	bhash, err := crypto.UnFmtKey(aliasorhash)
 	if err != nil {
@@ -364,11 +461,48 @@ const (
 
 //These should use the cache when we make it
 func (bw *BW) ResolveDOT(dothash []byte) (*objects.DOT, int, error) {
-	return bw.bchain.ResolveDOT(dothash)
+	//First check cache
+	bw.cachemu.RLock()
+	res, hit := bw.dotHashCache[bc.SliceToBytes32(dothash)]
+	bw.cachemu.RUnlock()
+	if hit && res.valid {
+		return res.ro, res.s, res.err
+	}
+	d, s, er := bw.bchain.ResolveDOT(dothash)
+	if s != StateError {
+		memo := &registryDOTResult{ro: d, s: s, err: er, valid: true}
+		bw.cachemu.Lock()
+		bw.dotHashCache[bc.SliceToBytes32(dothash)] = memo
+		if d != nil {
+			bw.dotFromCache[bc.SliceToBytes32(d.GetGiverVK())] = memo
+			bw.dotToCache[bc.SliceToBytes32(d.GetReceiverVK())] = memo
+		}
+		bw.cachemu.Unlock()
+	}
+	return d, s, er
 }
 func (bw *BW) ResolveEntity(vk []byte) (*objects.Entity, int, error) {
-	return bw.bchain.ResolveEntity(vk)
+	//First check cache
+	bw.cachemu.RLock()
+	res, hit := bw.entityCache[bc.SliceToBytes32(vk)]
+	bw.cachemu.RUnlock()
+	if hit && res.valid {
+		return res.ro, res.s, res.err
+	}
+	e, s, er := bw.bchain.ResolveEntity(vk)
+	if s != StateError {
+		memo := &registryEntityResult{ro: e, s: s, err: er, valid: true}
+		bw.cachemu.Lock()
+		bw.entityCache[bc.SliceToBytes32(vk)] = memo
+		bw.cachemu.Unlock()
+	}
+	return e, s, er
 }
+
+var radccount int
+
 func (bw *BW) ResolveAccessDChain(chainhash []byte) (*objects.DChain, int, error) {
+	fmt.Printf("RADC called %d times\n", radccount)
+	radccount += 1
 	return bw.bchain.ResolveAccessDChain(chainhash)
 }

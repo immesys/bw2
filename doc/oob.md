@@ -80,8 +80,8 @@ Fields:
 * kv(expirydelta) - the duration after now for the message to expire. Allowable suffixes include ms,s,m,h
 * kv(elaborate_pac) - the elaboration level for the PAC. Allowable values are "partial" or "full". Omitting results in no elaboration.
 * kv(autochain) - automatically build the PAC on the router
-* ro(*) - will be included
-* po(*) - will be included
+* ro( * ) - will be included
+* po( * ) - will be included
 
 This publishes a message to the given uri. A single `resp` frame will be
 delivered with the same sequence number to convey the success or failure of the
@@ -96,7 +96,7 @@ Fields:
 * kv(elaborate_pac) - the elaboration level for the PAC. Allowable values are "partial", "full" or "none". Omitting results in no elaboration ("none").
 * kv(autochain) - boolean: automatically build the PAC on the router
 * kv(unpack) - boolean: should the matching messages be unpacked
-* ro(*) - will be included
+* ro( * ) - will be included
 
 This subscribes to the given URI. A single `resp` frame will be delivered
 with the same sequence number to convey the success or failure of the subscribe
@@ -115,7 +115,7 @@ Fields:
 * kv(autochain) - boolean: automatically build the PAC on the router
 * kv(expirydelta) - the duration after now for the list request to expire. Allowable suffixes include ms,s,m,h
 * kv(elaborate_pac) - the elaboration level for the PAC. Allowable values are "partial", "full" or "none". Omitting results in no elaboration ("none").
-* ro(*) - will be included
+* ro( * ) - will be included
 
 This lists the children of the given URI. A single `resp` frame will be delivered
 with the same sequence number to convey the success or failure of the operation.
@@ -133,7 +133,7 @@ Fields:
 * kv(autochain) - boolean: automatically build the PAC on the router
 * kv(elaborate_pac) - the elaboration level for the PAC. Allowable values are "partial", "full" or "none". Omitting results in no elaboration ("none").
 * kv(unpack) - boolean: should the matching messages be unpacked
-* ro(*) - will be included
+* ro( * ) - will be included
 
 This queries the given URI. A single `resp` frame will be delivered
 with the same sequence number to convey the success or failure of the operation.
@@ -289,8 +289,11 @@ Fields
  OR
  * kv(embedded) - A string with one or more full aliases in it, for example @longAlias</my/uri/@5BA3>/foo. Each alias will be resolved, turned into a string
  and have trailing zeroes trimmed.
+ OR
+ * kv(unresolve) - This performs a REVERSE resolution, and will instead return
+ the key of corresponding to this value, or "" if one does not exist
 
- ### usrv - Update a SRV record
+### usrv - Update a SRV record
  * kv(account) - The account idx to pay with
  * kv(srv) - The text SRV record, preferably IP:port not hostname:port
  * OPTIONAL(po(ROEntityWKey)) - The entity to update the SRV record for. This
@@ -298,7 +301,7 @@ Fields
      record. In the absence of this field, the SRV is for the current
      entity.
 
- ### ndro - New designated router offer
+### ndro - New designated router offer
  Fields
  * kv(account) - The account idx to pay with
  * kv(nsvk) - The namespace verifying key to create an offer for. If it fails
@@ -308,7 +311,7 @@ Fields
               offer. In the absence of this field, the DR offer comes from
               the current entity.
 
- ### adro - Accept designated router offer
+### adro - Accept designated router offer
  Fields
  * kv(account) - The account idx to pay with
  * kv(drvk) - The designated router's verifying key If it fails
@@ -318,12 +321,18 @@ Fields
               acceptance. In the absence of this field, the DR accept comes from
               the current entity.
 
- ### ldro - List designated router offers
+### ldro - List designated router offers
  Fields
  * kv(nsvk) - The namespace to find DR offers for. If it fails
               to parse as a 44-character VK, it will be tried as a long alias.
 
- ### rsro = Resolve registry object
+### rsro - Resolve registry object
  Fields
  * kv(key) - The key to resolve. If not a 44 character hash/vk then it will be resolved
              as a long alias first.
+
+### revk - Revoke a routing object
+ Fields
+ * kv(dot) - The key (as in rsro) resolving to a DOT to revoke. If it resolves to
+             an entity, or not at all, an error will be returned
+ * kv(entity) - As above, but for entities.

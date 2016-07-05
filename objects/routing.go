@@ -1870,6 +1870,17 @@ type Revocation struct {
 	comment   string
 }
 
+func CreateRevocation(authVK []byte, target []byte, comment string) *Revocation {
+	n := time.Now()
+	rv := &Revocation{
+		vk:      authVK,
+		target:  target,
+		created: &n,
+		comment: comment,
+	}
+	return rv
+}
+
 func (ro *Revocation) GetHash() []byte {
 	if len(ro.hash) != 32 {
 		panic("Bad Revocation Hash")
@@ -2031,6 +2042,9 @@ func (ro *Revocation) Encode(sk []byte) {
 		buf = append(buf, []byte(ro.comment)...)
 	}
 	buf = append(buf, 0x00)
+	hash := sha256.Sum256(buf)
+	ro.hash = hash[:]
+
 	sig := make([]byte, 64)
 	crypto.SignBlob(sk, ro.vk, sig, buf)
 	buf = append(buf, sig...)

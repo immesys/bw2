@@ -267,6 +267,7 @@ func (bf *boundFrame) cmdResolveAlias() {
 	longkey, longkeyok := bf.f.GetFirstHeader("longkey")
 	shortkey, shortkeyok := bf.f.GetFirstHeader("shortkey")
 	embedded, embeddedok := bf.f.GetFirstHeader("embedded")
+	unres, unresok := bf.f.GetFirstHeaderB("unresolve")
 	got := false
 	var value []byte
 	if longkeyok {
@@ -292,11 +293,23 @@ func (bf *boundFrame) cmdResolveAlias() {
 		if got {
 			panic(bwe.M(bwe.InvalidOOBCommand, "too many kv's"))
 		}
+		got = true
 		valueS, err := bf.bwcl.BW().ExpandAliases(embedded)
 		if err != nil {
 			panic(err)
 		}
 		value = []byte(valueS)
+	}
+	if unresok {
+		if got {
+			panic(bwe.M(bwe.InvalidOOBCommand, "too many kv's"))
+		}
+		got = true
+		keyS, _, err := bf.bwcl.BW().UnresolveAlias(unres)
+		if err != nil {
+			panic(err)
+		}
+		value = []byte(keyS)
 	}
 	r := bf.mkFinalResponseOkayFrame()
 	r.AddHeader("value", string(value))
@@ -316,6 +329,77 @@ func (bf *boundFrame) cmdNewDesignatedRouterOffer() {
 	}
 	bf.bwcl.BCC().CreateRoutingOffer(acc, ent, nsvk, bf.mkFinalGenericActionCB())
 }
+func (bf *boundFrame) cmdRevokeRoutingObject() {
+	bf.checkChainAge()
+	dkey, dkeyok := bf.f.GetFirstHeader("dot")
+	ekey, ekeyok := bf.f.GetFirstHeader("entity")
+	comment, _ := bf.f.GetFirstHeader("comment")
+	if dkeyok == ekeyok {
+		panic(bwe.M(bwe.InvalidOOBCommand, "must specify kv(dot) OR kv(entity)"))
+	}
+	var rvk *objects.Revocation
+	if dkeyok {
+		ro, state, _ := bf.bwcl.BW().ResolveRO(dkey)
+		if state != api.StateValid {
+			panic(bwe.M(bwe.NotRevokable, "DOT is not valid in registry"))
+		}
+		d, ok := ro.(*objects.DOT)
+		if !ok {
+			panic(bwe.M(bwe.InvalidOOBCommand, "RO is not a DOT"))
+		}
+		rvk = objects.CreateRevocation(bf.bwcl.GetUs().GetVK(), d.GetHash(), comment)
+		rvk.Encode(bf.bwcl.GetUs().GetSK())
+		if !rvk.IsValidFor(d) {
+			panic(bwe.M(bwe.InvalidRevocation, "Current entity cannot revoke given RO"))
+		}
+	} else {
+		ro, state, _ := bf.bwcl.BW().ResolveRO(ekey)
+		if state != api.StateValid {
+			panic(bwe.M(bwe.NotRevokable, "Entity is not valid in registry"))
+		}
+		e, ok := ro.(*objects.Entity)
+		if !ok {
+			panic(bwe.M(bwe.InvalidOOBCommand, "RO is not an Entity"))
+		}
+		rvk = objects.CreateRevocation(bf.bwcl.GetUs().GetVK(), e.GetVK(), comment)
+		rvk.Encode(bf.bwcl.GetUs().GetSK())
+		if !rvk.IsValidFor(e) {
+			panic(bwe.M(bwe.InvalidRevocation, "Current entity cannot revoke given RO"))
+		}
+	}
+	r := bf.mkFinalResponseOkayFrame()
+	r.AddHeader("hash", crypto.FmtHash(rvk.GetHash()))
+	po, err := objects.CreateOpaquePayloadObject(objects.RORevocation, rvk.GetContent())
+	if err != nil {
+		panic(err)
+	}
+	r.AddPayloadObject(po)
+	bf.send(r)
+}
+
+func (bf *boundFrame) cmdPutRevocation() {
+	bf.checkChainAge()
+	acc := bf.loadAccount()
+	po := bf.f.POs[0].PO
+	if po.GetPONum() != objects.RORevocation {
+		panic(bwe.M(bwe.MalformedOOBCommand, "expected an RORevocation"))
+	}
+	rvki, err := objects.LoadRoutingObject(po.GetPONum(), po.GetContent())
+	if err != nil {
+		panic(bwe.WrapM(bwe.MalformedOOBCommand, "Could not load Revocation: ", err))
+	}
+	rvk := rvki.(*objects.Revocation)
+	bf.bwcl.BCC().PublishRevocation(acc, rvk, func(err error) {
+		if err != nil {
+			bf.Err(err)
+		} else {
+			r := bf.mkFinalResponseOkayFrame()
+			r.AddHeader("hash", crypto.FmtHash(rvk.GetHash()))
+			bf.send(r)
+		}
+	})
+}
+
 func (bf *boundFrame) cmdUpdateSRVRecord() {
 	bf.checkChainAge()
 	acc := bf.loadAccount()

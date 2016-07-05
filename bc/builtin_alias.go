@@ -138,3 +138,19 @@ func (bcc *bcClient) SetAlias(acc int, key Bytes32, val Bytes32, confirmed func(
 			return
 		})
 }
+
+func (bc *blockChain) UnresolveAlias(value Bytes32) (key Bytes32, iszero bool, err error) {
+	ret, err := bc.CallOffChain(StringToUFI(UFI_Alias_AliasFor), value)
+	if err != nil {
+		return Bytes32{}, false, err
+	}
+	if len(ret) != 1 {
+		return Bytes32{}, false, bwe.M(bwe.UFIInvocationError, "Expected 1 result")
+	}
+	k, ok := ret[0].([]byte)
+	if !ok {
+		return Bytes32{}, false, bwe.M(bwe.UFIInvocationError, "Expected byte slice result")
+	}
+	key = SliceToBytes32(k)
+	return key, key == Bytes32{}, nil
+}

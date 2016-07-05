@@ -204,8 +204,10 @@ func handleSession(cl *BosswaveClient, conn net.Conn) {
 					errframe(nf.seqno, bwe.AffinityMismatch, err.Error())
 					return
 				}
-				s := msg.Verify(cl.BW())
-				if s.Code != bwe.Okay {
+				err = msg.Verify(cl.BW())
+				if err != nil {
+					bws := bwe.AsBW(err)
+					errframe(nf.seqno, bws.Code, bws.Msg)
 					log.Infof("message failed verification: %#v", msg)
 					log.Infof("pac src %v\n", crypto.FmtKey(msg.PrimaryAccessChain.GetGiverVK()))
 					log.Infof("pac dst %v\n", crypto.FmtKey(msg.PrimaryAccessChain.GetReceiverVK()))
@@ -215,7 +217,6 @@ func handleSession(cl *BosswaveClient, conn net.Conn) {
 					} else {
 						log.Infof("msg has no origin VK header\n")
 					}
-					errframe(nf.seqno, s.Code, "message failed ingress verification")
 					return
 				}
 				//log.Info("message verified ok")

@@ -99,6 +99,12 @@ const (
 	ViewError        = 432
 	UnsubscribeError = 433
 
+	//Called when an expired message is verified
+	ExpiredMessage = 434
+
+	//The revocation is not an authority for its target
+	InvalidRevocation = 435
+
 	//The 500 series are chain interaction errors
 	RegistryEntityResolutionFailed = 500
 	RegistryDOTResolutionFailed    = 501
@@ -124,4 +130,7 @@ const (
 	UnresolvedAlias = 513
 	AliasExists     = 514
 	AliasError      = 515
+
+	// Returned when you try revoke an unpublished object
+	NotRevokable = 516
 )

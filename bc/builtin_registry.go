@@ -5,6 +5,7 @@ import (
 
 	"github.com/immesys/bw2/objects"
 	"github.com/immesys/bw2/util/bwe"
+	"github.com/immesys/bw2bc/core/types"
 	"github.com/immesys/bw2bc/eth"
 )
 
@@ -20,7 +21,7 @@ const (
 func (bcc *bcClient) PublishEntity(acc int, ent *objects.Entity, confirmed func(err error)) {
 	blob := ent.GetContent()
 	if len(blob) < 96 {
-		panic("Entity not encoded")
+		panic(bwe.M(bwe.BadOperation, "Entity not encoded"))
 	}
 	ob, _, _ := bcc.bc.ResolveEntity(ent.GetVK())
 	if ob != nil {
@@ -56,7 +57,7 @@ func (bcc *bcClient) PublishEntity(acc int, ent *objects.Entity, confirmed func(
 func (bcc *bcClient) PublishDOT(acc int, dot *objects.DOT, confirmed func(err error)) {
 	blob := dot.GetContent()
 	if len(blob) < 96 {
-		panic("DOT not encoded")
+		panic(bwe.M(bwe.BadOperation, "DOT not encoded"))
 	}
 	ob, _, _ := bcc.bc.ResolveDOT(dot.GetHash())
 	if ob != nil {
@@ -93,7 +94,7 @@ func (bcc *bcClient) PublishDOT(acc int, dot *objects.DOT, confirmed func(err er
 func (bcc *bcClient) PublishAccessDChain(acc int, chain *objects.DChain, confirmed func(err error)) {
 	blob := chain.GetContent()
 	if len(blob) < 32 {
-		panic("Chain not encoded")
+		panic(bwe.M(bwe.BadOperation, "Chain not encoded"))
 	}
 	ob, _, _ := bcc.bc.ResolveAccessDChain(chain.GetChainHash())
 	if ob != nil {
@@ -120,6 +121,66 @@ func (bcc *bcClient) PublishAccessDChain(acc int, chain *objects.DChain, confirm
 			if err != nil {
 				confirmed(bwe.WrapM(bwe.RegistryChainInvalid, "Could not publish: ", err))
 				return
+			}
+			//We are good
+			confirmed(nil)
+		})
+}
+func (bcc *bcClient) PublishRevocation(acc int, rvk *objects.Revocation, confirmed func(err error)) {
+	blob := rvk.GetContent()
+	if len(blob) < 128 {
+		panic(bwe.M(bwe.BadOperation, "Revocation not encoded"))
+	}
+	var targetufi string
+	var isEntity bool
+	ob, s, _ := bcc.bc.ResolveDOT(rvk.GetTarget())
+	if ob != nil {
+		targetufi = UFI_Registry_RevokeDOT
+		if s != StateValid {
+			confirmed(bwe.M(bwe.NotRevokable, "DOT is not valid in the registry"))
+			return
+		}
+	} else {
+		ob, s, _ := bcc.bc.ResolveEntity(rvk.GetTarget())
+		if ob != nil {
+			targetufi = UFI_Registry_RevokeEntity
+			if s != StateValid {
+				confirmed(bwe.M(bwe.NotRevokable, "Entity is not valid in the registry"))
+				return
+			}
+			isEntity = true
+		} else {
+			//This should have been caught way earlier
+			confirmed(bwe.M(bwe.NotRevokable, "Could not resolve target to DOT or Entity"))
+			return
+		}
+	}
+
+	txhash, err := bcc.CallOnChain(acc, StringToUFI(targetufi), "", "", "",
+		blob)
+	if err != nil {
+		confirmed(err)
+		return
+	}
+	//And wait for it to confirm
+	bcc.bc.GetTransactionDetailsInt(txhash, bcc.DefaultTimeout, bcc.DefaultConfirmations,
+		nil, func(bn uint64, rcpt *types.Receipt, err error) {
+			if err != nil {
+				confirmed(err)
+				return
+			}
+			if isEntity {
+				_, s, err = bcc.bc.ResolveEntity(rvk.GetTarget())
+				if s != StateRevoked {
+					confirmed(bwe.WrapM(bwe.RegistryEntityInvalid, "Could not revoke: ", err))
+					return
+				}
+			} else {
+				_, s, err = bcc.bc.ResolveDOT(rvk.GetTarget())
+				if s != StateRevoked {
+					confirmed(bwe.WrapM(bwe.RegistryDOTInvalid, "Could not revoke: ", err))
+					return
+				}
 			}
 			//We are good
 			confirmed(nil)

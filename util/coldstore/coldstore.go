@@ -9,6 +9,7 @@ import (
 
 	"github.com/immesys/bw2/crypto"
 	"github.com/immesys/bw2/objects"
+	"github.com/immesys/bw2/util/bwe"
 	"github.com/immesys/bw2bc/common"
 	ethcrypto "github.com/immesys/bw2bc/crypto"
 	"github.com/immesys/bw2bc/crypto/secp256k1"
@@ -69,6 +70,9 @@ func base64Encode(src []byte) []byte {
 	return dst[:n]
 }
 func GetAccountHex(ro *objects.Entity, index int) (string, error) {
+	if ro.GetSK() == nil || len(ro.GetSK()) != 32 {
+		return "", bwe.M(bwe.BadOperation, "No signing key for account extrapolation")
+	}
 	seed := make([]byte, 64)
 	copy(seed[0:32], ro.GetSK())
 	copy(seed[32:64], common.BigToBytes(big.NewInt(int64(index)), 256))

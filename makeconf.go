@@ -58,11 +58,11 @@ func makeConf(c *cli.Context) error {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-	lpath := "bw2.log"
+	lpath := configdir + "/" + "bw2.log"
 	if c.String("logfile") != "" {
 		lpath = c.String("logfile")
 	}
-	dbpath := ".bw.db"
+	dbpath := configdir + "/" + ".bw.db"
 	if c.String("dbpath") != "" {
 		dbpath = c.String("dbpath")
 	}

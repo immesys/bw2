@@ -41,6 +41,12 @@ func main() {
 			Usage:  "add available entityfile",
 			EnvVar: "BW2_ENTITIES",
 		},
+		cli.StringFlag{
+			Name:   "agent",
+			Usage:  "set the agent router",
+			Value:  "127.0.0.1:28589",
+			EnvVar: "BW2_AGENT",
+		},
 	}
 	nflag := cli.BoolFlag{
 		Name:  "nopublish, n",

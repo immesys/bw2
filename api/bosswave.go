@@ -64,6 +64,30 @@ type BW struct {
 
 	chaincache   map[[32]byte]map[CacheKey][]*objects.DChain
 	chaincachemu sync.Mutex
+
+	//registry caching
+	// vk -> entity
+	entityCache map[bc.Bytes32]*registryEntityResult
+	// dothash -> dot
+	dotHashCache map[bc.Bytes32]*registryDOTResult
+	// dot from vk -> same result object
+	dotFromCache map[bc.Bytes32]*registryDOTResult
+	// dot to vk -> same result object
+	dotToCache map[bc.Bytes32]*registryDOTResult
+}
+type registryEntityResult struct {
+	ro    *objects.Entity
+	s     int
+	valid bool
+	//This will only be for s != StateError
+	err error
+}
+type registryDOTResult struct {
+	ro    *objects.DOT
+	s     int
+	valid bool
+	//This will only be for s != StateError
+	err error
 }
 
 func (bw *BW) LookupChain(ck *CacheKey) []*objects.DChain {

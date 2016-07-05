@@ -277,9 +277,9 @@ func (pc *PeerClient) Subscribe(m *core.Message,
 				log.Info("dropping incoming subscription result (malformed message)")
 				return
 			}
-			s := nm.Verify(pc.bwcl.BW())
-			if s.Code != bwe.Okay {
-				log.Infof("dropping incoming subscription result on uri=%s (failed local validation)", nm.Topic)
+			err = nm.Verify(pc.bwcl.BW())
+			if err != nil {
+				log.Infof("dropping incoming subscription result on uri=%s (failed local validation %s)", nm.Topic, err.Error())
 				return
 			}
 			messageCB(nm)
@@ -377,9 +377,9 @@ func (pc *PeerClient) Query(m *core.Message,
 				log.Info("dropping incoming query result (malformed message)")
 				return
 			}
-			s := nm.Verify(pc.bwcl.BW())
-			if s.Code != bwe.Okay {
-				log.Infof("dropping incoming query result on uri=%s (failed local validation)", m.Topic)
+			err = nm.Verify(pc.bwcl.BW())
+			if err != nil {
+				log.Warnf("dropping incoming query result on uri=%s (failed local validation (%s))", m.Topic, err.Error())
 				return
 			}
 			resultCB(nm)

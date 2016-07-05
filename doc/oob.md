@@ -313,6 +313,9 @@ Fields
  OR
  * kv(embedded) - A string with one or more full aliases in it, for example @longAlias</my/uri/@5BA3>/foo. Each alias will be resolved, turned into a string
  and have trailing zeroes trimmed.
+  OR
+ * kv(unresolve) - This performs a REVERSE resolution, and will instead return
+ the key of corresponding to this value, or "" if one does not exist
 
  ### usrv - Update a SRV record
  * kv(account) - The account idx to pay with
@@ -380,3 +383,9 @@ Fields
  kv(handle) - The subscription handle
   You can only unsubscribe from the same TCP connection that initiated the
   subscription
+
+### revk - Revoke a routing object
+    Fields
+* kv(dot) - The key (as in rsro) resolving to a DOT to revoke. If it resolves to
+             an entity, or not at all, an error will be returned
+ * kv(entity) - As above, but for entities.

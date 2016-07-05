@@ -73,6 +73,9 @@ type BlockChainClient interface {
 	//Sets a full alias on the chain. Note that you cannot collide with
 	//short aliases, so don't have too many leading zeroes.
 	SetAlias(acc int, key Bytes32, val Bytes32, confirmed func(err error))
+
+	//Publish the given revocation. The target must be published already
+	PublishRevocation(acc int, rvk *objects.Revocation, confirmed func(err error))
 }
 type BlockChainProvider interface {
 
@@ -163,4 +166,7 @@ type BlockChainProvider interface {
 	//Resolve an alias. Note that the key will be right-padded to be
 	//32 bytes
 	ResolveAlias(key Bytes32) (res Bytes32, iszero bool, err error)
+
+	//Check what the first alias made for the given value is
+	UnresolveAlias(value Bytes32) (key Bytes32, iszero bool, err error)
 }

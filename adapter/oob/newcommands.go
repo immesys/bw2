@@ -585,7 +585,7 @@ func (bf *boundFrame) cmdListView() {
 }
 func (bf *boundFrame) cmdUnsubscribe() {
 	handle, ok := bf.f.GetFirstHeader("handle")
-	if !ok {
+	if !ok || handle == "" {
 		panic(bwe.M(bwe.InvalidOOBCommand, "missing kv(handle)"))
 	}
 	bf.bwcl.Unsubscribe(*core.UniqueMessageIDFromString(handle), bf.mkFinalGenericActionCB())

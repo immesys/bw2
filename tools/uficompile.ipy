@@ -12,7 +12,7 @@ if addr[0:2] == "0x":
 if len(addr) != 40:
   print "Address looks wrong, using zero"
   addr = "00" * 20
-
+addr = addr.lower()
 op = !solc --abi {target}
 
 idx = 0

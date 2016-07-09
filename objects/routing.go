@@ -397,7 +397,7 @@ func (ro *DChain) CheckAccessGrants(curTime *time.Time,
 	// Note that the stars/plusses etc in the URI are NOT
 	// relevant to the ADPS because this is about granting.
 	// granting foo/* has nothing to do with P*C*
-	valid, _, _, _, _ := util.AnalyzeSuffix(suffix)
+	valid, _, _, _ := util.AnalyzeSuffix(suffix)
 	if !valid {
 		//fmt.Println("Analysis disliked")
 		return bwe.BadURI
@@ -958,6 +958,12 @@ func (ro *DOT) WriteToStream(s io.Writer, fullObjNum bool) error {
 	return err
 }
 
+func (ro *DOT) IsExpired() bool {
+	if ro.expires != nil {
+		return ro.expires.Before(time.Now())
+	}
+	return false
+}
 func (ro *DOT) SetComment(v string) {
 	ro.comment = v
 }
@@ -1025,7 +1031,7 @@ func (ro *DOT) SigValid() bool {
 	} else if ro.sigok == sigInvalid {
 		return false
 	}
-	uriSane, _, _, _, _ := util.AnalyzeSuffix(ro.uriSuffix)
+	uriSane, _, _, _ := util.AnalyzeSuffix(ro.uriSuffix)
 	if !uriSane {
 		ro.sigok = sigInvalid
 		return false
@@ -1453,7 +1459,12 @@ func CreateNewEntity(contact, comment string, revokers [][]byte) *Entity {
 	rv.sk, rv.vk = crypto.GenerateKeypair()
 	return rv
 }
-
+func (ro *Entity) IsExpired() bool {
+	if ro.expires != nil {
+		return ro.expires.Before(time.Now())
+	}
+	return false
+}
 func (ro *Entity) AddRevoker(rvk []byte) {
 	if len(rvk) != 32 {
 		panic("What kind of VK is this?")
@@ -1895,6 +1906,12 @@ func (ro *Revocation) GetTarget() []byte {
 }
 func (ro *Revocation) GetRONum() int {
 	return RORevocation
+}
+func (ro *Revocation) GetCreated() *time.Time {
+	return ro.created
+}
+func (ro *Revocation) GetComment() string {
+	return ro.comment
 }
 
 //This does not recurse. E.g. for a dot this would return

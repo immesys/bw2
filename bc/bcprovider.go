@@ -23,8 +23,7 @@ type BlockChainClient interface {
 	//Get all our addresses
 	GetAddresses() ([]Address, error)
 
-	//CallOnChain executed the given UFI on the chain using
-	//the default account.
+	//CallOnChain executed the given UFI on the chain
 	CallOnChain(account int, ufi UFI, value, gas, gasPrice string, params ...interface{}) (txhash string, err error)
 
 	//Transact does a transaction from the default account to the given
@@ -64,6 +63,9 @@ type BlockChainClient interface {
 	//Publish the given DChain. The dots and entities must be published already
 	PublishAccessDChain(acc int, chain *objects.DChain, confirmed func(err error))
 
+	//Publish the given revocation. The target must be published already
+	PublishRevocation(acc int, rvk *objects.Revocation, confirmed func(err error))
+
 	// Builtins
 	//Create a short alias on the chain. After a few confirmations (or timeout)
 	//confirmed is called. To avoid incorrect timeouts during sync, try to
@@ -73,9 +75,6 @@ type BlockChainClient interface {
 	//Sets a full alias on the chain. Note that you cannot collide with
 	//short aliases, so don't have too many leading zeroes.
 	SetAlias(acc int, key Bytes32, val Bytes32, confirmed func(err error))
-
-	//Publish the given revocation. The target must be published already
-	PublishRevocation(acc int, rvk *objects.Revocation, confirmed func(err error))
 }
 type BlockChainProvider interface {
 
@@ -123,11 +122,17 @@ type BlockChainProvider interface {
 	//without using any money or creating global state
 	CallOffChain(ufi UFI, params ...interface{}) (ret []interface{}, err error)
 
-	//Call on every log appearing after block number 'after'. If -1 it will
+	//CallOffSpecificChain executes the given UFI on the local machine
+	//without using any money or creating global state
+	CallOffSpecificChain(block int64, ufi UFI, params ...interface{}) (ret []interface{}, err error)
+
+	//Call on every log appearing after block number 'after'. If before is -1 it will
 	//get the current block number. If hexaddr is not empty, only logs from that
 	//contract address will be matched. If topics is not empty, every set of
 	//topics inside it (up to 4 per set) will be used to match against the logs.
-	//Zero arrays are wildcards. Returning true from the callback will deregister.
+	//Zero arrays are wildcards. If strict is false, ANY topic matching is sufficient
+	//(ethereum default) if strict is true, then all nonzero topics must match in
+	//their respective positions.
 	FindLogsBetween(after int64, before int64, hexaddr string, topics [][]Bytes32, strict bool) []Log
 
 	//This calls on the given blocks, but does not subscribe to new blocks
@@ -158,7 +163,8 @@ type BlockChainProvider interface {
 	//dots or entities do not resolve.
 	ResolveAccessDChain(chainhash []byte) (*objects.DChain, int, error)
 
-	//Builtin contract functions:
+	//Get all the dot hashes granted from a specific VK
+	ResolveDOTsFromVK(vk Bytes32) ([]Bytes32, error)
 
 	//Resolve a short alias returning its contents. Note that
 	ResolveShortAlias(alias uint64) (res Bytes32, iszero bool, err error)

@@ -5,7 +5,6 @@ import (
 
 	"github.com/immesys/bw2/objects"
 	"github.com/immesys/bw2/util/bwe"
-	"github.com/immesys/bw2bc/core/types"
 	"github.com/immesys/bw2bc/eth"
 )
 
@@ -16,6 +15,8 @@ const (
 	StateRevoked
 	StateError
 )
+
+const RegistryLag = 5
 
 //Publish the given entity
 func (bcc *bcClient) PublishEntity(acc int, ent *objects.Entity, confirmed func(err error)) {
@@ -132,10 +133,12 @@ func (bcc *bcClient) PublishRevocation(acc int, rvk *objects.Revocation, confirm
 		panic(bwe.M(bwe.BadOperation, "Revocation not encoded"))
 	}
 	var targetufi string
+	var targetparam Bytes32
 	var isEntity bool
 	ob, s, _ := bcc.bc.ResolveDOT(rvk.GetTarget())
 	if ob != nil {
 		targetufi = UFI_Registry_RevokeDOT
+		targetparam = SliceToBytes32(ob.GetHash())
 		if s != StateValid {
 			confirmed(bwe.M(bwe.NotRevokable, "DOT is not valid in the registry"))
 			return
@@ -144,6 +147,7 @@ func (bcc *bcClient) PublishRevocation(acc int, rvk *objects.Revocation, confirm
 		ob, s, _ := bcc.bc.ResolveEntity(rvk.GetTarget())
 		if ob != nil {
 			targetufi = UFI_Registry_RevokeEntity
+			targetparam = SliceToBytes32(ob.GetVK())
 			if s != StateValid {
 				confirmed(bwe.M(bwe.NotRevokable, "Entity is not valid in the registry"))
 				return
@@ -157,14 +161,14 @@ func (bcc *bcClient) PublishRevocation(acc int, rvk *objects.Revocation, confirm
 	}
 
 	txhash, err := bcc.CallOnChain(acc, StringToUFI(targetufi), "", "", "",
-		blob)
+		targetparam, blob)
 	if err != nil {
 		confirmed(err)
 		return
 	}
 	//And wait for it to confirm
 	bcc.bc.GetTransactionDetailsInt(txhash, bcc.DefaultTimeout, bcc.DefaultConfirmations,
-		nil, func(bn uint64, rcpt *types.Receipt, err error) {
+		nil, func(bn uint64, rcpt *eth.RPCTransaction, err error) {
 			if err != nil {
 				confirmed(err)
 				return
@@ -192,31 +196,25 @@ func (bcc *bcClient) PublishRevocation(acc int, rvk *objects.Revocation, confirm
 //Note that if it is expired or revoked it will still return the DOT,
 //so check the error not for nil
 func (bc *blockChain) ResolveDOT(dothash []byte) (*objects.DOT, int, error) {
-	// First check what the registry thinks of the DOTHash
-	rvz, err := bc.CallOffChain(StringToUFI(UFI_Registry_DOTState), dothash)
-	if err != nil || len(rvz) != 1 {
-		return nil, StateError, bwe.WrapM(bwe.UFIInvocationError, "Expected 1 rv: ", err)
+	// First check what the registry thinks of the DOTHash in the very latest block
+	rvz, err := bc.CallOffSpecificChain(PendingBlock, StringToUFI(UFI_Registry_DOTs), dothash)
+	if err != nil || len(rvz) != 3 {
+		return nil, StateError, bwe.WrapM(bwe.UFIInvocationError, "Expected 3 rv: ", err)
 	}
-	var rverr error
-	state := rvz[0].(*big.Int).Int64()
+	state := rvz[1].(*big.Int).Int64()
 	switch state {
 	case StateUnknown:
-		return nil, StateUnknown, bwe.M(bwe.RegistryDOTResolutionFailed, "DOT is not in registry")
+		return nil, StateUnknown, nil
 	case StateExpired:
-		rverr = bwe.M(bwe.RegistryDOTInvalid, "DOT has expired")
+		fallthrough
 	case StateRevoked:
-		rverr = bwe.M(bwe.RegistryDOTInvalid, "DOT has been revoked")
+		fallthrough
 	case StateValid:
 		break
 	default:
 		return nil, StateError, bwe.M(bwe.RegistryDOTInvalid, "Unknown state")
 	}
 	//If we got here, the state in the registry is valid, expired or revoked
-
-	rvz, err = bc.CallOffChain(StringToUFI(UFI_Registry_DOTs), dothash)
-	if err != nil || len(rvz) != 1 {
-		return nil, StateError, bwe.WrapM(bwe.UFIInvocationError, "Expected 1 rv: ", err)
-	}
 	blob := rvz[0].([]byte)
 	if len(blob) == 0 {
 		return nil, StateError, bwe.M(bwe.RegistryDOTResolutionFailed, "DOT not found (but registry said it was ok!!)")
@@ -230,41 +228,44 @@ func (bc *blockChain) ResolveDOT(dothash []byte) (*objects.DOT, int, error) {
 		return nil, StateError, bwe.M(bwe.RegistryDOTInvalid, "DOT signature invalid (but registry said it was ok!!)")
 	}
 
+	if state == StateValid {
+		//Ok lets see if it was still valid Lag blocks ago
+		rvz, err := bc.CallOffSpecificChain(int64(bc.CurrentBlock()-RegistryLag), StringToUFI(UFI_Registry_DOTs), dothash)
+		if err != nil || len(rvz) != 3 {
+			return nil, StateError, bwe.WrapM(bwe.UFIInvocationError, "Expected 3 rv: ", err)
+		}
+		state = rvz[1].(*big.Int).Int64()
+	}
+
 	//TODO we need to check entities and expiries ourself. Possibly do
 	//opportunistic bounty hunting. It might be worth doing that higher
 	//up where we have a cache of the objects.
 
-	return dt, int(state), rverr
+	return dt, int(state), nil
 }
 
 //Resolve an Entity from the registry. Also checks for revocations
 //and expiry.
 func (bc *blockChain) ResolveEntity(vk []byte) (*objects.Entity, int, error) {
 	// First check what the registry thinks of the vk
-	rvz, err := bc.CallOffChain(StringToUFI(UFI_Registry_EntityState), vk)
-	if err != nil || len(rvz) != 1 {
-		return nil, StateError, bwe.WrapM(bwe.UFIInvocationError, "Expected 1 rv: ", err)
+	rvz, err := bc.CallOffSpecificChain(PendingBlock, StringToUFI(UFI_Registry_Entities), vk)
+	if err != nil || len(rvz) != 3 {
+		return nil, StateError, bwe.WrapM(bwe.UFIInvocationError, "Expected 3 rv: ", err)
 	}
-	var rverr error
-	state := rvz[0].(*big.Int).Int64()
+	state := rvz[1].(*big.Int).Int64()
 	switch state {
 	case StateUnknown:
-		return nil, StateUnknown, bwe.M(bwe.RegistryEntityResolutionFailed, "Entity is not in registry")
+		return nil, StateUnknown, nil
 	case StateExpired:
-		rverr = bwe.M(bwe.RegistryEntityInvalid, "Entity has expired")
+		fallthrough
 	case StateRevoked:
-		rverr = bwe.M(bwe.RegistryEntityInvalid, "Entity has been revoked")
+		fallthrough
 	case StateValid:
 		break
 	default:
 		return nil, StateError, bwe.M(bwe.RegistryEntityInvalid, "Unknown state")
 	}
 	//If we got here, the state in the registry is valid, revoked or expired
-
-	rvz, err = bc.CallOffChain(StringToUFI(UFI_Registry_Entities), vk)
-	if err != nil || len(rvz) != 1 {
-		return nil, StateError, bwe.WrapM(bwe.UFIInvocationError, "Expected 1 rv: ", err)
-	}
 	blob := rvz[0].([]byte)
 	if len(blob) == 0 {
 		return nil, StateError, bwe.M(bwe.RegistryEntityResolutionFailed, "Entity not found (but registry said it was ok!!)")
@@ -278,11 +279,16 @@ func (bc *blockChain) ResolveEntity(vk []byte) (*objects.Entity, int, error) {
 		return nil, StateError, bwe.M(bwe.RegistryEntityInvalid, "Entity signature invalid (but registry said it was ok!!)")
 	}
 
-	//TODO we need to check entities and expiries ourself. Possibly do
-	//opportunistic bounty hunting. It might be worth doing that higher
-	//up where we have a cache of the objects.
+	if state == StateValid {
+		//Ok lets see if it was still valid Lag blocks ago
+		rvz, err := bc.CallOffSpecificChain(int64(bc.CurrentBlock()-RegistryLag), StringToUFI(UFI_Registry_Entities), vk)
+		if err != nil || len(rvz) != 3 {
+			return nil, StateError, bwe.WrapM(bwe.UFIInvocationError, "Expected 3 rv: ", err)
+		}
+		state = rvz[1].(*big.Int).Int64()
+	}
 
-	return ent, int(state), rverr
+	return ent, int(state), nil
 }
 
 //Resolve a chain from the registry, Also checks for revocations
@@ -290,30 +296,24 @@ func (bc *blockChain) ResolveEntity(vk []byte) (*objects.Entity, int, error) {
 //dots or entities do not resolve.
 func (bc *blockChain) ResolveAccessDChain(chainhash []byte) (*objects.DChain, int, error) {
 	// First check what the registry thinks of the vk
-	rvz, err := bc.CallOffChain(StringToUFI(UFI_Registry_DChainState), chainhash)
-	if err != nil || len(rvz) != 1 {
-		return nil, StateError, bwe.WrapM(bwe.UFIInvocationError, "Expected 1 rv: ", err)
+	rvz, err := bc.CallOffSpecificChain(PendingBlock, StringToUFI(UFI_Registry_DChains), chainhash)
+	if err != nil || len(rvz) != 3 {
+		return nil, StateError, bwe.WrapM(bwe.UFIInvocationError, "Expected 3 rv: ", err)
 	}
-	state := rvz[0].(*big.Int).Int64()
-	var rverr error
+	state := rvz[1].(*big.Int).Int64()
 	switch state {
 	case StateUnknown:
-		return nil, StateUnknown, bwe.M(bwe.RegistryChainResolutionFailed, "DChain is not in registry")
+		return nil, StateUnknown, nil
 	case StateExpired:
-		rverr = bwe.M(bwe.RegistryChainInvalid, "DChain has expired")
+		fallthrough
 	case StateRevoked:
-		rverr = bwe.M(bwe.RegistryChainInvalid, "DChain has been revoked")
+		fallthrough
 	case StateValid:
 		break
 	default:
 		return nil, StateError, bwe.M(bwe.RegistryChainInvalid, "Unknown state")
 	}
 	//If we got here, the state in the registry is valid
-
-	rvz, err = bc.CallOffChain(StringToUFI(UFI_Registry_DChains), chainhash)
-	if err != nil || len(rvz) != 1 {
-		return nil, StateError, bwe.WrapM(bwe.UFIInvocationError, "Expected 1 rv: ", err)
-	}
 	blob := rvz[0].([]byte)
 	if len(blob) == 0 {
 		return nil, StateError, bwe.M(bwe.RegistryChainResolutionFailed, "DChain not found (but registry said it was ok!!)")
@@ -324,10 +324,33 @@ func (bc *blockChain) ResolveAccessDChain(chainhash []byte) (*objects.DChain, in
 	}
 	dc := dci.(*objects.DChain) // This won't fail
 
+	if state == StateValid {
+		rvz, err := bc.CallOffSpecificChain(int64(bc.CurrentBlock()-RegistryLag), StringToUFI(UFI_Registry_DChains), chainhash)
+		if err != nil || len(rvz) != 3 {
+			return nil, StateError, bwe.WrapM(bwe.UFIInvocationError, "Expected 3 rv: ", err)
+		}
+		state = rvz[1].(*big.Int).Int64()
+	}
 	//TODO we need to check dots and entities and expiries ourself. Possibly do
 	//opportunistic bounty hunting. It might be worth doing that higher
 	//up where we have a cache of the objects.
 	//Also that involves elaboration
 
-	return dc, int(state), rverr
+	return dc, int(state), nil
+}
+
+func (bc *blockChain) ResolveDOTsFromVK(vk Bytes32) ([]Bytes32, error) {
+	rv := []Bytes32{}
+	for i := 0; ; i++ {
+		rvz, err := bc.CallOffSpecificChain(int64(bc.CurrentBlock()-RegistryLag), StringToUFI(UFI_Registry_DOTFromVK), vk, i)
+		if err != nil || len(rvz) != 1 {
+			return nil, bwe.WrapM(bwe.UFIInvocationError, "Expected 1 rv: ", err)
+		}
+		hash := SliceToBytes32(rvz[0].([]byte))
+		//We know a dot hash will never be zero
+		if hash.Zero() {
+			return rv, nil
+		}
+		rv = append(rv, hash)
+	}
 }

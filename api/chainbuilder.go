@@ -34,10 +34,6 @@ type ChainBuilder struct {
 	desperms  *objects.AccessDOTPermissionSet
 }
 
-func (c *BosswaveClient) LookupChain(ck *CacheKey) {
-
-}
-
 type scenario struct {
 	chain  []*objects.DOT
 	suffix string
@@ -134,7 +130,7 @@ func (b *ChainBuilder) dotUseful(d *objects.DOT) bool {
 }
 
 func (b *ChainBuilder) getOptions(from []byte) []*objects.DOT {
-	dlz, err := b.cl.BW().GetDOTsFrom(from)
+	dlz, err := b.cl.BW().ResolveGrantedDOTs(from)
 	if err != nil {
 		panic(err)
 	}
@@ -159,10 +155,18 @@ func (b *ChainBuilder) Build() ([]*objects.DChain, error) {
 	}
 	copy(ck.target[:], b.target)
 	copy(ck.nsvk[:], b.nsvk)
-	cached := b.cl.bw.LookupChain(&ck)
+	cached, states := b.cl.bw.resolveBuiltChain(ck)
 	if cached != nil {
 		log.Infof("chain build cache hit")
-		return cached, nil
+		rv := make([]*objects.DChain, 0, len(cached))
+		for idx, chn := range cached {
+			if states[idx] != StateValid {
+				b.status <- fmt.Sprintf("dropping chain %s : %s", crypto.FmtHash(chn.GetChainHash()), b.cl.BW().StateToString(states[idx]))
+			} else {
+				rv = append(rv, chn)
+			}
+		}
+		return rv, nil
 	} else {
 		log.Infof("chain build cache miss")
 	}
@@ -170,7 +174,7 @@ func (b *ChainBuilder) Build() ([]*objects.DChain, error) {
 	if len(parts) != 2 {
 		return nil, errors.New("Invalid URI")
 	}
-	valid, _, _, _, _ := util.AnalyzeSuffix(parts[1])
+	valid, _, _, _ := util.AnalyzeSuffix(parts[1])
 	if !valid {
 		return nil, errors.New("Invalid URI")
 	}
@@ -226,6 +230,6 @@ func (b *ChainBuilder) Build() ([]*objects.DChain, error) {
 	}
 	b.status <- "chain build operation complete"
 	close(b.status)
-	b.cl.bw.CacheChain(&ck, rv)
+	b.cl.bw.cacheBuiltChains(ck, rv)
 	return rv, nil
 }

@@ -37,86 +37,13 @@ import (
 // use this interface, and it is the main interface for creating GO based BW2
 // applications
 
-type VKPair struct {
-	DRVK []byte
-	MVK  []byte
-}
-
 // BW is the primary handle for bosswave consumers
 type BW struct {
 	Config *core.BWConfig
 	tm     *core.Terminus
-	//VK        []byte
-	//SK        []byte
 	Entity *objects.Entity
-	//XTAG TODO we need to populate this
-	RoutingNSVKs [][]byte
-
 	bchain bc.BlockChainProvider
-
-	//This is all for resolution caching
-	cachemu sync.Mutex
-
-	lag       *Lagger
-	cachesize int
-	//from vk -> to vk -> []dothash
-	dotcache map[bc.Bytes32]map[bc.Bytes32][]bc.Bytes32
-
-	chaincache   map[[32]byte]map[CacheKey][]*objects.DChain
-	chaincachemu sync.Mutex
-
-	//registry caching
-	// vk -> entity
-	entityCache map[bc.Bytes32]*registryEntityResult
-	// dothash -> dot
-	dotHashCache map[bc.Bytes32]*registryDOTResult
-	// dot from vk -> same result object
-	dotFromCache map[bc.Bytes32]*registryDOTResult
-	// dot to vk -> same result object
-	dotToCache map[bc.Bytes32]*registryDOTResult
-}
-type registryEntityResult struct {
-	ro    *objects.Entity
-	s     int
-	valid bool
-	//This will only be for s != StateError
-	err error
-}
-type registryDOTResult struct {
-	ro    *objects.DOT
-	s     int
-	valid bool
-	//This will only be for s != StateError
-	err error
-}
-
-func (bw *BW) LookupChain(ck *CacheKey) []*objects.DChain {
-	bw.chaincachemu.Lock()
-	defer bw.chaincachemu.Unlock()
-	l1 := bw.chaincache[ck.nsvk]
-	if l1 == nil {
-		return nil
-	}
-	return l1[*ck]
-}
-
-func (bw *BW) InvalidateChainCache(nsvk []byte) {
-	arr := [32]byte{}
-	copy(arr[:], nsvk)
-	bw.chaincachemu.Lock()
-	delete(bw.chaincache, arr)
-	bw.chaincachemu.Unlock()
-}
-
-func (bw *BW) CacheChain(ck *CacheKey, res []*objects.DChain) {
-	bw.chaincachemu.Lock()
-	defer bw.chaincachemu.Unlock()
-	l1, ok := bw.chaincache[ck.nsvk]
-	if !ok {
-		l1 = make(map[CacheKey][]*objects.DChain)
-		bw.chaincache[ck.nsvk] = l1
-	}
-	l1[*ck] = res
+	rdata  *ResolutionData
 }
 
 func (bw *BW) BC() bc.BlockChainProvider {
@@ -133,9 +60,9 @@ func OpenBWContext(config *core.BWConfig) (*BW, chan bool) {
 		config = core.LoadConfig("")
 	}
 	rv := &BW{Config: config,
-		tm:         core.CreateTerminus(),
-		dotcache:   make(map[bc.Bytes32]map[bc.Bytes32][]bc.Bytes32),
-		chaincache: make(map[[32]byte]map[CacheKey][]*objects.DChain),
+		tm: core.CreateTerminus(),
+		//dotcache:   make(map[bc.Bytes32]map[bc.Bytes32][]bc.Bytes32),
+		rdata: newResolutionData(),
 	}
 	entcontents, err := ioutil.ReadFile(config.Router.Entity)
 	if err != nil {
@@ -159,8 +86,7 @@ func OpenBWContext(config *core.BWConfig) (*BW, chan bool) {
 	//only the BC has shutdown tasks
 	var bcShutdown chan bool
 	rv.bchain, bcShutdown = bc.NewBlockChain(path.Join(config.Router.DB, "bw2bc"))
-	rv.lag = NewLagger(rv.bchain)
-	rv.startResolutionLoop()
+	rv.startResolutionServices()
 
 	return rv, bcShutdown
 }
@@ -216,7 +142,7 @@ func (cl *BosswaveClient) SetMaxChainAge(age uint64) {
 	cl.maxage = age
 }
 func (cl *BosswaveClient) ChainStale() bool {
-	return (cl.bchain.HeadBlockAge() > int64(cl.GetMaxChainAge()) || !cl.bw.lag.CaughtUp())
+	return (cl.bchain.HeadBlockAge() > int64(cl.GetMaxChainAge()))
 }
 func (cl *BosswaveClient) GetUs() *objects.Entity {
 	return cl.ourvk

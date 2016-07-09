@@ -1,3 +1,5 @@
+// +build ignore
+
 package api
 
 import (
@@ -13,7 +15,6 @@ type Lagger struct {
 	doneNumber    int64
 	expectParent  bc.Bytes32
 	subscribers   []func(b *bc.Block)
-	onReset       []func()
 	smu           sync.Mutex
 	bchain        bc.BlockChainProvider
 	caughtup      bool
@@ -34,10 +35,9 @@ func NewLagger(bchain bc.BlockChainProvider) *Lagger {
 func (lag *Lagger) CaughtUp() bool {
 	return lag.caughtup
 }
-func (lag *Lagger) Subscribe(onConfirmedBlock func(b *bc.Block), onReset func()) {
+func (lag *Lagger) Subscribe(onConfirmedBlock func(b *bc.Block)) {
 	lag.smu.Lock()
 	defer lag.smu.Unlock()
-	lag.onReset = append(lag.onReset, onReset)
 	lag.subscribers = append(lag.subscribers, onConfirmedBlock)
 }
 

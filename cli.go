@@ -639,7 +639,72 @@ func actionMkDOT(c *cli.Context) error {
 	}
 	return nil
 }
-
+func actionRevoke(c *cli.Context) error {
+	bw2bind.SilenceLog()
+	cl := bw2bind.ConnectOrExit(c.GlobalString("agent"))
+	cl.StatLine()
+	if !c.Bool("nopublish") {
+		if c.String("bankroll") == "" {
+			fmt.Println("Need bankroll to publish (or use --nopublish)")
+			os.Exit(1)
+		}
+	}
+	if c.String("from") == "" {
+		fmt.Println("You need to specify a --from entity with authority to generate the revocation")
+		os.Exit(1)
+	}
+	e := getAvailableEntity(c, c.String("from"))
+	if e == nil {
+		fmt.Println("Could not load the 'from' entity")
+		os.Exit(1)
+	}
+	cl.SetEntity(e.GetSigningBlob())
+	if c.String("vk") != "" && c.String("dot") != "" {
+		fmt.Println("You can only specify --vk or --dot, not both")
+		os.Exit(1)
+	}
+	if c.String("vk") == "" && c.String("dot") == "" {
+		fmt.Println("You need to specify --vk or --dot")
+		os.Exit(1)
+	}
+	var hash string
+	var blob []byte
+	var err error
+	if c.String("vk") != "" {
+		hash, blob, err = cl.RevokeEntity(c.String("vk"), c.String("comment"))
+	} else {
+		hash, blob, err = cl.RevokeDOT(c.String("dot"), c.String("comment"))
+	}
+	if err != nil {
+		fmt.Println("Revocation failed: ", err)
+		os.Exit(1)
+	} else {
+		fmt.Println("Revocation generated successfully")
+	}
+	fname := c.String("outfile")
+	if len(fname) == 0 {
+		fname = "." + hash + ".rvk"
+	}
+	wrapped := make([]byte, len(blob)+1)
+	copy(wrapped[1:], blob)
+	wrapped[0] = objects.RORevocation
+	err = ioutil.WriteFile(fname, wrapped, 0666)
+	if err != nil {
+		fmt.Println("could not write revocation to", fname, ":", err.Error())
+		os.Exit(1)
+	}
+	fmt.Println("Wrote revocation to file: ", fname)
+	rvki, err := objects.NewRevocation(objects.RORevocation, blob)
+	rvk, ok := rvki.(*objects.Revocation)
+	if err != nil || !ok {
+		fmt.Println("Got bad revocation object from agent")
+		os.Exit(1)
+	}
+	if !c.Bool("nopublish") {
+		pubObj(rvk, cl, c)
+	}
+	return nil
+}
 func actionMkEntity(c *cli.Context) error {
 	bw2bind.SilenceLog()
 	cl := bw2bind.ConnectOrExit(c.GlobalString("agent"))
@@ -723,6 +788,9 @@ func inspectInterface(ro objects.RoutingObject, cl *bw2bind.BW2Client) {
 	case objects.ROAccessDChainHash:
 		fmt.Println("\u2533 Type: Access DChain hash")
 		dochainfile(ro.(*objects.DChain), cl, true)
+	case objects.RORevocation:
+		fmt.Println("\u2533 Type: Revocation")
+		dorevocationfile(ro.(*objects.Revocation), cl)
 	default:
 		fmt.Println("ERR: not a Routing Object file")
 	}
@@ -762,6 +830,9 @@ func pubObjs(topubz []objects.RoutingObject, cl *bw2bind.BW2Client, c *cli.Conte
 			case *objects.DChain:
 				desc, err = cl.PublishChain(t.GetContent())
 				desc = "DChain " + desc
+			case *objects.Revocation:
+				desc, err = cl.PublishRevocation(0, t.GetContent())
+				desc = "Revocation " + desc
 			}
 			if err == nil {
 				fmt.Printf("\rSuccessfully published %s\n", desc)
@@ -1114,7 +1185,7 @@ func actionSubscribe(c *cli.Context) error {
 }
 
 func actionQuery(c *cli.Context) error {
-	bbw2bind.SilenceLog()
+	bw2bind.SilenceLog()
 	cl := bw2bind.ConnectOrExit(c.GlobalString("agent"))
 	cl.StatLine()
 	if c.String("entity") == "" {
@@ -1144,6 +1215,7 @@ func actionQuery(c *cli.Context) error {
 		}()
 	}
 	wg.Wait()
+	return nil
 }
 
 func actionMset(c *cli.Context) error {

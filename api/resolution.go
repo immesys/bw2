@@ -1,3 +1,5 @@
+// +build ignore
+
 package api
 
 import (
@@ -29,30 +31,57 @@ func (bw *BW) GetTarget(drvk string) (string, error) {
 */
 
 func (bw *BW) startResolutionLoop() {
-	rocache, err := os.Open(path.Join(bw.Config.Router.DB, "rocache"))
+	fname := path.Join(bw.Config.Router.DB, "rocache")
+	rocache, err := os.Open(fname)
+	var versionmagic uint64
 	if err == nil {
 		dec := gob.NewDecoder(rocache)
+		err = dec.Decode(&versionmagic)
+		if err != nil {
+			log.Criticalf("Could not load rocache, please delete %s and restart", fname)
+			os.Exit(1)
+		}
+		if versionmagic != 0xFFFFBEEFBABE0001 {
+			rocache.Close()
+			log.Infof("Rocache is the wrong version, ignoring")
+			goto skip
+		}
 		err = dec.Decode(&bw.lag.doneNumber)
 		if err != nil {
-			panic(err)
+			log.Criticalf("Could not load rocache, please delete %s and restart", fname)
+			os.Exit(1)
 		}
 		err = dec.Decode(&bw.lag.expectParent)
 		if err != nil {
-			panic(err)
+			log.Criticalf("Could not load rocache, please delete %s and restart", fname)
+			os.Exit(1)
 		}
-		err = dec.Decode(&bw.cachesize)
+		err = dec.Decode(&bw.dotFromCache)
 		if err != nil {
-			panic(err)
+			log.Criticalf("Could not load rocache, please delete %s and restart", fname)
+			os.Exit(1)
 		}
-		err = dec.Decode(&bw.dotcache)
+		err = dec.Decode(&bw.dotToCache)
 		if err != nil {
-			panic(err)
+			log.Criticalf("Could not load rocache, please delete %s and restart", fname)
+			os.Exit(1)
+		}
+		err = dec.Decode(&bw.entityCache)
+		if err != nil {
+			log.Criticalf("Could not load rocache, please delete %s and restart", fname)
+			os.Exit(1)
+		}
+		err = dec.Decode(&bw.dotHashCache)
+		if err != nil {
+			log.Criticalf("Could not load rocache, please delete %s and restart", fname)
+			os.Exit(1)
 		}
 		rocache.Close()
 		log.Infof("Loaded rocache number %d", bw.lag.doneNumber)
 	} else {
 		log.Warnf("Did not load rocache")
 	}
+skip:
 
 	bw.lag.Subscribe(func(b *bc.Block) {
 		//Check the logs for DOTs
@@ -64,43 +93,71 @@ func (bw *BW) startResolutionLoop() {
 					bc.HexToBytes32(bc.EventSig_Registry_NewDOT)}):
 					log.Tracef("Found a DOT: \n%s", l)
 					dh := l.Topics()[1]
-					dot, _, err := bw.ResolveDOT(dh[:])
-					if err != nil {
-						panic(err)
-					}
-					bw.CacheDOT(dot)
+					// dot, s, err := bw.ResolveDOT(dh[:])
+					// if err != nil {
+					// 	panic(err)
+					// }
+					bw.FlushDOT(dh[:])
 
 				case l.MatchesTopicsStrict([]bc.Bytes32{
 					bc.HexToBytes32(bc.EventSig_Registry_NewDOTRevocation)}):
 					log.Tracef("Found a DOT revocation: \n%s", l)
-					bw.cachemu.Lock()
 					dh := l.Topics()[1]
-					entry, ok := bw.dotHashCache[dh]
-					if ok {
-						entry.valid = false
-					}
-					bw.cachemu.Unlock()
+					bw.FlushDOT(dh[:])
+					//
+					// bw.cachemu.Lock()
+					// dh := l.Topics()[1]
+					// entry, ok := bw.dotHashCache[dh]
+					// _, s, e := bw.ResolveDOT(dh[:])
+					// if ok {
+					// 	entry.valid = false
+					// 	entry.s = s
+					// 	entry.err = e
+					// }
+					// bw.cachemu.Unlock()
 				case l.MatchesTopicsStrict([]bc.Bytes32{
 					bc.HexToBytes32(bc.EventSig_Registry_NewEntityRevocation)}):
 					vk := l.Topics()[1]
-					fE, ok := bw.dotFromCache[vk]
-					if ok {
-						fmt.Println("invalidated DOT fcache entry")
-						fE.valid = false
-					}
-					tE, ok := bw.dotToCache[vk]
-					if ok {
-						fmt.Println("invalidated DOT tcache entry")
-						tE.valid = false
-					}
-					bw.cachemu.Unlock()
+					bw.FlushEntity(vk[:])
+					//
+					// fE, ok := bw.dotFromCache[vk]
+					// if ok {
+					// 	fmt.Println("invalidated DOT fcache entry")
+					// 	for _, hash := range fE {
+					// 		entry, ok2 := bw.dotHashCache[hash]
+					// 		if ok2 {
+					// 			must invalidate chains as well
+					// 			_, s, e := bw.ResolveDOT(hash[:])
+					// 			entry.valid = false
+					// 			entry.s = s
+					// 			entry.err = e
+					// 		}
+					// 	}
+					// }
+					// tE, ok := bw.dotToCache[vk]
+					// if ok {
+					// 	fmt.Println("invalidated DOT tcache entry")
+					// 	for _, hash := range tE {
+					// 		entry, ok2 := bw.dotHashCache[hash]
+					// 		if ok2 {
+					// 			_, s, e := bw.ResolveDOT(hash[:])
+					// 			entry.valid = false
+					// 			entry.s = s
+					// 			entry.err = e
+					// 		}
+					// 	}
+					// }
+					// ent, ok := bw.entityCache[vk]
+					// if ok {
+					// 	_, s, e := bw.ResolveEntity(vk[:])
+					// 	ent.valid = false
+					// 	ent.s = s
+					// 	ent.err = e
+					// }
+					// bw.cachemu.Unlock()
 				}
 			}
 		}
-	}, func() {
-		bw.cachemu.Lock()
-		bw.dotcache = make(map[bc.Bytes32]map[bc.Bytes32][]bc.Bytes32)
-		bw.cachemu.Unlock()
 	})
 	bw.lag.BeginLoop()
 	// go func() {
@@ -132,11 +189,19 @@ func (bw *BW) startResolutionLoop() {
 			if err != nil {
 				panic(err)
 			}
-			err = enc.Encode(bw.cachesize)
+			err = enc.Encode(bw.dotFromCache)
 			if err != nil {
 				panic(err)
 			}
-			err = enc.Encode(bw.dotcache)
+			err = enc.Encode(bw.dotToCache)
+			if err != nil {
+				panic(err)
+			}
+			err = enc.Encode(bw.entityCache)
+			if err != nil {
+				panic(err)
+			}
+			err = enc.Encode(bw.dotHashCache)
 			if err != nil {
 				panic(err)
 			}
@@ -153,84 +218,50 @@ func (bw *BW) startResolutionLoop() {
 	}()
 }
 
-func (bw *BW) CacheDOT(d *objects.DOT) {
-	bw.cachemu.Lock()
-	defer bw.cachemu.Unlock()
-	from := bc.SliceToBytes32(d.GetGiverVK())
-	to := bc.SliceToBytes32(d.GetReceiverVK())
-	hsh := bc.SliceToBytes32(d.GetHash())
-	bw.InvalidateChainCache(d.GetAccessURIMVK())
-	fmap, ok := bw.dotcache[from]
-	if !ok {
-		fmap = make(map[bc.Bytes32][]bc.Bytes32)
-		bw.dotcache[from] = fmap
-	}
-	tslc, ok := fmap[to]
-	if !ok {
-		tslc = make([]bc.Bytes32, 0, 1)
-	}
-	for _, v := range tslc {
-		if v == hsh {
-			return //Already there
-		}
-	}
-	bw.cachesize++
-	tslc = append(tslc, hsh)
-	fmap[to] = tslc
-}
-
-type DOTLink struct {
-	D *objects.DOT
-	S int
-}
-
 func (bw *BW) GetDOTsFrom(giver []byte) ([]*DOTLink, error) {
 	from := bc.SliceToBytes32(giver)
 	bw.cachemu.Lock()
 	defer bw.cachemu.Unlock()
-	fmap, ok := bw.dotcache[from]
+	hashslice, ok := bw.dotFromCache[from]
 	if !ok {
 		return nil, nil
 	}
 	rv := []*DOTLink{}
-	for to := range fmap {
-		tslc := fmap[to]
-		for _, hsh := range tslc {
-			d, s, e := bw.ResolveDOT(hsh[:])
-			if s == StateError {
-				return nil, e
-			}
-			dl := DOTLink{d, s}
-			rv = append(rv, &dl)
+	for _, dh := range hashslice {
+		de := bw.dotHashCache[dh]
+		if de.s == StateError {
+			panic("I don't think this should happen")
 		}
+		dl := DOTLink{de.ro, de.s}
+		rv = append(rv, &dl)
 	}
 	return rv, nil
 }
 
-func (bw *BW) GetDOTsBetween(giver []byte, receiver []byte) ([]*DOTLink, error) {
-	from := bc.SliceToBytes32(giver)
-	to := bc.SliceToBytes32(receiver)
-	bw.cachemu.Lock()
-	defer bw.cachemu.Unlock()
-	fmap, ok := bw.dotcache[from]
-	if !ok {
-		return nil, nil
-	}
-	tslc, ok := fmap[to]
-	if !ok {
-		return nil, nil
-	}
-	rv := make([]*DOTLink, len(tslc))
-	for i, hsh := range tslc {
-		d, s, e := bw.ResolveDOT(hsh[:])
-		if s == StateError {
-			return nil, e
-		}
-		dl := DOTLink{d, s}
-		rv[i] = &dl
-	}
-	return rv, nil
-}
+// func (bw *BW) GetDOTsBetween(giver []byte, receiver []byte) ([]*DOTLink, error) {
+// 	from := bc.SliceToBytes32(giver)
+// 	to := bc.SliceToBytes32(receiver)
+// 	bw.cachemu.Lock()
+// 	defer bw.cachemu.Unlock()
+// 	fmap, ok := bw.dotcache[from]
+// 	if !ok {
+// 		return nil, nil
+// 	}
+// 	tslc, ok := fmap[to]
+// 	if !ok {
+// 		return nil, nil
+// 	}
+// 	rv := make([]*DOTLink, len(tslc))
+// 	for i, hsh := range tslc {
+// 		d, s, e := bw.ResolveDOT(hsh[:])
+// 		if s == StateError {
+// 			return nil, e
+// 		}
+// 		dl := DOTLink{d, s}
+// 		rv[i] = &dl
+// 	}
+// 	return rv, nil
+// }
 func (bw *BW) UnresolveAlias(val []byte) (string, bool, error) {
 	if len(val) > 32 {
 		return "", false, nil
@@ -472,10 +503,11 @@ func (bw *BW) ResolveDOT(dothash []byte) (*objects.DOT, int, error) {
 	if s != StateError {
 		memo := &registryDOTResult{ro: d, s: s, err: er, valid: true}
 		bw.cachemu.Lock()
-		bw.dotHashCache[bc.SliceToBytes32(dothash)] = memo
+		k := bc.SliceToBytes32(dothash)
+		bw.dotHashCache[k] = memo
 		if d != nil {
-			bw.dotFromCache[bc.SliceToBytes32(d.GetGiverVK())] = memo
-			bw.dotToCache[bc.SliceToBytes32(d.GetReceiverVK())] = memo
+			bw.dotFromCache[bc.SliceToBytes32(d.GetGiverVK())] = k
+			bw.dotToCache[bc.SliceToBytes32(d.GetReceiverVK())] = k
 		}
 		bw.cachemu.Unlock()
 	}

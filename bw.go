@@ -519,6 +519,32 @@ func main() {
 				},
 			},
 		},
+		{
+			Name:   "revoke",
+			Usage:  "revoke [OPTIONS] objects...",
+			Action: cli.ActionFunc(actionRevoke),
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name:   "from, f",
+					Usage:  "the entity to generate the revocation with",
+					Value:  "",
+					EnvVar: "BW2_DEFAULT_ENTITY",
+				}, cli.StringFlag{
+					Name:  "vk",
+					Usage: "the entity VK to revoke",
+					Value: "",
+				}, cli.StringFlag{
+					Name:  "dot",
+					Usage: "the DOT hash to revoke",
+					Value: "",
+				}, cli.StringFlag{
+					Name:  "comment, m",
+					Usage: "the revocation comment",
+					Value: "",
+				},
+				bflag, nflag, oflag,
+			},
+		},
 	}
 	app.Run(os.Args)
 }

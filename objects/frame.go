@@ -71,6 +71,7 @@ const (
 	CmdRevokeDROffer         = "rdro"
 	CmdRevokeDRAccept        = "rdra"
 	CmdRevokeRO              = "revk"
+	CmdPutRevocation         = "prvk"
 
 	CmdResponse = "resp"
 	CmdResult   = "rslt"

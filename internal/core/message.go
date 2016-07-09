@@ -48,8 +48,9 @@ type Resolver interface {
 	ResolveDOT(dothash []byte) (*objects.DOT, int, error)
 	ResolveEntity(vk []byte) (*objects.Entity, int, error)
 	ResolveAccessDChain(chainhash []byte) (*objects.DChain, int, error)
-	GetDOTState(d *objects.DOT) error
-	GetEntityState(e *objects.Entity) error
+	StateToString(state int) string
+	//GetDOTState(d *objects.DOT) error
+	//GetEntityState(e *objects.Entity) error
 }
 
 // Message is the primary Bosswave message type that is passed all the way through
@@ -241,6 +242,7 @@ func LoadMessage(b []byte) (m *Message, err error) {
 func ElaborateDChain(dc *objects.DChain, res Resolver) *objects.DChain {
 	if !dc.IsElaborated() {
 		//We need to elaborate it ourselves
+		//don't check state, we check it later
 		nchain, _, err := res.ResolveAccessDChain(dc.GetChainHash())
 		if err != nil { //Not in our DB
 			return nil
@@ -250,28 +252,29 @@ func ElaborateDChain(dc *objects.DChain, res Resolver) *objects.DChain {
 	return dc
 }
 
-func ResolveDotsInDChain(dc *objects.DChain, cache []objects.RoutingObject, res Resolver) bool {
-	if !dc.IsElaborated() {
-		return false
-	}
-	//Augment the primary dchain by the ro's we got given
-	for _, ro := range cache {
-		if ro.GetRONum() == objects.ROAccessDOT {
-			dc.AugmentBy(ro.(*objects.DOT))
-		}
-	}
-	//Next, resolve any dots that did not exist in the chain
-	for i := 0; i < dc.NumHashes(); i++ {
-		if dc.GetDOT(i) == nil {
-			dot, _, err := res.ResolveDOT(dc.GetDotHash(i))
-			if err != nil {
-				return false
-			}
-			dc.SetDOT(i, dot)
-		}
-	}
-	return true
-}
+//
+// func ResolveDotsInDChain(dc *objects.DChain, cache []objects.RoutingObject, res Resolver) bool {
+// 	if !dc.IsElaborated() {
+// 		return false
+// 	}
+// 	//Augment the primary dchain by the ro's we got given
+// 	for _, ro := range cache {
+// 		if ro.GetRONum() == objects.ROAccessDOT {
+// 			dc.AugmentBy(ro.(*objects.DOT))
+// 		}
+// 	}
+// 	//Next, resolve any dots that did not exist in the chain
+// 	for i := 0; i < dc.NumHashes(); i++ {
+// 		if dc.GetDOT(i) == nil {
+// 			dot, _, err := res.ResolveDOT(dc.GetDotHash(i))
+// 			if err != nil {
+// 				return false
+// 			}
+// 			dc.SetDOT(i, dot)
+// 		}
+// 	}
+// 	return true
+// }
 
 //AnalyzeAccessDotChain does what it says.
 func AnalyzeAccessDOTChain(mtype int, targetURI string, dc *objects.DChain) (err error,
@@ -328,7 +331,7 @@ func AnalyzeAccessDOTChain(mtype int, targetURI string, dc *objects.DChain) (err
 	}
 	originVK = tail
 	mergeduri = &uri
-	tValid, star, plus, _, _ := util.AnalyzeSuffix(uri)
+	tValid, star, plus, _ := util.AnalyzeSuffix(uri)
 
 	if !tValid {
 		err = bwe.M(bwe.OverconstrainedURI, "overconstrained URI after merging")
@@ -368,20 +371,16 @@ func AnalyzeAccessDOTChain(mtype int, targetURI string, dc *objects.DChain) (err
 	return
 }
 
-//TODO remove the damn status message thing and just use an int
-//A piece of critical documentation:
-//There are a few "exceptions" to the obvious rules.
-// a) A DOT granting a VK of all 0xFF applies to anyone
-// b) Any message concerning a topic of mvk/*/$/* is allowed as read only
-//    without a DChain. This is used so that clients can discover "free"
-//    DOTs or means of acquiring DOTs.
-//    these can be queried or subscribed to.
+const (
+	StateUnknown = iota
+	StateValid
+	StateExpired
+	StateRevoked
+	StateError
+)
+
 func (m *Message) Verify(res Resolver) error {
-	//Return cached code if you can
-	if m.checked {
-		return m.VerifyResult
-	}
-	var rverr error
+
 	doret := func(err error) error {
 		m.checked = true
 		m.VerifyResult = err
@@ -393,13 +392,14 @@ func (m *Message) Verify(res Resolver) error {
 		return doret(bwe.M(bwe.ExpiredMessage, "message is expired"))
 	}
 
-	//This is used as the EVERYONE vk (all 0xFF) or the router MVK (all 0xFF)
+	//Return cached code if you can
+	if m.checked {
+		return m.VerifyResult
+	}
+
 	pac := m.PrimaryAccessChain
 	//First thing: check the uri for validity
-	//the presence of a dollar complicates everything because it
-	//allows you to execute queries or subscribes even if the
-	//permission process fails
-	urivalid, star, plus, uridollar, _ := util.AnalyzeSuffix(m.TopicSuffix)
+	urivalid, star, plus, _ := util.AnalyzeSuffix(m.TopicSuffix)
 	//Can't publish to wildcards
 	if (star || plus) && (m.Type == TypePublish || m.Type == TypePersist || m.Type == TypeLS) {
 		return doret(bwe.M(bwe.BadOperation, "you cannot publish or list a URI with a wildcard"))
@@ -408,140 +408,82 @@ func (m *Message) Verify(res Resolver) error {
 		return doret(bwe.M(bwe.BadURI, "URI is invalid"))
 	}
 
-	fromMVK := false
-	//If message is from MVK it can do whatever it wants
-	if m.OriginVK != nil && bytes.Equal(*m.OriginVK, m.MVK) {
-		fromMVK = true
-		goto endperm
-	}
+	// Remove to simplify
+	// fromMVK := false
+	// //If message is from MVK it can do whatever it wants
+	// if m.OriginVK != nil && bytes.Equal(*m.OriginVK, m.MVK) {
+	// 	fromMVK = true
+	// 	goto endperm
+	// }
 
 	//These will be populated by the permissions search process
 	//only use them if you don't jump to endperm
 
 	//Can't get permissions if there is no access chain
 	if pac == nil {
-		rverr = bwe.M(bwe.BadPermissions, "missing PAC")
-		goto endperm
-	} else {
-		pac = ElaborateDChain(pac, res)
-		if pac == nil {
-			rverr = bwe.M(bwe.Unresolvable, "could not elaborate the PAC hash")
-			goto endperm
-		}
-
-		ok := ResolveDotsInDChain(pac, m.RoutingObjects, res)
-		if !ok {
-			rverr = bwe.M(bwe.Unresolvable, "could not elaborate all DOTs in the PAC")
-			goto endperm
-		}
-		// Check that all dots are not expired / revoked
-		// Due to implementation of GetDOTState this also checks the
-		// entities in the DOTs.
-		// This was added in 2.1.x and it significantly changes the way
-		// that messages are verified as this will fail for all unregistered
-		// dots or entities whereas typically if a fully elaborated message
-		// was sent, it would be accepted. The difference is that we can now
-		// know in advance which DOTs exist and will be accepted.
-		for i := 0; i < pac.NumHashes(); i++ {
-			di := pac.GetDOT(i)
-			derr := res.GetDOTState(di)
-			if derr != nil {
-				rverr = derr
-				goto endperm
-			}
-		}
-		//Check the signature of all the dots. This also checks that their topics are
-		//well formed
-		if !pac.CheckAllSigs() {
-			rverr = bwe.M(bwe.InvalidSig, "PAC contained invalid DOTs (sig)")
-			goto endperm
-		}
-
-		//Next check the chain is connected end to end, check the TTL and construct
-		//the merged topic
-		azErr, azMVK, azURI, _, _, _, azOVK := AnalyzeAccessDOTChain(int(m.Type), m.TopicSuffix, pac)
-		//fmt.Println("AZDC says OVK is ", crypto.FmtKey(azOVK))
-		if azErr != nil {
-			rverr = azErr
-			goto endperm
-		}
-		m.MergedTopic = azURI
-
-		//Check if this is an ALL grant and we don't have an origin VK
-		if bytes.Equal(azOVK, util.EverybodySlice) {
-			if m.OriginVK == nil {
-				rverr = bwe.M(bwe.NoOrigin, "allgrant with no OVK ro")
-				goto endperm
-			}
-		} else {
-			if m.OriginVK == nil {
-				m.OriginVK = &azOVK
-			}
-		}
-		//Also check chain MVK matches message
-		if !bytes.Equal(m.MVK, azMVK) {
-			rverr = bwe.M(bwe.MVKMismatch, "chain namespace doesn't match message")
-			goto endperm
-		}
+		return doret(bwe.M(bwe.BadPermissions, "missing PAC"))
 	}
 
-	//We could be here with failed permissions
-	//we still must continue because we might have dollar
-	//status
-endperm:
+	pac = ElaborateDChain(pac, res)
+	if pac == nil {
+		return doret(bwe.M(bwe.Unresolvable, "could not elaborate the PAC hash"))
+	}
 
+	// not needed because we call getdot on each hash below
+	// resolved_ok := ResolveDotsInDChain(pac, m.RoutingObjects, res)
+	// 	if !ok {
+	// 		rverr = bwe.M(bwe.Unresolvable, "could not elaborate all DOTs in the PAC")
+	// 		goto endperm
+	// 	}
+
+	for i := 0; i < pac.NumHashes(); i++ {
+		di, state, err := res.ResolveDOT(pac.GetDotHash(i))
+		if err != nil {
+			return doret(bwe.WrapM(bwe.BadPermissions, "Could not verify DOT", err))
+		}
+		if state != StateValid {
+			return doret(bwe.M(bwe.BadPermissions, fmt.Sprintf("PAC DOT %d invalid: %s", i, res.StateToString(state))))
+		}
+		pac.SetDOT(i, di)
+	}
+
+	//Check the signature of all the dots. This also checks that their topics are
+	//well formed
+	if !pac.CheckAllSigs() {
+		return doret(bwe.M(bwe.InvalidSig, "PAC contained invalid DOTs (sig)"))
+	}
+
+	//Next check the chain is connected end to end, check the TTL and construct
+	//the merged topic
+	azErr, azMVK, azURI, _, _, _, azOVK := AnalyzeAccessDOTChain(int(m.Type), m.TopicSuffix, pac)
+	if azErr != nil {
+		return doret(azErr)
+	}
+	m.MergedTopic = azURI
+
+	//Check if this is an ALL grant and we don't have an origin VK
+	if bytes.Equal(azOVK, util.EverybodySlice) {
+		if m.OriginVK == nil {
+			return doret(bwe.M(bwe.NoOrigin, "allgrant with no OVK ro"))
+		}
+	} else {
+		if m.OriginVK == nil {
+			m.OriginVK = &azOVK
+		}
+	}
+	//Also check chain MVK matches message
+	if !bytes.Equal(m.MVK, azMVK) {
+		return doret(bwe.M(bwe.MVKMismatch, "chain namespace doesn't match message"))
+	}
+
+	//I don't think this can happen
 	if m.OriginVK == nil {
 		return doret(bwe.M(bwe.NoOrigin, "missing origin VK on message"))
 	}
 
 	//Now check if the signature is correct
-	//fmt.Printf("\nenclen %v, sce %v, siglen %v\n", len(m.Encoded), m.SigCoverEnd, len(m.Signature))
-	//fmt.Println("Signature: ", crypto.FmtSig(m.Signature))
-	//fmt.Println("VK: ", crypto.FmtKey(*m.OriginVK))
 	if !crypto.VerifyBlob(*m.OriginVK, m.Signature, m.Encoded[:m.SigCoverEnd]) {
 		return doret(bwe.M(bwe.InvalidSig, "message signature invalid"))
-	}
-
-	if m.Type == TypeUnsubscribe {
-		//Valid sig and originVK is really all you need
-		//you also need to be from the same client, but
-		//terminus will verify that
-		return doret(nil)
-	}
-
-	//No dollar, and we hit an error, bail
-	if !uridollar && rverr != nil {
-		return doret(rverr)
-	}
-
-	if fromMVK {
-		return doret(nil)
-	}
-
-	dollarpath := uridollar && rverr != nil
-
-	//Now check type vs dollar
-	switch m.Type {
-	case TypePublish, TypePersist:
-		if dollarpath {
-			return doret(bwe.WrapM(bwe.BadPermissions, "dollarpath pub", rverr))
-		}
-	case TypeQuery, TypeSubscribe:
-		//in this case use the (more powerful) original uri if it is a dollar
-		if uridollar {
-			m.MergedTopic = &m.TopicSuffix
-		}
-	case TypeTapQuery, TypeTap:
-		if dollarpath {
-			return doret(bwe.WrapM(bwe.BadPermissions, "dollarpath tap", rverr))
-		}
-	case TypeLS:
-		//Here too, use the (more powerful) original uri if it is a dollar
-		if uridollar {
-			m.MergedTopic = &m.TopicSuffix
-		}
-	default:
-		return doret(bwe.M(bwe.BadOperation, "bad message type"))
 	}
 
 	return doret(nil)

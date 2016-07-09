@@ -46,12 +46,11 @@ const EverybodyVK = "----EqP__WY477nofMYUz2MNFBsfa5IK_RBlRvKptDY="
 // finding it in that case can be difficult
 
 //AnalyzeSuffix checks a given URI for schema validity and possession of characteristics
-func AnalyzeSuffix(uri string) (valid, hasStar, hasPlus, hasDollar, hasBang bool) {
+func AnalyzeSuffix(uri string) (valid, hasStar, hasPlus, hasBang bool) {
 	cells := strings.Split(uri, "/")
 	valid = false
 	hasStar = false
 	hasPlus = false
-	hasDollar = false
 	hasBang = false
 
 	for _, c := range cells {
@@ -70,8 +69,6 @@ func AnalyzeSuffix(uri string) (valid, hasStar, hasPlus, hasDollar, hasBang bool
 				hasPlus = true
 			case "!":
 				return
-			case "$":
-				hasDollar = true
 			default:
 				k := c[0]
 				if !('0' <= k && k <= '9' ||
@@ -79,7 +76,8 @@ func AnalyzeSuffix(uri string) (valid, hasStar, hasPlus, hasDollar, hasBang bool
 					'A' <= k && k <= 'Z' ||
 					k == '-' || k == '_' ||
 					k == ',' || k == '(' ||
-					k == ')' || k == '.') {
+					k == ')' || k == '.' ||
+					k == '$') {
 					return
 				}
 			}
@@ -98,7 +96,8 @@ func AnalyzeSuffix(uri string) (valid, hasStar, hasPlus, hasDollar, hasBang bool
 					'A' <= k && k <= 'Z' ||
 					k == '-' || k == '_' ||
 					k == ',' || k == '(' ||
-					k == ')' || k == '.') {
+					k == ')' || k == '.' ||
+					k == '$') {
 					return
 				}
 			}

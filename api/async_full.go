@@ -90,7 +90,16 @@ func (c *BosswaveClient) checkAddOriginVK(m *core.Message) {
 				pac = dc
 			}
 		}
-		core.ResolveDotsInDChain(pac, nil, c.BW())
+		for i := 0; i < pac.NumHashes(); i++ {
+			di, state, err := c.BW().ResolveDOT(pac.GetDotHash(i))
+			if err != nil {
+				panic(bwe.WrapM(bwe.BadPermissions, "Could not verify DOT", err))
+			}
+			if state != StateValid {
+				panic(bwe.M(bwe.BadPermissions, fmt.Sprintf("PAC DOT %d invalid: %s", i, c.BW().StateToString(state))))
+			}
+			pac.SetDOT(i, di)
+		}
 	}
 	if pac == nil || !pac.IsElaborated() ||
 		pac.GetReceiverVK() == nil ||
@@ -242,7 +251,7 @@ func (c *BosswaveClient) Subscribe(params *SubscribeParams,
 	if params.DoVerify {
 		err := m.Verify(c.BW())
 		if err != nil {
-			actionCB(err, false, core.UniqueMessageID{})
+			actionCB(err, core.UniqueMessageID{})
 			return
 		}
 	}
@@ -299,11 +308,11 @@ func (c *BosswaveClient) Unsubscribe(id core.UniqueMessageID, actioncb func(erro
 	m.UnsubUMid = id
 	c.finishMessage(m)
 	//Just for dev, no reason to do this
-	s := m.Verify(c.BW())
-	if s.Code != bwe.Okay {
+	err = m.Verify(c.BW())
+	if err != nil {
 		//So even though we fail, we deregister locally, so that
 		//messages coming from this subscription are ignored in future
-		regActionCB(bwe.M(s.Code, "Local verification failed"))
+		regActionCB(err)
 		return
 	}
 	//end just for dev
@@ -578,6 +587,20 @@ func (c *BosswaveClient) CreateDOT(p *CreateDOTParams) (*objects.DOT, error) {
 	if len(p.To) != 32 {
 		return nil, bwe.M(bwe.InvalidSlice, "To VK is bad")
 	}
+	_, state, err := c.BW().ResolveEntity(c.GetUs().GetVK())
+	if err != nil {
+		return nil, err
+	}
+	if state != StateValid {
+		return nil, bwe.M(bwe.InvalidEntity, "Cannot grant dot, source VK state: "+c.BW().StateToString(state))
+	}
+	_, state, err = c.BW().ResolveEntity(p.To)
+	if err != nil {
+		return nil, err
+	}
+	if state != StateValid {
+		return nil, bwe.M(bwe.InvalidEntity, "Cannot grant dot, destination VK state: "+c.BW().StateToString(state))
+	}
 	d := objects.CreateDOT(!p.IsPermission, c.GetUs().GetVK(), p.To)
 	d.SetTTL(int(p.TTL))
 	d.SetContact(p.Contact)
@@ -668,16 +691,18 @@ func (c *BosswaveClient) doPAC(m *core.Message, elaboratePAC int) error {
 			m.RoutingObjects = append(m.RoutingObjects, dc)
 		}
 		if elaboratePAC > PartialElaboration {
-			ok := core.ResolveDotsInDChain(m.PrimaryAccessChain, m.RoutingObjects, c.BW())
-			if !ok {
-				return bwe.M(bwe.Unresolvable, "dot in PAC unresolvable")
-			}
-			for i := 0; i < m.PrimaryAccessChain.NumHashes(); i++ {
-				d := m.PrimaryAccessChain.GetDOT(i)
-				if d != nil {
-					m.RoutingObjects = append(m.RoutingObjects, d)
-				}
-			}
+			return bwe.M(bwe.BadOperation, "We don't support full elaboration anymore")
+			//
+			// ok := core.ResolveDotsInDChain(m.PrimaryAccessChain, m.RoutingObjects, c.BW())
+			// if !ok {
+			// 	return bwe.M(bwe.Unresolvable, "dot in PAC unresolvable")
+			// }
+			// for i := 0; i < m.PrimaryAccessChain.NumHashes(); i++ {
+			// 	d := m.PrimaryAccessChain.GetDOT(i)
+			// 	if d != nil {
+			// 		m.RoutingObjects = append(m.RoutingObjects, d)
+			// 	}
+			// }
 		}
 	} else if m.PrimaryAccessChain != nil {
 		m.PrimaryAccessChain.UnElaborate()
@@ -707,7 +732,7 @@ func (c *BosswaveClient) newMessage(mtype int, mvk []byte, urisuffix string) (*c
 		PayloadObjects: []objects.PayloadObject{},
 		OriginVK:       &ovk,
 		MessageID:      c.getMid()}
-	valid, star, plus, _, _ := util.AnalyzeSuffix(urisuffix)
+	valid, star, plus, _ := util.AnalyzeSuffix(urisuffix)
 	if !valid {
 		return nil, bwe.M(bwe.BadURI, "invalid URI")
 	} else if len(mvk) != 32 {

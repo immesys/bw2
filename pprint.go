@@ -36,7 +36,6 @@ func ifstring(level int) string {
 		ansi.ColorCode("magenta+b"),
 		ansi.ColorCode("yellow+b"),
 	}
-
 	for i := 0; i < level-2; i++ {
 		rv += codes[i] + "\u2503"
 	}
@@ -54,6 +53,21 @@ func doentityfile(e *objects.Entity, cl *bw2bind.BW2Client) {
 	_, status, xerr := cl.ResolveRegistry(crypto.FmtKey(e.GetVK()))
 	regnote := cl.ValidityToString(status, xerr)
 	doentityobj(e, 2, regnote, cl)
+}
+func dorevocationfile(e *objects.Revocation, cl *bw2bind.BW2Client) {
+	fmt.Println(ifstring(2) + " Revocation Hash: " + crypto.FmtKey(e.GetHash()))
+	if e.SigValid() {
+		fmt.Println(istring(2) + " Signature: valid")
+	} else {
+		fmt.Println(istring(2) + ansi.ColorCode("red+b") + " SIGNATURE INVALID")
+	}
+	fmt.Println(istring(2) + " Target : " + crypto.FmtKey(e.GetTarget()))
+	fmt.Println(istring(2) + " Revoker: " + crypto.FmtKey(e.GetVK()))
+	ctime := e.GetCreated()
+	if ctime != nil {
+		fmt.Println(istring(2) + " Created: " + ctime.String())
+	}
+	fmt.Println(istring(2) + " Comment: " + e.GetComment())
 }
 func doentityobj(e *objects.Entity, indent int, regnote string, cl *bw2bind.BW2Client) {
 	//TODO clean this func up a little to be not copypasta

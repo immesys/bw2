@@ -146,7 +146,7 @@ func (bf *boundFrame) loadCommonURI() ([]byte, string) {
 			}
 			rmvk = nsvk
 		}
-		valid, _, _, _, _ := util.AnalyzeSuffix(suffix)
+		valid, _, _, _ := util.AnalyzeSuffix(suffix)
 		if !valid {
 			panic(bwe.M(bwe.MalformedOOBCommand, "Suffix is malformed"))
 		}
@@ -454,6 +454,10 @@ func (bf *boundFrame) Handle() {
 		bf.cmdRevokeDROffer()
 	case objects.CmdRevokeDRAccept:
 		bf.cmdRevokeDRAccept()
+	case objects.CmdRevokeRO:
+		bf.cmdRevokeRoutingObject()
+	case objects.CmdPutRevocation:
+		bf.cmdPutRevocation()
 	case "devl":
 		bf.cmdDevelop()
 	default:

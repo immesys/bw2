@@ -38,7 +38,6 @@ func (umid *UniqueMessageID) ToString() string {
 }
 
 func UniqueMessageIDFromString(s string) *UniqueMessageID {
-	tmp := make([]byte, 16)
 	tmp, err := base64.URLEncoding.DecodeString(s)
 	if err != nil {
 		return nil

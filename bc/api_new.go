@@ -229,9 +229,16 @@ func (bc *blockChain) SyncProgress() (peercount int, start, current, highest uin
 	return
 }
 
+const LatestBlock = -1
+const PendingBlock = -2
+
+func (bc *blockChain) CallOffChain(ufi UFI, params ...interface{}) (ret []interface{}, err error) {
+	return bc.CallOffSpecificChain(LatestBlock, ufi, params...)
+}
+
 //CallOffChain is used for calling constant functions to get return values
 //It executes locally and does not cost any money
-func (bc *blockChain) CallOffChain(ufi UFI, params ...interface{}) (ret []interface{}, err error) {
+func (bc *blockChain) CallOffSpecificChain(block int64, ufi UFI, params ...interface{}) (ret []interface{}, err error) {
 	addr, calldata, err := EncodeABICall(ufi, params...)
 	if err != nil {
 		return nil, bwe.WrapM(bwe.InvalidUFI, "Invalid off-chain UFI call args", err)
@@ -254,7 +261,7 @@ func (bc *blockChain) CallOffChain(ufi UFI, params ...interface{}) (ret []interf
 	// 	result, _, err := s.doCall(args, blockNr)
 	// 	return result, err
 	// }
-	res, err := bc.api_pubchain.Call(ca, -1)
+	res, err := bc.api_pubchain.Call(ca, rpc.BlockNumber(block))
 	if err != nil {
 		return nil, bwe.WrapC(bwe.UFIInvocationError, err)
 	}

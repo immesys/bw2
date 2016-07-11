@@ -351,9 +351,10 @@ func (bc *blockChain) ResolveAccessDChain(chainhash []byte) (*objects.DChain, in
 func (bc *blockChain) ResolveDOTsFromVK(vk Bytes32) ([]Bytes32, error) {
 	rv := []Bytes32{}
 	for i := 0; ; i++ {
-		rvz, err := bc.CallOffSpecificChain(int64(bc.CurrentBlock()-RegistryLag), StringToUFI(UFI_Registry_DOTFromVK), vk, i)
+		rvz, err := bc.CallOffSpecificChain(int64(bc.CurrentBlock()-RegistryLag), StringToUFI(UFI_Registry_DOTFromVK), vk, int64(i))
 		if err != nil || len(rvz) != 1 {
-			return nil, bwe.WrapM(bwe.UFIInvocationError, "Expected 1 rv: ", err)
+			//End of array
+			return rv, nil
 		}
 		hash := SliceToBytes32(rvz[0].([]byte))
 		//We know a dot hash will never be zero

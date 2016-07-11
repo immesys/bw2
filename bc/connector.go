@@ -22,9 +22,9 @@ import (
 )
 
 const (
-	DefGasPrice          = "1000000000" // 1 GWei
+	DefGasPrice          = "10000000000000" // 10 Szabo
 	GpoMinGasPrice       = DefGasPrice
-	GpoMaxGasPrice       = "500000000000"
+	GpoMaxGasPrice       = "1000000000000000" // 1 finney
 	DefaultConfirmations = 2
 	DefaultTimeout       = 20
 )

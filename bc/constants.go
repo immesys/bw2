@@ -2,53 +2,53 @@ package bc
 
 const (
 	// UFIs for Registry
-	UFI_Registry_Address = "90d47c2fadde66b9fcbd0b3f3f29280776864f44"
+	UFI_Registry_Address = "0a7196b519defa5d03ec134c23b8b3bdb622e972"
 	// WhoHoldsPatentFor(bytes32 hash) -> address
-	UFI_Registry_WhoHoldsPatentFor = "90d47c2fadde66b9fcbd0b3f3f29280776864f440201e25340?0000000000000"
+	UFI_Registry_WhoHoldsPatentFor = "0a7196b519defa5d03ec134c23b8b3bdb622e9720201e25340?0000000000000"
 	// RevokeEntity(bytes32 target, bytes content) ->
-	UFI_Registry_RevokeEntity = "90d47c2fadde66b9fcbd0b3f3f29280776864f44101b61064500000000000000"
+	UFI_Registry_RevokeEntity = "0a7196b519defa5d03ec134c23b8b3bdb622e972101b61064500000000000000"
 	// DChains(bytes32 ) -> bytes,uint8,uint256
-	UFI_Registry_DChains = "90d47c2fadde66b9fcbd0b3f3f29280776864f4439da84524051100000000000"
+	UFI_Registry_DChains = "0a7196b519defa5d03ec134c23b8b3bdb622e97239da84524051100000000000"
 	// Entities(bytes32 ) -> bytes,uint8,uint256
-	UFI_Registry_Entities = "90d47c2fadde66b9fcbd0b3f3f29280776864f4445bc46934051100000000000"
+	UFI_Registry_Entities = "0a7196b519defa5d03ec134c23b8b3bdb622e97245bc46934051100000000000"
 	// DOTFromVK(bytes32 , uint256 ) -> bytes32
-	UFI_Registry_DOTFromVK = "90d47c2fadde66b9fcbd0b3f3f29280776864f444d0c2d294104000000000000"
+	UFI_Registry_DOTFromVK = "0a7196b519defa5d03ec134c23b8b3bdb622e9724d0c2d294104000000000000"
 	// PatentDuration() -> uint256
-	UFI_Registry_PatentDuration = "90d47c2fadde66b9fcbd0b3f3f29280776864f44670224f20100000000000000"
+	UFI_Registry_PatentDuration = "0a7196b519defa5d03ec134c23b8b3bdb622e972670224f20100000000000000"
 	// AddRevocationBounty(bytes32 hash) ->
-	UFI_Registry_AddRevocationBounty = "90d47c2fadde66b9fcbd0b3f3f29280776864f4474fe92474000000000000000"
+	UFI_Registry_AddRevocationBounty = "0a7196b519defa5d03ec134c23b8b3bdb622e97274fe92474000000000000000"
 	// CheckEntity(bytes32 vk) ->
-	UFI_Registry_CheckEntity = "90d47c2fadde66b9fcbd0b3f3f29280776864f44ae8efe464000000000000000"
+	UFI_Registry_CheckEntity = "0a7196b519defa5d03ec134c23b8b3bdb622e972ae8efe464000000000000000"
 	// PatentExpiry(bytes32 ) -> uint256
-	UFI_Registry_PatentExpiry = "90d47c2fadde66b9fcbd0b3f3f29280776864f44af0733c44010000000000000"
+	UFI_Registry_PatentExpiry = "0a7196b519defa5d03ec134c23b8b3bdb622e972af0733c44010000000000000"
 	// AddChain(bytes content) ->
-	UFI_Registry_AddChain = "90d47c2fadde66b9fcbd0b3f3f29280776864f44b4b3b0285000000000000000"
+	UFI_Registry_AddChain = "0a7196b519defa5d03ec134c23b8b3bdb622e972b4b3b0285000000000000000"
 	// SetPatentProperties(uint256 price, uint256 duration) ->
-	UFI_Registry_SetPatentProperties = "90d47c2fadde66b9fcbd0b3f3f29280776864f44b5fa20441100000000000000"
+	UFI_Registry_SetPatentProperties = "0a7196b519defa5d03ec134c23b8b3bdb622e972b5fa20441100000000000000"
 	// RevocationBounties(bytes32 ) -> uint256
-	UFI_Registry_RevocationBounties = "90d47c2fadde66b9fcbd0b3f3f29280776864f44bbe201014010000000000000"
+	UFI_Registry_RevocationBounties = "0a7196b519defa5d03ec134c23b8b3bdb622e972bbe201014010000000000000"
 	// Retire() ->
-	UFI_Registry_Retire = "90d47c2fadde66b9fcbd0b3f3f29280776864f44be63c8ca0000000000000000"
+	UFI_Registry_Retire = "0a7196b519defa5d03ec134c23b8b3bdb622e972be63c8ca0000000000000000"
 	// RevokeDOT(bytes32 target, bytes content) ->
-	UFI_Registry_RevokeDOT = "90d47c2fadde66b9fcbd0b3f3f29280776864f44c8bdc0c74500000000000000"
+	UFI_Registry_RevokeDOT = "0a7196b519defa5d03ec134c23b8b3bdb622e972c8bdc0c74500000000000000"
 	// CheckDOT(bytes32 hash) ->
-	UFI_Registry_CheckDOT = "90d47c2fadde66b9fcbd0b3f3f29280776864f44cc0e24e14000000000000000"
+	UFI_Registry_CheckDOT = "0a7196b519defa5d03ec134c23b8b3bdb622e972cc0e24e14000000000000000"
 	// Patents(bytes32 ) -> address
-	UFI_Registry_Patents = "90d47c2fadde66b9fcbd0b3f3f29280776864f44d5c9b86d40?0000000000000"
+	UFI_Registry_Patents = "0a7196b519defa5d03ec134c23b8b3bdb622e972d5c9b86d40?0000000000000"
 	// PatentPrice() -> uint256
-	UFI_Registry_PatentPrice = "90d47c2fadde66b9fcbd0b3f3f29280776864f44dd195adf0100000000000000"
+	UFI_Registry_PatentPrice = "0a7196b519defa5d03ec134c23b8b3bdb622e972dd195adf0100000000000000"
 	// DOTs(bytes32 ) -> bytes,uint8,uint256
-	UFI_Registry_DOTs = "90d47c2fadde66b9fcbd0b3f3f29280776864f44e220d60b4051100000000000"
+	UFI_Registry_DOTs = "0a7196b519defa5d03ec134c23b8b3bdb622e972e220d60b4051100000000000"
 	// ClosePatent(bytes32 hash) ->
-	UFI_Registry_ClosePatent = "90d47c2fadde66b9fcbd0b3f3f29280776864f44eedbd7eb4000000000000000"
+	UFI_Registry_ClosePatent = "0a7196b519defa5d03ec134c23b8b3bdb622e972eedbd7eb4000000000000000"
 	// NewPatent(bytes32 hash) ->
-	UFI_Registry_NewPatent = "90d47c2fadde66b9fcbd0b3f3f29280776864f44f5d00ccf4000000000000000"
+	UFI_Registry_NewPatent = "0a7196b519defa5d03ec134c23b8b3bdb622e972f5d00ccf4000000000000000"
 	// AddDOT(bytes content) ->
-	UFI_Registry_AddDOT = "90d47c2fadde66b9fcbd0b3f3f29280776864f44f73cc97c5000000000000000"
+	UFI_Registry_AddDOT = "0a7196b519defa5d03ec134c23b8b3bdb622e972f73cc97c5000000000000000"
 	// admin() -> address
-	UFI_Registry_admin = "90d47c2fadde66b9fcbd0b3f3f29280776864f44f851a4400?00000000000000"
+	UFI_Registry_admin = "0a7196b519defa5d03ec134c23b8b3bdb622e972f851a4400?00000000000000"
 	// AddEntity(bytes content) ->
-	UFI_Registry_AddEntity = "90d47c2fadde66b9fcbd0b3f3f29280776864f44fd3b34e65000000000000000"
+	UFI_Registry_AddEntity = "0a7196b519defa5d03ec134c23b8b3bdb622e972fd3b34e65000000000000000"
 	// EVENT  NewDOT(bytes32 hash, bytes object)
 	EventSig_Registry_NewDOT = "23e2201ae7a60da1894143cf38ff932197d41ea3c0ac56ba07508e94dd97bd5f"
 	// EVENT  NewEntity(bytes32 vk, bytes object)

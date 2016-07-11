@@ -41,7 +41,11 @@ func WrapC(code int, err error) *BWStatus {
 	return &BWStatus{Code: code, Msg: err.Error()}
 }
 func WrapM(code int, msg string, err error) *BWStatus {
-	return &BWStatus{Code: code, Msg: msg + ": " + err.Error()}
+	errst := "nil"
+	if err != nil {
+		errst = err.Error()
+	}
+	return &BWStatus{Code: code, Msg: msg + ": " + errst}
 }
 
 const (

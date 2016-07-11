@@ -62,11 +62,11 @@ library bw {
   returns (bytes32) {}
 
   /*
-   * UnpackRevocation(bytes) (bool valid, bytes32 vk, bytes32 target)
+   * UnpackRevocation(bytes) (bool valid, bytes32 target, bytes32 vk)
    * sig: UnpackRevocation(bytes) (bool,bytes32,bytes32)
    */
   function UnpackRevocation(bytes blob)
-  returns (bool valid, bytes32 vk, bytes32 target) {}
+  returns (bool valid, bytes32 target, bytes32 vk) {}
 
   /* ADChainGrants(bytes32 chainhash, bytes8 adps, bytes32 mvk, bytes urisuffix)
    * sig: ADChainGrants(bytes32,bytes8,bytes32,bytes) (uint16)

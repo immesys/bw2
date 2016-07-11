@@ -166,6 +166,7 @@ func (bcc *bcClient) PublishRevocation(acc int, rvk *objects.Revocation, confirm
 		confirmed(err)
 		return
 	}
+
 	//And wait for it to confirm
 	bcc.bc.GetTransactionDetailsInt(txhash, bcc.DefaultTimeout, bcc.DefaultConfirmations,
 		nil, func(bn uint64, rcpt *eth.RPCTransaction, err error) {
@@ -175,14 +176,22 @@ func (bcc *bcClient) PublishRevocation(acc int, rvk *objects.Revocation, confirm
 			}
 			if isEntity {
 				_, s, err = bcc.bc.ResolveEntity(rvk.GetTarget())
-				if s != StateRevoked {
+				if err != nil {
 					confirmed(bwe.WrapM(bwe.RegistryEntityInvalid, "Could not revoke: ", err))
+					return
+				}
+				if s != StateRevoked {
+					confirmed(bwe.M(bwe.RegistryEntityInvalid, "Revocation didn't stick"))
 					return
 				}
 			} else {
 				_, s, err = bcc.bc.ResolveDOT(rvk.GetTarget())
-				if s != StateRevoked {
+				if err != nil {
 					confirmed(bwe.WrapM(bwe.RegistryDOTInvalid, "Could not revoke: ", err))
+					return
+				}
+				if s != StateRevoked {
+					confirmed(bwe.M(bwe.RegistryDOTInvalid, "Revocation didn't stick"))
 					return
 				}
 			}

@@ -154,6 +154,41 @@ func getEntityParamVK(bwcl *bw2bind.BW2Client, c *cli.Context, param string) (st
 	}
 	return "", false
 }
+func getDotParamHash(bwcl *bw2bind.BW2Client, c *cli.Context, param string) (string, bool) {
+	contents, err := ioutil.ReadFile(param)
+	if err != nil && !os.IsNotExist(err) {
+		//If file exists but cannot be read, then error out
+		fmt.Println("Could not read file", param, ":", err.Error())
+		os.Exit(1)
+	}
+	if contents != nil {
+		doti, err := objects.NewDOT(int(contents[0]), contents[1:])
+		if err != nil {
+			fmt.Println("Could not decode file:", param, ":", err.Error())
+			os.Exit(1)
+		}
+		dot := doti.(*objects.DOT)
+		return crypto.FmtHash(dot.GetHash()), true
+	}
+	_, err = crypto.UnFmtKey(param)
+	if err == nil {
+		return param, true
+	}
+
+	//Only option is an alias
+	ro, _, err := bwcl.ResolveRegistry(param)
+	if err != nil {
+		fmt.Printf("Could not resolve '%s' in registry: %v\n", param, err)
+		os.Exit(1)
+	}
+	dot, ok := ro.(*objects.DOT)
+	if !ok {
+		fmt.Printf("Could not load '%s' as an entity\n", param)
+		os.Exit(1)
+	}
+	return crypto.FmtKey(dot.GetHash()), true
+
+}
 func getEntityParam(bwcl *bw2bind.BW2Client, c *cli.Context, param string, asSK bool) (interface{}, bool) {
 	//First thing we do is check if there is a local file by that name
 	contents, err := ioutil.ReadFile(param)
@@ -595,6 +630,16 @@ func actionMkDOT(c *cli.Context) error {
 		os.Exit(1)
 	}
 
+	revokers := make([]string, len(c.StringSlice("revoker")))
+	for idx, sr := range c.StringSlice("revoker") {
+		var ok bool
+		revokers[idx], ok = getEntityParamVK(cl, c, sr)
+		if !ok {
+			fmt.Println("Could not parse revoker parameter")
+			os.Exit(1)
+		}
+	}
+
 	_, blob, err := cl.CreateDOT(&bw2bind.CreateDOTParams{
 		IsPermission:      false,
 		To:                toVK,
@@ -602,7 +647,7 @@ func actionMkDOT(c *cli.Context) error {
 		ExpiryDelta:       dur,
 		Contact:           c.String("contact"),
 		Comment:           c.String("comment"),
-		Revokers:          c.StringSlice("revokers"),
+		Revokers:          revokers,
 		OmitCreationDate:  c.Bool("omitcreationdate"),
 		URI:               c.String("uri"),
 		AccessPermissions: c.String("permissions"),
@@ -671,9 +716,19 @@ func actionRevoke(c *cli.Context) error {
 	var blob []byte
 	var err error
 	if c.String("vk") != "" {
-		hash, blob, err = cl.RevokeEntity(c.String("vk"), c.String("comment"))
+		target, ok := getEntityParamVK(cl, c, c.String("vk"))
+		if !ok {
+			fmt.Println("Could not decode --vk param")
+			os.Exit(1)
+		}
+		hash, blob, err = cl.RevokeEntity(target, c.String("comment"))
 	} else {
-		hash, blob, err = cl.RevokeDOT(c.String("dot"), c.String("comment"))
+		target, ok := getDotParamHash(cl, c, c.String("dot"))
+		if !ok {
+			fmt.Println("Could not decode --dot param")
+			os.Exit(1)
+		}
+		hash, blob, err = cl.RevokeDOT(target, c.String("comment"))
 	}
 	if err != nil {
 		fmt.Println("Revocation failed: ", err)
@@ -720,11 +775,20 @@ func actionMkEntity(c *cli.Context) error {
 		fmt.Println("Could not parse expiry:", c.String("expiry"))
 		os.Exit(1)
 	}
+	revokers := make([]string, len(c.StringSlice("revoker")))
+	for idx, sr := range c.StringSlice("revoker") {
+		var ok bool
+		revokers[idx], ok = getEntityParamVK(cl, c, sr)
+		if !ok {
+			fmt.Println("Could not parse revoker parameter")
+			os.Exit(1)
+		}
+	}
 	_, blob, err := cl.CreateEntity(&bw2bind.CreateEntityParams{
 		ExpiryDelta:      dur,
 		Contact:          c.String("contact"),
 		Comment:          c.String("comment"),
-		Revokers:         c.StringSlice("revoker"),
+		Revokers:         revokers,
 		OmitCreationDate: c.Bool("omitcreationdate"),
 	})
 	if err != nil {

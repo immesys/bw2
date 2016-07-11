@@ -315,9 +315,21 @@ contract Registry {
       if (Entities[target].validity != Validity.Valid) {
         return;
       }
-      bw(0x28589).UnpackEntity(Entities[target].blob);
-      var (validE, _1, rtargetE) = bw(0x28589).UnpackRevocation(content);
-      if (!validE || rtargetE != target) {
+      var (_1, numrevokers, _2, _3) = bw(0x28589).UnpackEntity(Entities[target].blob);
+      var (validsig, rtarget, rvk) = bw(0x28589).UnpackRevocation(content);
+      if (!validsig || rtarget != target) {
+        return;
+      }
+      bool validrevoker = (rvk == rtarget);
+      if (!validrevoker) {
+        for (; numrevokers > 0; numrevokers--) {
+          bytes32 allowed_rvk = bw(0x28589).GetEntityDelegatedRevoker(rtarget, numrevokers-1);
+          if (allowed_rvk == rvk) {
+            validrevoker = true;
+          }
+        }
+      }
+      if (!validrevoker) {
         return;
       }
       Entities[target].validity = Validity.Revoked;
@@ -333,13 +345,34 @@ contract Registry {
       if (DOTs[target].validity != Validity.Valid) {
         return;
       }
-      var (_2,_3,_4,_5,srcvk,dstvk,_6) = bw(0x28589).UnpackDOT(DOTs[target].blob);
+      bool  validsig;
+      uint8  numrevokers;
+      bool _bool;
+      uint64  _u64;
+      bytes32 srcvk;
+      bytes32 dstvk;
+      bytes32 rtarget;
+      (validsig,numrevokers,_bool,_u64,srcvk,dstvk,rtarget) = bw(0x28589).UnpackDOT(DOTs[target].blob);
       CheckEntity(srcvk);
       bw(0x28589).UnpackEntity(Entities[srcvk].blob);
       CheckEntity(dstvk);
       bw(0x28589).UnpackEntity(Entities[dstvk].blob);
-      var (validD, _7, rtargetD) = bw(0x28589).UnpackRevocation(content);
-      if (!validD || rtargetD != target) {
+      /* dstvk now means the vk that signed the revocation */
+      (validsig, rtarget, dstvk) = bw(0x28589).UnpackRevocation(content);
+      if (!validsig || rtarget != target) {
+        return;
+      }
+      bool validrevoker = (srcvk == dstvk);
+      /* rtarget now means a VK allowed to revoke */
+      if (!validrevoker) {
+        for (;numrevokers>0; numrevokers--) {
+          rtarget = bw(0x28589).GetDOTDelegatedRevoker(target, numrevokers-1);
+          if (rtarget == dstvk) {
+            validrevoker = true;
+          }
+        }
+      }
+      if (!validrevoker) {
         return;
       }
       DOTs[target].validity = Validity.Revoked;

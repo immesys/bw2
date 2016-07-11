@@ -61,13 +61,27 @@ func dorevocationfile(e *objects.Revocation, cl *bw2bind.BW2Client) {
 	} else {
 		fmt.Println(istring(2) + ansi.ColorCode("red+b") + " SIGNATURE INVALID")
 	}
+
+	ro, _, err := cl.ResolveRegistry(crypto.FmtKey(e.GetTarget()))
+	if err != nil {
+		fmt.Println(istring(2) + " Validity : " + ansi.ColorCode("red+b") + "ERR " + err.Error())
+	} else {
+		iv := e.IsValidFor(ro)
+		ivs := "valid"
+		if !iv {
+			ivs = ansi.ColorCode("red+b") + "INVALID"
+		}
+		fmt.Println(istring(2) + " Validity: " + ivs)
+	}
 	fmt.Println(istring(2) + " Target : " + crypto.FmtKey(e.GetTarget()))
 	fmt.Println(istring(2) + " Revoker: " + crypto.FmtKey(e.GetVK()))
 	ctime := e.GetCreated()
 	if ctime != nil {
 		fmt.Println(istring(2) + " Created: " + ctime.String())
 	}
-	fmt.Println(istring(2) + " Comment: " + e.GetComment())
+	if e.GetComment() != "" {
+		fmt.Println(istring(2) + " Comment: " + e.GetComment())
+	}
 }
 func doentityobj(e *objects.Entity, indent int, regnote string, cl *bw2bind.BW2Client) {
 	//TODO clean this func up a little to be not copypasta

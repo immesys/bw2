@@ -1,30 +1,30 @@
 package api
 
 import (
-	"fmt"
 	"sync"
 	"time"
 
 	"github.com/immesys/bw2/bc"
 	"github.com/immesys/bw2/objects"
 )
-todo
-why is cli not adding revokers to objects
-add log processing for cache inv
-test
- - create ent
- - create dot with ent
- - revoke ent
- - try create dot with ent
- - check validity of first dot
- - try above with delegated revoker
 
- - create dot
- - revoke dot
- - try use dot to send message
- - create dot and revoke destination
- - try above with delegated revoker
- 
+// todo
+// why is cli not adding revokers to objects
+// add log processing for cache inv
+// test
+//  - create ent
+//  - create dot with ent
+//  - revoke ent
+//  - try create dot with ent
+//  - check validity of first dot
+//  - try above with delegated revoker
+//
+//  - create dot
+//  - revoke dot
+//  - try use dot to send message
+//  - create dot and revoke destination
+//  - try above with delegated revoker
+
 //Cached operations:
 // #1 get entity state by VK
 //  inv: revocation on VK
@@ -195,7 +195,14 @@ func (bw *BW) checkChainChange() {
 		[][]bc.Bytes32{}, false)
 	bw.rdata.lastblock = currentBlock
 	for _, log := range logs {
-		fmt.Printf("TODO LOGS: %#v\n", log)
+		switch log.Topics()[0] {
+		case bc.HexToBytes32(bc.EventSig_Registry_NewDOTRevocation), bc.HexToBytes32(bc.EventSig_Registry_NewDOT):
+			bw.FlushDOT(log.Topics()[1][:])
+		case bc.HexToBytes32(bc.EventSig_Registry_NewEntityRevocation), bc.HexToBytes32(bc.EventSig_Registry_NewEntity):
+			bw.FlushEntity(log.Topics()[1][:])
+		default:
+
+		}
 	}
 }
 
@@ -209,7 +216,7 @@ func (bw *BW) ResolveEntity(vk []byte) (ro *objects.Entity, s int, err error) {
 		return
 	}
 	ro, s, err = bw.resolveEntityFromBC(vk)
-	if err == nil && ro != nil {
+	if err == nil && ro != nil && s != StateUnknown {
 		bw.cacheEntity(ro, s)
 	}
 	return
@@ -222,7 +229,7 @@ func (bw *BW) ResolveDOT(hash []byte) (ro *objects.DOT, s int, err error) {
 		return
 	}
 	ro, s, err = bw.resolveDOTFromBC(hash)
-	if err == nil && ro != nil {
+	if err == nil && ro != nil && s != StateUnknown {
 		bw.cacheDOT(ro, s)
 	}
 	return

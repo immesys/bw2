@@ -389,7 +389,7 @@ func (m *Message) Verify(res Resolver) error {
 
 	// Check that the message itself is not expired
 	if m.ExpireTime.Before(time.Now()) {
-		return doret(bwe.M(bwe.ExpiredMessage, "message is expired"))
+		return doret(bwe.M(bwe.ExpiredMessage, "message is expired: "+m.ExpireTime.String()))
 	}
 
 	//Return cached code if you can

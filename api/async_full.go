@@ -147,9 +147,16 @@ func (c *BosswaveClient) Publish(params *PublishParams,
 
 	if params.DoVerify {
 		//log.Info("verifying")
-		err := m.Verify(c.BW())
+		enc := m.Encoded
+		realm, err := core.LoadMessage(enc)
 		if err != nil {
-			log.Info("verification failed")
+			log.Info("verification (phase 1) failed")
+			cb(err)
+			return
+		}
+		err = realm.Verify(c.BW())
+		if err != nil {
+			log.Info("verification (phase 2) failed")
 			cb(err)
 			return
 		}

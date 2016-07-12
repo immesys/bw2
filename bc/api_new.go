@@ -16,7 +16,8 @@ import (
 )
 
 const (
-	BWDefaultGas       = "3000000"
+	BWDefaultLargeGas  = "3000000"
+	BWDefaultSmallGas  = "100000"
 	FreshnessThreshold = 30 //seconds
 )
 
@@ -364,7 +365,11 @@ func (bcc *bcClient) Transact(accidx int, to, value, gas, gasPrice, code string)
 		return "", err
 	}
 	if gas == "" {
-		gas = BWDefaultGas
+		if len(code) == 0 {
+			gas = BWDefaultSmallGas
+		} else {
+			gas = BWDefaultLargeGas
+		}
 	}
 	gasb := big.NewInt(0)
 	_, ok := gasb.SetString(gas, 0)

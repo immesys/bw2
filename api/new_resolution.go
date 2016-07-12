@@ -1,12 +1,15 @@
 package api
 
 import (
+	"fmt"
+	"runtime"
 	"sync"
 	"time"
 
 	log "github.com/cihub/seelog"
 	"github.com/immesys/bw2/bc"
 	"github.com/immesys/bw2/objects"
+	"github.com/immesys/bw2bc/common"
 )
 
 // todo
@@ -48,6 +51,8 @@ import (
 //  - DOT grants + entity creations are lagged by 5 confirmations (done in bcprovider)
 //	- We need an expiry inv goroutine
 //  - We need an on-registry-transaction inv goroutine
+
+var hasit string
 
 type ResolutionData struct {
 	mu sync.RWMutex
@@ -124,7 +129,7 @@ func (bw *BW) startResolutionServices() {
 					select {
 					case <-ok:
 					default:
-						log.Errorf("WARNING RESOLUTION DEADLOCK?\n")
+						log.Errorf("WARNING RESOLUTION DEADLOCK?: %s\n", hasit)
 					}
 				}()
 				bw.rdata.mu.Lock()
@@ -144,10 +149,37 @@ const (
 	StateError
 )
 
+func (bw *BW) getlock() {
+	// MyCaller returns the caller of the function that called it :)
+	// we get the callers as uintptrs - but we just need 1
+	fpcs := make([]uintptr, 1)
+	// skip 3 levels to get to the caller of whoever called Caller()
+	n := runtime.Callers(2, fpcs)
+	if n == 0 {
+		panic("a")
+	}
+
+	// get the info of the actual function that's in the pointer
+	fun := runtime.FuncForPC(fpcs[0] - 1)
+	if fun == nil {
+		panic("b")
+	}
+
+	// return its name
+	af, al := fun.FileLine(fpcs[0])
+
+	caller := fmt.Sprintf("%s:%v,%v", fun.Name(), af, al)
+	bw.rdata.mu.Lock()
+	hasit = caller
+}
+func (bw *BW) rellock() {
+	hasit = "rel"
+	bw.rdata.mu.Unlock()
+}
 func (bw *BW) checkExpiryInv() time.Duration {
 	//Cycle through entities
-	bw.rdata.mu.Lock()
-	defer bw.rdata.mu.Unlock()
+	bw.getlock()
+	defer bw.rellock()
 	minexpiry := time.Now().Add(1 * time.Hour)
 	for _, er := range bw.rdata.entityCache {
 		if er.ro.IsExpired() {
@@ -217,7 +249,16 @@ func (bw *BW) checkChainChange() {
 	bw.rdata.lastblock = currentBlock
 	for _, log := range logs {
 		switch log.Topics()[0] {
-		case bc.HexToBytes32(bc.EventSig_Registry_NewDOTRevocation), bc.HexToBytes32(bc.EventSig_Registry_NewDOT):
+		case bc.HexToBytes32(bc.EventSig_Registry_NewDOT):
+			ln := common.BytesToBig(log.Data()[32:64]).Int64()
+			datahex := log.Data()[64 : 64+ln]
+			ro, err := objects.NewDOT(objects.ROAccessDOT, datahex)
+			if err != nil {
+				panic("Could not decode log dot")
+			}
+			bw.FlushChainNSVK(ro.(*objects.DOT).GetAccessURIMVK())
+			fallthrough
+		case bc.HexToBytes32(bc.EventSig_Registry_NewDOTRevocation):
 			bw.FlushDOT(log.Topics()[1][:])
 		case bc.HexToBytes32(bc.EventSig_Registry_NewEntityRevocation), bc.HexToBytes32(bc.EventSig_Registry_NewEntity):
 			bw.FlushEntity(log.Topics()[1][:])
@@ -277,8 +318,8 @@ func (bw *BW) ResolveAccessDChain(hash []byte) (ro *objects.DChain, s int, err e
 
 //Discard cached entity and call FlushDOT on all dots that use the entity
 func (bw *BW) FlushEntity(vk []byte) {
-	bw.rdata.mu.Lock()
-	defer bw.rdata.mu.Unlock()
+	bw.getlock()
+	defer bw.rellock()
 	kvk := bc.SliceToBytes32(vk)
 	delete(bw.rdata.entityCache, kvk)
 	dTo := bw.rdata.dotToInvCache[kvk]
@@ -298,9 +339,9 @@ func (bw *BW) FlushEntity(vk []byte) {
 //Discard cached DOT
 func (bw *BW) FlushDOT(hash []byte) {
 	khash := bc.SliceToBytes32(hash)
-	bw.rdata.mu.Lock()
+	bw.getlock()
 	bw.flushDOT(khash)
-	bw.rdata.mu.Unlock()
+	bw.rellock()
 }
 
 //Lock must be held
@@ -315,21 +356,21 @@ func (bw *BW) flushDOT(hash bc.Bytes32) {
 // If a DOT appears from a VK (e.g), we need to flush the complete granted from cache
 func (bw *BW) FlushGrantedFromCache(vk []byte) {
 	kvk := bc.SliceToBytes32(vk)
-	bw.rdata.mu.Lock()
+	bw.getlock()
 	delete(bw.rdata.dotFromCompleteCache, kvk)
-	bw.rdata.mu.Unlock()
+	bw.rellock()
 }
 
 // If a DOT appears on an NSVK, discard cached chains on that nsvk
 func (bw *BW) FlushChainNSVK(nsvk []byte) {
-	bw.rdata.mu.Lock()
+	bw.getlock()
 	delete(bw.rdata.chaincache, bc.SliceToBytes32(nsvk))
-	bw.rdata.mu.Unlock()
+	bw.rellock()
 }
 
 func (bw *BW) resolveEntityFromCache(vk []byte) (bool, *objects.Entity, int) {
-	bw.rdata.mu.RLock()
-	defer bw.rdata.mu.RUnlock()
+	bw.getlock()
+	defer bw.rellock()
 	kvk := bc.SliceToBytes32(vk)
 	entry, ok := bw.rdata.entityCache[kvk]
 	if ok {
@@ -347,14 +388,14 @@ func (bw *BW) resolveEntityFromBC(vk []byte) (ro *objects.Entity, s int, err err
 	return
 }
 func (bw *BW) cacheEntity(ro *objects.Entity, s int) {
-	bw.rdata.mu.Lock()
-	defer bw.rdata.mu.Unlock()
+	bw.getlock()
+	defer bw.rellock()
 	kvk := bc.SliceToBytes32(ro.GetVK())
 	bw.rdata.entityCache[kvk] = &registryEntityResult{ro: ro, s: s}
 }
 func (bw *BW) resolveDOTFromCache(hash []byte) (bool, *objects.DOT, int) {
-	bw.rdata.mu.RLock()
-	defer bw.rdata.mu.RUnlock()
+	bw.getlock()
+	defer bw.rellock()
 	khash := bc.SliceToBytes32(hash)
 	entry, ok := bw.rdata.dotHashCache[khash]
 	if ok {
@@ -393,8 +434,8 @@ func (bw *BW) resolveDOTFromBC(hash []byte) (*objects.DOT, int, error) {
 	return ro, int(si), nil
 }
 func (bw *BW) cacheDOT(ro *objects.DOT, s int) {
-	bw.rdata.mu.Lock()
-	defer bw.rdata.mu.Unlock()
+	bw.getlock()
+	defer bw.rellock()
 	khash := bc.SliceToBytes32(ro.GetHash())
 	bw.rdata.dotHashCache[khash] = &registryDOTResult{ro: ro, s: s}
 	kFromVK := bc.SliceToBytes32(ro.GetGiverVK())
@@ -435,13 +476,14 @@ func (bw *BW) resolveAccessDChainFromBC(hash []byte) (*objects.DChain, int, erro
 	return ro, int(si), nil
 }
 func (bw *BW) resolveBuiltChain(k CacheKey) ([]*objects.DChain, []int) {
-	bw.rdata.mu.RLock()
-	defer bw.rdata.mu.RUnlock()
+	bw.getlock()
 	nsmap, ok := bw.rdata.chaincache[k.nsvk]
 	if !ok {
+		bw.rellock()
 		return nil, nil
 	}
 	chains, ok2 := nsmap[k]
+	bw.rellock()
 	if !ok2 {
 		return nil, nil
 	}
@@ -465,8 +507,8 @@ func (bw *BW) resolveBuiltChain(k CacheKey) ([]*objects.DChain, []int) {
 	return chains, states
 }
 func (bw *BW) cacheBuiltChains(k CacheKey, ro []*objects.DChain) {
-	bw.rdata.mu.Lock()
-	defer bw.rdata.mu.Unlock()
+	bw.getlock()
+	defer bw.rellock()
 	nsmap, ok := bw.rdata.chaincache[k.nsvk]
 	if !ok {
 		nsmap = make(map[CacheKey][]*objects.DChain)
@@ -475,8 +517,8 @@ func (bw *BW) cacheBuiltChains(k CacheKey, ro []*objects.DChain) {
 	bw.rdata.chaincache[k.nsvk] = nsmap
 }
 func (bw *BW) resolveGrantedDOTsFromCache(vk []byte) (bool, []bc.Bytes32) {
-	bw.rdata.mu.RLock()
-	defer bw.rdata.mu.RUnlock()
+	bw.getlock()
+	defer bw.rellock()
 	kvk := bc.SliceToBytes32(vk)
 	hashlist, ok := bw.rdata.dotFromCompleteCache[kvk]
 	return ok, hashlist
@@ -487,8 +529,8 @@ func (bw *BW) resolveGrantedDOTsFromBC(vk []byte) ([]bc.Bytes32, error) {
 	return dhashes, err
 }
 func (bw *BW) cacheGrantedDOTs(vk []byte, dots []bc.Bytes32) {
-	bw.rdata.mu.Lock()
-	defer bw.rdata.mu.Unlock()
+	bw.getlock()
+	defer bw.rellock()
 	kvk := bc.SliceToBytes32(vk)
 	bw.rdata.dotFromCompleteCache[kvk] = dots
 }

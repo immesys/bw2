@@ -256,8 +256,16 @@ func (c *BosswaveClient) Subscribe(params *SubscribeParams,
 	c.checkAddOriginVK(m)
 	c.finishMessage(m)
 	if params.DoVerify {
-		err := m.Verify(c.BW())
+		enc := m.Encoded
+		realm, err := core.LoadMessage(enc)
 		if err != nil {
+			log.Info("verification (phase 1) failed")
+			actionCB(err, core.UniqueMessageID{})
+			return
+		}
+		err = realm.Verify(c.BW())
+		if err != nil {
+			log.Info("verification (phase 2) failed")
 			actionCB(err, core.UniqueMessageID{})
 			return
 		}
@@ -472,8 +480,17 @@ func (c *BosswaveClient) List(params *ListParams,
 	c.finishMessage(m)
 
 	if params.DoVerify {
-		err := m.Verify(c.BW())
+		//log.Info("verifying")
+		enc := m.Encoded
+		realm, err := core.LoadMessage(enc)
 		if err != nil {
+			log.Info("verification (phase 1) failed")
+			actionCB(err)
+			return
+		}
+		err = realm.Verify(c.BW())
+		if err != nil {
+			log.Info("verification (phase 2) failed")
 			actionCB(err)
 			return
 		}
@@ -537,8 +554,17 @@ func (c *BosswaveClient) Query(params *QueryParams,
 	c.finishMessage(m)
 
 	if params.DoVerify {
-		err := m.Verify(c.BW())
+		//log.Info("verifying")
+		enc := m.Encoded
+		realm, err := core.LoadMessage(enc)
 		if err != nil {
+			log.Info("verification (phase 1) failed")
+			actionCB(err)
+			return
+		}
+		err = realm.Verify(c.BW())
+		if err != nil {
+			log.Info("verification (phase 2) failed")
 			actionCB(err)
 			return
 		}

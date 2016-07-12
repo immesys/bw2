@@ -72,6 +72,7 @@ const (
 	CmdRevokeDRAccept        = "rdra"
 	CmdRevokeRO              = "revk"
 	CmdPutRevocation         = "prvk"
+	CmdFindDots              = "fdot"
 
 	CmdResponse = "resp"
 	CmdResult   = "rslt"

@@ -10,6 +10,7 @@ import (
 	"github.com/immesys/bw2/crypto"
 	"github.com/immesys/bw2/internal/core"
 	"github.com/immesys/bw2/objects"
+	"github.com/immesys/bw2/objects/advpo"
 	"github.com/immesys/bw2/util/bwe"
 )
 
@@ -618,6 +619,32 @@ func (bf *boundFrame) cmdRevokeDRAccept() {
 		panic(err)
 	}
 	bf.bwcl.BCC().RetractRoutingAcceptance(acc, ent, drvk, bf.mkFinalGenericActionCB())
+}
+func (bf *boundFrame) cmdFindDOTs() {
+	bf.checkChainAge()
+	vkS, vkok := bf.f.GetFirstHeader("vk")
+	if !vkok {
+		panic(bwe.M(bwe.InvalidOOBCommand, "missing kv(vk)"))
+	}
+	vk, err := bf.bwcl.BW().ResolveKey(vkS)
+	if err != nil {
+		panic(err)
+	}
+	dotlinks, err := bf.bwcl.BW().ResolveGrantedDOTs(vk)
+	if err != nil {
+		panic(err)
+	}
+	r := bf.mkFinalResponseOkayFrame()
+	for _, dl := range dotlinks {
+		po, err := objects.CreateOpaquePayloadObject(objects.ROAccessDOT, dl.D.GetContent())
+		if err != nil {
+			panic(err)
+		}
+		r.AddPayloadObject(po)
+		pos := advpo.CreateStringPayloadObject(bf.bwcl.BW().StateToString(dl.S))
+		r.AddPayloadObject(pos)
+	}
+	bf.send(r)
 }
 func (bf *boundFrame) cmdDevelop() {
 	// bf.checkChainAge()

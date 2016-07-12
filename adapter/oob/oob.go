@@ -458,6 +458,8 @@ func (bf *boundFrame) Handle() {
 		bf.cmdRevokeRoutingObject()
 	case objects.CmdPutRevocation:
 		bf.cmdPutRevocation()
+	case objects.CmdFindDots:
+		bf.cmdFindDOTs()
 	case "devl":
 		bf.cmdDevelop()
 	default:

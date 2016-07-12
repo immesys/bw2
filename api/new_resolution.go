@@ -4,6 +4,7 @@ import (
 	"sync"
 	"time"
 
+	log "github.com/cihub/seelog"
 	"github.com/immesys/bw2/bc"
 	"github.com/immesys/bw2/objects"
 )
@@ -113,6 +114,26 @@ func (bw *BW) startResolutionServices() {
 			bw.rdata.nextInterval = bw.checkExpiryInv()
 		}
 	}()
+	go func() {
+		for {
+			time.Sleep(200 * time.Millisecond)
+			go func() {
+				ok := make(chan bool, 1)
+				go func() {
+					time.Sleep(1 * time.Second)
+					select {
+					case <-ok:
+					default:
+						log.Errorf("WARNING RESOLUTION DEADLOCK?\n")
+					}
+				}()
+				bw.rdata.mu.Lock()
+				ok <- true
+				bw.rdata.mu.Unlock()
+			}()
+		}
+	}()
+
 }
 
 const (
@@ -148,7 +169,7 @@ func (bw *BW) checkExpiryInv() time.Duration {
 			}
 		}
 	}
-	return time.Now().Sub(minexpiry)
+	return minexpiry.Sub(time.Now())
 }
 func (bw *BW) forceExpiryInv() {
 	bw.rdata.expinvchan <- struct{}{}

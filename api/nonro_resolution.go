@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/hex"
+	"regexp"
 	"strings"
 	"unicode/utf8"
 
@@ -93,8 +94,14 @@ func (bw *BW) ExpandAliases(in string) (string, error) {
 				i += w //skip ahead of next @
 				continue
 			}
-			endshortidx := strings.IndexRune(in[i:], '>')
-			endlongidx := strings.IndexRune(in[i:], '<')
+			endshortidx := strings.IndexRune(in[i:], ']')
+			if endshortidx != -1 {
+				endshortidx += i
+			}
+			endlongidx := strings.IndexRune(in[i:], '[')
+			if endlongidx != -1 {
+				endlongidx += i
+			}
 			if endshortidx == -1 && endlongidx == -1 {
 				return "", bwe.M(bwe.UnresolvedAlias, "Unterminated alias")
 			}
@@ -108,7 +115,8 @@ func (bw *BW) ExpandAliases(in string) (string, error) {
 				i = endlongidx
 			}
 			if endlongidx == -1 || (endshortidx < endlongidx && endshortidx != -1) {
-				shortval, err := bw.ResolveShortAlias(in[i+1 : endshortidx])
+				key := in[i+1 : endshortidx]
+				shortval, err := bw.ResolveShortAlias(key)
 				if err != nil {
 					return "", err
 				}
@@ -116,6 +124,8 @@ func (bw *BW) ExpandAliases(in string) (string, error) {
 				buffer.WriteString(shortstrval)
 				i = endshortidx
 			}
+		} else {
+			buffer.WriteRune(runeValue)
 		}
 	}
 	return buffer.String(), nil
@@ -151,7 +161,20 @@ func (bw *BW) ResolveRO(aliasorhash string) (ros objects.RoutingObject, state in
 		if len([]byte(aliasorhash)) > 32 {
 			return nil, StateError, bwe.M(bwe.UnresolvedAlias, "Key is not a VK/Hash but longer than an alias"+aliasorhash)
 		}
-		bhash, err = bw.ResolveLongAlias(aliasorhash)
+		match, err := regexp.MatchString(`^@[0-9a-zA-Z]*(\]|\[)$`, aliasorhash)
+		if err != nil {
+			panic(err)
+		}
+		if match {
+			key := aliasorhash[1 : len(aliasorhash)-1]
+			if aliasorhash[len(aliasorhash)-1] == ']' {
+				bhash, err = bw.ResolveShortAlias(key)
+			} else {
+				bhash, err = bw.ResolveLongAlias(key)
+			}
+		} else {
+			bhash, err = bw.ResolveLongAlias(aliasorhash)
+		}
 		if err != nil {
 			return nil, StateError, err
 		}

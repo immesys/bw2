@@ -44,6 +44,7 @@ type blockChain struct {
 	api_pubchain  *eth.PublicBlockChainAPI
 	api_pubtx     *eth.PublicTransactionPoolAPI
 	api_privacct  *eth.PrivateAccountAPI
+	api_pubeth    *eth.PublicEthereumAPI
 }
 
 type bcClient struct {
@@ -158,6 +159,7 @@ func NewBlockChain(datadir string) (BlockChainProvider, chan bool) {
 	rv.api_pubchain = eth.NewPublicBlockChainAPI_S(ethi)
 	rv.api_pubtx = eth.NewPublicTransactionPoolAPI(ethi)
 	rv.api_privacct = eth.NewPrivateAccountAPI(ethi)
+	rv.api_pubeth = eth.NewPublicEthereumAPI(ethi)
 	rv.fm = filters.NewFilterSystem(rv.eth.EventMux())
 
 	//	eth.NewPublicBlockChainAPI(config *core.ChainConfig, bc *core.BlockChain, m *miner.Miner, chainDb ethdb.Database, gpo *eth.GasPriceOracle, eventMux *event.TypeMux, am *accounts.Manager)

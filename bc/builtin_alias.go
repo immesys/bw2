@@ -16,28 +16,29 @@ const (
 	// AliasSigResolve     = "ea992c5d"
 	// AliasSigCreateShort = "bf75fdb5"
 	// AliasSigSet         = "111e73ff"
-	AliasCreateCost = "1000000000000000000" //1 Ether
+	AliasCreateShortCost = 100000
+	AliasCreateLongCost  = 5000000
 
 	// UFIs for Alias
-	UFI_Alias_Address = "04a640aeb0c0af5cad4ea8705de3608ad036106c"
+	UFI_Alias_Address = "cc74681c3e3b7bcccf7a05524b75ba8feccc7418"
 	// DB(uint256 ) -> bytes32
-	UFI_Alias_DB = "04a640aeb0c0af5cad4ea8705de3608ad036106c018b51ab1040000000000000"
-	// AliasPrice() -> uint256
-	UFI_Alias_AliasPrice = "04a640aeb0c0af5cad4ea8705de3608ad036106c068dd2a60100000000000000"
+	UFI_Alias_DB = "cc74681c3e3b7bcccf7a05524b75ba8feccc7418018b51ab1040000000000000"
 	// SetAlias(uint256 k, bytes32 v) ->
-	UFI_Alias_SetAlias = "04a640aeb0c0af5cad4ea8705de3608ad036106c111e73ff1400000000000000"
+	UFI_Alias_SetAlias = "cc74681c3e3b7bcccf7a05524b75ba8feccc7418111e73ff1400000000000000"
 	// LastShort() -> uint256
-	UFI_Alias_LastShort = "04a640aeb0c0af5cad4ea8705de3608ad036106c11e026a50100000000000000"
+	UFI_Alias_LastShort = "cc74681c3e3b7bcccf7a05524b75ba8feccc741811e026a50100000000000000"
+	// ShortAliasPrice() -> uint256
+	UFI_Alias_ShortAliasPrice = "cc74681c3e3b7bcccf7a05524b75ba8feccc74183135e00b0100000000000000"
 	// AliasMin() -> uint256
-	UFI_Alias_AliasMin = "04a640aeb0c0af5cad4ea8705de3608ad036106c8bb523ae0100000000000000"
+	UFI_Alias_AliasMin = "cc74681c3e3b7bcccf7a05524b75ba8feccc74188bb523ae0100000000000000"
+	// LongAliasPrice() -> uint256
+	UFI_Alias_LongAliasPrice = "cc74681c3e3b7bcccf7a05524b75ba8feccc74189171a8190100000000000000"
 	// CreateShortAlias(bytes32 v) ->
-	UFI_Alias_CreateShortAlias = "04a640aeb0c0af5cad4ea8705de3608ad036106cbf75fdb54000000000000000"
+	UFI_Alias_CreateShortAlias = "cc74681c3e3b7bcccf7a05524b75ba8feccc7418bf75fdb54000000000000000"
 	// AliasFor(bytes32 ) -> uint256
-	UFI_Alias_AliasFor = "04a640aeb0c0af5cad4ea8705de3608ad036106cc83560ea4010000000000000"
-	// Resolve(uint256 k) -> bytes32
-	UFI_Alias_Resolve = "04a640aeb0c0af5cad4ea8705de3608ad036106cea992c5d1040000000000000"
+	UFI_Alias_AliasFor = "cc74681c3e3b7bcccf7a05524b75ba8feccc7418c83560ea4010000000000000"
 	// Admin() -> address
-	UFI_Alias_Admin = "04a640aeb0c0af5cad4ea8705de3608ad036106cff1b636d0?00000000000000"
+	UFI_Alias_Admin = "cc74681c3e3b7bcccf7a05524b75ba8feccc7418ff1b636d0?00000000000000"
 	// EVENT  AliasCreated(uint256 key, bytes32 value)
 	EventSig_Alias_AliasCreated = "170b239b7d2c41f8c5caacdafe7409cda0f4b5012440739feea0576a40a156eb"
 )
@@ -51,7 +52,7 @@ func (bc *blockChain) ResolveShortAlias(alias uint64) (res Bytes32, iszero bool,
 
 func (bc *blockChain) ResolveAlias(key Bytes32) (res Bytes32, iszero bool, err error) {
 	// First check what the registry thinks of the DOTHash
-	rvz, err := bc.CallOffChain(StringToUFI(UFI_Alias_Resolve), common.Bytes2Big(key[:]))
+	rvz, err := bc.CallOffChain(StringToUFI(UFI_Alias_DB), common.Bytes2Big(key[:]))
 	if err != nil || len(rvz) != 1 {
 		return Bytes32{}, true, bwe.WrapM(bwe.UFIInvocationError, "Expected 1 rv: ", err)
 	}
@@ -70,7 +71,11 @@ func (bcc *bcClient) CreateShortAlias(acc int, val Bytes32, confirmed func(alias
 		return
 	}
 
-	txhash, err := bcc.CallOnChain(acc, StringToUFI(UFI_Alias_CreateShortAlias), AliasCreateCost, "", "", val)
+	gprice := bcc.bc.GasPrice()
+	sgprice := gprice.Text(10)
+	cash := big.NewInt(AliasCreateShortCost)
+	cash = cash.Mul(cash, gprice)
+	txhash, err := bcc.CallOnChain(acc, StringToUFI(UFI_Alias_CreateShortAlias), cash.Text(10), "", sgprice, val)
 	if err != nil {
 		confirmed(0, err)
 		return
@@ -112,8 +117,11 @@ func (bcc *bcClient) SetAlias(acc int, key Bytes32, val Bytes32, confirmed func(
 		}
 		return
 	}
-
-	txhash, err := bcc.CallOnChain(acc, StringToUFI(UFI_Alias_SetAlias), AliasCreateCost, "", "", key, val)
+	gprice := bcc.bc.GasPrice()
+	sgprice := gprice.Text(10)
+	cash := big.NewInt(AliasCreateLongCost)
+	cash = cash.Mul(cash, gprice)
+	txhash, err := bcc.CallOnChain(acc, StringToUFI(UFI_Alias_SetAlias), cash.Text(10), "", sgprice, key, val)
 	if err != nil {
 		confirmed(err)
 		return
@@ -147,10 +155,10 @@ func (bc *blockChain) UnresolveAlias(value Bytes32) (key Bytes32, iszero bool, e
 	if len(ret) != 1 {
 		return Bytes32{}, false, bwe.M(bwe.UFIInvocationError, "Expected 1 result")
 	}
-	k, ok := ret[0].([]byte)
+	k, ok := ret[0].(*big.Int)
 	if !ok {
-		return Bytes32{}, false, bwe.M(bwe.UFIInvocationError, "Expected byte slice result")
+		return Bytes32{}, false, bwe.M(bwe.UFIInvocationError, "Expected bigint result")
 	}
-	key = SliceToBytes32(k)
+	key = Bytes32(common.BigToHash(k))
 	return key, key == Bytes32{}, nil
 }

@@ -531,13 +531,12 @@ func actionUSRV(c *cli.Context) error {
 
 func actionMkAlias(c *cli.Context) error {
 	//check usage
-	if c.String("long") == "" {
-		fmt.Println("You need to specify the alias text with --long")
+	if c.Bool("short") && c.String("long") != "" {
+		fmt.Println("You can specify --short or --long, not both")
 		os.Exit(1)
 	}
-	key := []byte(c.String("long"))
-	if len(key) > 32 {
-		fmt.Println("Alias key cannot be longer than 32 bytes")
+	if !c.Bool("short") && c.String("long") == "" {
+		fmt.Println("You need to specify --short or --long")
 		os.Exit(1)
 	}
 	bw2bind.SilenceLog()
@@ -594,13 +593,31 @@ func actionMkAlias(c *cli.Context) error {
 		fmt.Println("You need to specify a value")
 		os.Exit(1)
 	}
+	isShort := c.Bool("short")
+	var key []byte
+	if !isShort {
+		key = []byte(c.String("long"))
+		if len(key) > 32 {
+			fmt.Println("Alias key cannot be longer than 32 bytes")
+			os.Exit(1)
+		}
+	}
 	dchan := make(chan string, 1)
 	go func() {
-		err := cl.CreateLongAlias(0, key, binval)
-		if err == nil {
-			dchan <- "Alias record updated and confirmed"
+		if isShort {
+			hexres, err := cl.CreateShortAlias(0, binval)
+			if err != nil {
+				dchan <- "Error creating alias: " + err.Error()
+			} else {
+				dchan <- fmt.Sprintf("Short alias created and confirmed: @%s>\n", hexres)
+			}
 		} else {
-			dchan <- "Error creating alias: " + err.Error()
+			err := cl.CreateLongAlias(0, key, binval)
+			if err != nil {
+				dchan <- "Error creating alias: " + err.Error()
+			} else {
+				dchan <- "Alias record updated and confirmed"
+			}
 		}
 	}()
 	doChainOp(cl, dchan)

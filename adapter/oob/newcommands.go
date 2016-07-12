@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/big"
 	"strconv"
+	"strings"
 
 	"github.com/immesys/bw2/api"
 	"github.com/immesys/bw2/bc"
@@ -256,6 +257,9 @@ func (bf *boundFrame) cmdMakeLongAlias() {
 	key, keyok := bf.f.GetFirstHeaderB("key")
 	if !keyok {
 		panic(bwe.M(bwe.InvalidOOBCommand, "missing key kv"))
+	}
+	if strings.Contains(string(key), "@") {
+		panic(bwe.M(bwe.InvalidOOBCommand, "a long alias containing '@' is just silly. Don't do it."))
 	}
 	if len(key) > 32 {
 		key = key[:32]

@@ -354,6 +354,10 @@ func main() {
 					Usage: "create a long alias with the given key",
 					Value: "",
 				},
+				cli.BoolFlag{
+					Name:  "short",
+					Usage: "create a short alias",
+				},
 				cli.StringFlag{
 					Name:  "hex",
 					Usage: "specify the content as a hex string",

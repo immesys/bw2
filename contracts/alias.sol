@@ -23,8 +23,8 @@ contract Alias {
 
   function Alias() {
     LastShort = 0x100;
-    LongAliasPrice = 5000000
-    ShortAliasPrice = 100000
+    LongAliasPrice = 5000000;
+    ShortAliasPrice = 100000;
     Admin = msg.sender;
     /* This is 16 bytes. If you want a long alias that is shorter than
        16 bytes, just left align it rather than right align */

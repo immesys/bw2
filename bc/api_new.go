@@ -58,6 +58,10 @@ func (bc *blockChain) HeadBlockAge() int64 {
 	return now - btime
 }
 
+func (bc *blockChain) GasPrice() *big.Int {
+	return bc.api_pubeth.GasPrice()
+}
+
 func (bc *blockChain) GetAddrBalance(addr string) (decimal string, human string) {
 	rv, err := bc.api_pubchain.GetBalance(common.HexToAddress(addr), -1)
 	if err != nil {

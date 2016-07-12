@@ -1,6 +1,7 @@
 package bc
 
 import (
+	"math/big"
 	"time"
 
 	"github.com/immesys/bw2/objects"
@@ -126,6 +127,7 @@ type BlockChainProvider interface {
 	//without using any money or creating global state
 	CallOffSpecificChain(block int64, ufi UFI, params ...interface{}) (ret []interface{}, err error)
 
+	GasPrice() *big.Int
 	//Call on every log appearing after block number 'after'. If before is -1 it will
 	//get the current block number. If hexaddr is not empty, only logs from that
 	//contract address will be matched. If topics is not empty, every set of

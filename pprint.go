@@ -95,9 +95,14 @@ func doentityobj(e *objects.Entity, indent int, regnote string, cl *bw2bind.BW2C
 		regnote = ansi.ColorCode("red+b") + regnote
 	}
 	fmt.Println(istring(indent) + " Registry: " + regnote)
-
+	s, err := cl.UnresolveAlias(e.GetVK())
+	if err != nil {
+		fmt.Println(istring(indent) + " Alias: err: " + err.Error())
+	} else {
+		fmt.Println(istring(indent)+" Alias:", s)
+	}
 	if len(e.GetSK()) != 0 {
-		fmt.Println(istring(indent)+" SK:", crypto.FmtKey(e.GetSK()))
+		//fmt.Println(istring(indent)+" SK:", crypto.FmtKey(e.GetSK()))
 		keysOk := crypto.CheckKeypair(e.GetSK(), e.GetVK())
 		if keysOk {
 			fmt.Println(istring(indent) + " Keypair: ok")

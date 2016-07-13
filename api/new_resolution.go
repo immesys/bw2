@@ -256,6 +256,7 @@ func (bw *BW) checkChainChange() {
 			if err != nil {
 				panic("Could not decode log dot")
 			}
+			bw.FlushGrantedFromCache(ro.(*objects.DOT).GetGiverVK())
 			bw.FlushChainNSVK(ro.(*objects.DOT).GetAccessURIMVK())
 			fallthrough
 		case bc.HexToBytes32(bc.EventSig_Registry_NewDOTRevocation):

@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"math/big"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,6 +22,7 @@ import (
 	"github.com/immesys/bw2/util/coldstore"
 	"github.com/immesys/bw2bind"
 	"github.com/mgutz/ansi"
+	qrcode "github.com/skip2/go-qrcode"
 	"github.com/urfave/cli"
 )
 
@@ -966,11 +968,18 @@ func doChainOp(cl *bw2bind.BW2Client, done chan string) {
 		}
 	}
 }
+
+type qrdata struct {
+	ro objects.RoutingObject
+	name string
+}
+
 func actionInspect(c *cli.Context) error {
 	bw2bind.SilenceLog()
 	cl := bw2bind.ConnectOrExit(c.GlobalString("agent"))
 	cl.StatLine()
 	pub := c.Bool("publish")
+	qr := c.Bool("qrcode")
 	if pub {
 		if c.String("bankroll") == "" {
 			fmt.Println("Need bankroll to publish")
@@ -978,6 +987,7 @@ func actionInspect(c *cli.Context) error {
 		}
 	}
 	topub := make([]objects.RoutingObject, 0)
+	toqrg := make([]qrdata, 0)
 	//TODO list:
 	//if param is a file
 	//	- recursively inspect every aspect of the object
@@ -999,6 +1009,9 @@ func actionInspect(c *cli.Context) error {
 			if pub {
 				topub = append(topub, roi)
 			}
+			if qr {
+				toqrg = append(toqrg, qrdata{ro: roi, name: path.Base(par)})
+			}
 			goto nextparam
 		}
 		//Look it up in the registry
@@ -1011,6 +1024,9 @@ func actionInspect(c *cli.Context) error {
 			if roi != nil {
 				//fmt.Println("Match in registry:")
 				inspectInterface(roi, cl)
+				if qr {
+					toqrg = append(toqrg, qrdata{ro: roi, name: par})
+				}
 				goto nextparam
 			}
 		}
@@ -1093,6 +1109,22 @@ func actionInspect(c *cli.Context) error {
 	//We need to re-set our entity because pprint modifies it to get balances
 	if pub {
 		pubObjs(topub, cl, c)
+	}
+	if qr {
+		// Generate a QR code for each entity with an available signing key
+		for _, qrd := range(toqrg) {
+			roi := qrd.ro
+			if (roi.GetRONum() == objects.ROEntity) {
+				entity := roi.(*objects.Entity)
+				signingblob := entity.GetSigningBlob()
+				if signingblob != nil {
+					err := qrcode.WriteFile(string([]byte{objects.ROEntityWKey}) + string(signingblob), qrcode.Medium, 256, fmt.Sprintf("%s.png", qrd.name))
+					if err != nil {
+						fmt.Printf("Could not encode QR Code and write to file: %v\n", err)
+					}
+				}
+			}
+		}
 	}
 	return nil
 }

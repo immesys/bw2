@@ -1118,7 +1118,9 @@ func actionInspect(c *cli.Context) error {
 				entity := roi.(*objects.Entity)
 				signingblob := entity.GetSigningBlob()
 				if signingblob != nil {
-					err := qrcode.WriteFile(string([]byte{objects.ROEntityWKey}) + string(signingblob), qrcode.Medium, 512, fmt.Sprintf("%s.png", qrd.name))
+					binarydata := append([]byte{objects.ROEntityWKey}, signingblob...)
+					towrite := base64.StdEncoding.EncodeToString(binarydata)
+					err := qrcode.WriteFile(towrite, qrcode.Medium, 512, fmt.Sprintf("%s.png", qrd.name))
 					if err != nil {
 						fmt.Printf("Could not encode QR Code and write to file: %v\n", err)
 						os.Exit(1)

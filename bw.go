@@ -321,9 +321,14 @@ func main() {
 			Action:  cli.ActionFunc(actionInspect),
 			Flags: []cli.Flag{
 				cli.BoolFlag{
-					Name:  "publish, p",
-					Usage: "publish inspected objects to the registry",
-				}, bflag,
+					Name:		"publish, p",
+					Usage:	"publish inspected objects to the registry",
+				},
+				cli.BoolFlag{
+					Name:		"qrcode, q",
+					Usage:	"makes QR Codes for entities with available siging keys",
+				},
+				bflag,
 			},
 		},
 		{

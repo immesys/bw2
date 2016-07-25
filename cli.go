@@ -289,7 +289,7 @@ func actionColdStore(c *cli.Context) error {
 	if c.String("to") != "" {
 		toacc := getAccountParam(cl, c, c.String("to"))
 		amt := bal.Int
-		amt = amt.Sub(amt, big.NewInt(100000000000000000)) //100 finney
+		amt = amt.Sub(amt, big.NewInt(1000000000000000000)) //1 ether
 		if amt.Sign() <= 0 {
 			fmt.Println("Insufficient coldstore balance to do transfer")
 			os.Exit(1)

@@ -1,0 +1,11 @@
+[Unit]
+Description="BOSSWAVE agent"
+
+[Service]
+Restart=always
+User=bw2
+RestartSec=30
+ExecStart=/usr/local/bin/bw2 router --conf /etc/bw2/bw2.ini
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>  <string>io.bw2.agent</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/bw2</string>
+        <string>router</string>
+        <string>--conf</string>
+        <string>/etc/bw2/bw2.ini</string>
+    </array>
+    <key>KeepAlive</key>
+    <true/>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardOutPath</key> <string>/var/log/bw2.launchd.out.log</string>
+    <key>StandardErrPath</key> <string>/var/log/bw2.launchd.err.log</string>
+</dict>
+</plist>

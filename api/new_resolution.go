@@ -52,6 +52,8 @@ import (
 //	- We need an expiry inv goroutine
 //  - We need an on-registry-transaction inv goroutine
 
+const holdoffConstant = 6
+
 var hasit string
 
 type ResolutionData struct {
@@ -74,6 +76,9 @@ type ResolutionData struct {
 	dotToInvCache map[bc.Bytes32][]bc.Bytes32
 	// dothash -> chainhash (for inv)
 	dotChainCache map[bc.Bytes32][]bc.Bytes32
+	// suppress caching built chains on these nsvks until this block number
+	// has passed
+	holdoff map[bc.Bytes32]uint64
 
 	chainchangemu sync.Mutex
 	lastblock     uint64
@@ -365,7 +370,9 @@ func (bw *BW) FlushGrantedFromCache(vk []byte) {
 // If a DOT appears on an NSVK, discard cached chains on that nsvk
 func (bw *BW) FlushChainNSVK(nsvk []byte) {
 	bw.getlock()
-	delete(bw.rdata.chaincache, bc.SliceToBytes32(nsvk))
+	knsvk := bc.SliceToBytes32(nsvk)
+	delete(bw.rdata.chaincache, knsvk)
+	bw.rdata.holdoff[knsvk] = bw.BC().CurrentBlock() + holdoffConstant
 	bw.rellock()
 }
 
@@ -510,6 +517,17 @@ func (bw *BW) resolveBuiltChain(k CacheKey) ([]*objects.DChain, []int) {
 func (bw *BW) cacheBuiltChains(k CacheKey, ro []*objects.DChain) {
 	bw.getlock()
 	defer bw.rellock()
+	//To workaround the mismatch between a new dot appearing (and invalidating
+	//the cache) and when it becomes valid, simply refuse to cache chains
+	//present in the holdoff map
+	bn, ok := bw.rdata.holdoff[k.nsvk]
+	if ok {
+		if bw.BC().CurrentBlock() > bn {
+			delete(bw.rdata.holdoff, k.nsvk)
+		} else {
+			return
+		}
+	}
 	nsmap, ok := bw.rdata.chaincache[k.nsvk]
 	if !ok {
 		nsmap = make(map[CacheKey][]*objects.DChain)

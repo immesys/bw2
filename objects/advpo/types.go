@@ -92,3 +92,15 @@ func (sm *SimpleMessage) GetOnePODF(df string) PayloadObject {
 	}
 	return nil
 }
+
+// Return all Payload Objects of the given Dot Form. Returns an
+// empty list if there are none that match
+func (sm *SimpleMessage) GetAllPODF(df string) []PayloadObject {
+	var res []PayloadObject
+	for _, p := range sm.POs {
+		if p.IsTypeDF(df) {
+			res = append(res, p)
+		}
+	}
+	return res
+}

@@ -397,7 +397,7 @@ func (v *View) checkMatchset() {
 	if !changed {
 		//serious test
 		for idx := range newIfaceList {
-			if !v.matchset[idx].Equals(newIfaceList[idx]) {
+			if !v.matchset[idx].DeepEquals(newIfaceList[idx]) {
 				changed = true
 				break
 			}
@@ -779,6 +779,20 @@ func (id *InterfaceDescription) String() string {
 //to the same resource (URI)
 func (id *InterfaceDescription) Equals(rhs *InterfaceDescription) bool {
 	return id.URI == rhs.URI
+}
+func (id *InterfaceDescription) DeepEquals(rhs *InterfaceDescription) bool {
+	if id.URI != rhs.URI {
+		return false
+	}
+	if len(id.Metadata) != len(rhs.Metadata) {
+		return false
+	}
+	for k, idv := range id.Metadata {
+		if idv != rhs.Metadata[k] {
+			return false
+		}
+	}
+	return true
 }
 func (id *InterfaceDescription) ToPO() objects.PayloadObject {
 	po, err := advpo.CreateMsgPackPayloadObject(objects.PONumInterfaceDescriptor, id)

@@ -52,17 +52,17 @@ func makeConf(c *cli.Context) error {
 	wrapped := make([]byte, len(ent.GetSigningBlob())+1)
 	copy(wrapped[1:], ent.GetSigningBlob())
 	wrapped[0] = objects.ROEntityWKey
-	entfile := configdir + "/" + "router.ent"
+	entfile := filepath.Join(configdir, "router.ent")
 	err = ioutil.WriteFile(entfile, wrapped, 0600)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-	lpath := configdir + "/" + "bw2.log"
+	lpath := filepath.Join(configdir, "bw2.log")
 	if c.String("logfile") != "" {
 		lpath = c.String("logfile")
 	}
-	dbpath := configdir + "/" + ".bw.db"
+	dbpath := filepath.Join(configdir, ".bw.db")
 	if c.String("dbpath") != "" {
 		dbpath = c.String("dbpath")
 	}

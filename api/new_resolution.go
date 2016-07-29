@@ -97,6 +97,7 @@ func newResolutionData() *ResolutionData {
 		dotToInvCache:        make(map[bc.Bytes32][]bc.Bytes32),
 		dotChainCache:        make(map[bc.Bytes32][]bc.Bytes32),
 		expinvchan:           make(chan struct{}),
+		holdoff:              make(map[bc.Bytes32]uint64),
 		nextInterval:         5 * time.Second,
 	}
 }

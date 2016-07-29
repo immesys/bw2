@@ -31,6 +31,8 @@ import (
 
 func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
+	startProfile()
+	defer stopProfile()
 	app := cli.NewApp()
 	app.Name = "bw2"
 	app.Usage = "BossWave 2 universal tool. Run public or private routers, manage DoTs and DChains, and more"
@@ -321,12 +323,12 @@ func main() {
 			Action:  cli.ActionFunc(actionInspect),
 			Flags: []cli.Flag{
 				cli.BoolFlag{
-					Name:		"publish, p",
-					Usage:	"publish inspected objects to the registry",
+					Name:  "publish, p",
+					Usage: "publish inspected objects to the registry",
 				},
 				cli.BoolFlag{
-					Name:		"qrcode, q",
-					Usage:	"makes QR Codes for entities with available siging keys",
+					Name:  "qrcode, q",
+					Usage: "makes QR Codes for entities with available siging keys",
 				},
 				bflag,
 			},

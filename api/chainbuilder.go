@@ -153,6 +153,7 @@ func (b *ChainBuilder) Build() ([]*objects.DChain, error) {
 		uri:   b.uri,
 		perms: b.perms,
 	}
+	defer close(b.status)
 	copy(ck.target[:], b.target)
 	copy(ck.nsvk[:], b.nsvk)
 	cached, states := b.cl.bw.resolveBuiltChain(ck)
@@ -229,7 +230,6 @@ func (b *ChainBuilder) Build() ([]*objects.DChain, error) {
 		e = e.Next()
 	}
 	b.status <- "chain build operation complete"
-	close(b.status)
 	b.cl.bw.cacheBuiltChains(ck, rv)
 	return rv, nil
 }

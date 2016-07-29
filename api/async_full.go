@@ -375,14 +375,17 @@ func (c *BosswaveClient) BuildChain(p *BuildChainParams) (chan *objects.DChain, 
 	}
 	parts := strings.SplitN(p.URI, "/", 2)
 	if len(parts) != 2 {
+		close(status)
 		return nil, bwe.M(bwe.BadURI, "Bad URI")
 	}
 	rnsvk, err := c.BW().ResolveKey(parts[0])
 	if err != nil {
+		close(status)
 		return nil, err
 	}
 	cb := NewChainBuilder(c, crypto.FmtKey(rnsvk)+"/"+parts[1], p.Permissions, p.To, status)
 	if cb == nil {
+		close(status)
 		return nil, bwe.M(bwe.BadChainBuildParams, "Could not construct CB: bad params")
 	}
 	rv := make(chan *objects.DChain)

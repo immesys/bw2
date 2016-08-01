@@ -19,6 +19,7 @@ package core
 
 import (
 	"os"
+	"path/filepath"
 
 	log "github.com/cihub/seelog"
 	"github.com/scalingdata/gcfg"
@@ -43,18 +44,16 @@ type BWConfig struct {
 // it will default to "bw2.ini" in the current directory
 func LoadConfig(filename string) *BWConfig {
 	rv := &BWConfig{}
-	if filename != "" {
-		err := gcfg.ReadFileInto(rv, filename)
-		if err != nil {
-			log.Criticalf("Could not load specified config file: %v", err)
-			os.Exit(1)
-		}
-	} else {
-		err := gcfg.ReadFileInto(rv, "bw2.ini")
-		if err != nil {
-			log.Criticalf("Could not load default config file: %v", err)
-			os.Exit(1)
-		}
+	if filename == "" {
+		filename = "bw2.ini"
 	}
+	err := gcfg.ReadFileInto(rv, filename)
+	if err != nil {
+		log.Criticalf("Could not load specified config file: %v", err)
+		os.Exit(1)
+	}
+	rv.Router.Entity = filepath.FromSlash(rv.Router.Entity)
+	rv.Router.DB = filepath.FromSlash(rv.Router.DB)
+	rv.Router.LogPath = filepath.FromSlash(rv.Router.LogPath)
 	return rv
 }

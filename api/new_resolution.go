@@ -8,6 +8,7 @@ import (
 
 	log "github.com/cihub/seelog"
 	"github.com/immesys/bw2/bc"
+	"github.com/immesys/bw2/crypto"
 	"github.com/immesys/bw2/objects"
 	"github.com/immesys/bw2bc/common"
 )
@@ -246,7 +247,9 @@ func (bw *BW) checkChainChange() {
 	bw.rdata.chainchangemu.Lock()
 	defer bw.rdata.chainchangemu.Unlock()
 	currentBlock := bw.BC().CurrentBlock()
+	fmt.Printf("checking chain change for #%d\n", currentBlock)
 	if bw.rdata.lastblock == currentBlock {
+		fmt.Printf(" -- skip\n")
 		return
 	}
 
@@ -262,12 +265,15 @@ func (bw *BW) checkChainChange() {
 			if err != nil {
 				panic("Could not decode log dot")
 			}
+			fmt.Printf("flushing nsvk=%s fromvk=%s\n", crypto.FmtKey(ro.(*objects.DOT).GetAccessURIMVK()), crypto.FmtKey(ro.(*objects.DOT).GetGiverVK()))
 			bw.FlushGrantedFromCache(ro.(*objects.DOT).GetGiverVK())
 			bw.FlushChainNSVK(ro.(*objects.DOT).GetAccessURIMVK())
 			fallthrough
 		case bc.HexToBytes32(bc.EventSig_Registry_NewDOTRevocation):
+			fmt.Printf("flushing dot")
 			bw.FlushDOT(log.Topics()[1][:])
 		case bc.HexToBytes32(bc.EventSig_Registry_NewEntityRevocation), bc.HexToBytes32(bc.EventSig_Registry_NewEntity):
+			fmt.Printf("flushing entity")
 			bw.FlushEntity(log.Topics()[1][:])
 		default:
 

@@ -34,7 +34,6 @@ import (
 	//	"golang.org/x/crypto/sha3"
 
 	log "github.com/cihub/seelog"
-	"github.com/immesys/bw2/crypto"
 	"github.com/immesys/bw2/util"
 	"github.com/immesys/bw2/util/bwe"
 	//	"github.com/immesys/bw2bc/common"
@@ -1039,7 +1038,7 @@ func (ro *DOT) SigValid() bool {
 	if len(ro.signature) != 64 || len(ro.content) == 0 {
 		panic("DOT in invalid state")
 	}
-	ok := crypto.VerifyBlob(ro.giverVK, ro.signature, ro.content[:len(ro.content)-64])
+	ok := VerifyBlob(ro.giverVK, ro.signature, ro.content[:len(ro.content)-64])
 	if ok {
 		ro.sigok = sigValid
 		return true
@@ -1301,9 +1300,9 @@ func (ro *DOT) String() string {
 	} else {
 		rv += "PERMISSION\n"
 	}
-	rv += "Hash: " + crypto.FmtHash(ro.hash) + "\n"
-	rv += "From VK: " + crypto.FmtKey(ro.giverVK) + "\n"
-	rv += "To VK  : " + crypto.FmtKey(ro.receiverVK) + "\n"
+	rv += "Hash: " + FmtHash(ro.hash) + "\n"
+	rv += "From VK: " + FmtKey(ro.giverVK) + "\n"
+	rv += "To VK  : " + FmtKey(ro.receiverVK) + "\n"
 	if ro.created != nil {
 		rv += "Created: " + ro.created.String() + "\n"
 	}
@@ -1410,7 +1409,7 @@ func (ro *DOT) Encode(sk []byte) {
 	hash := sha256.Sum256(buf)
 	ro.hash = hash[:]
 	sig := make([]byte, 64)
-	crypto.SignBlob(sk, ro.giverVK, sig, buf)
+	SignBlob(sk, ro.giverVK, sig, buf)
 	buf = append(buf, sig...)
 	ro.content = buf
 	ro.signature = sig
@@ -1456,7 +1455,7 @@ func CreateNewEntity(contact, comment string, revokers [][]byte) *Entity {
 		}
 	}
 	rv := &Entity{contact: contact, comment: comment, revokers: revokers}
-	rv.sk, rv.vk = crypto.GenerateKeypair()
+	rv.sk, rv.vk = GenerateKeypair()
 	return rv
 }
 func (ro *Entity) IsExpired() bool {
@@ -1515,7 +1514,7 @@ func (ro *Entity) GetVK() []byte {
 }
 
 func (ro *Entity) StringKey() string {
-	return crypto.FmtKey(ro.vk)
+	return FmtKey(ro.vk)
 }
 
 func (ro *Entity) SetExpiry(t time.Time) {
@@ -1543,7 +1542,7 @@ func (ro *Entity) SigValid() bool {
 	if len(ro.signature) != 64 || len(ro.content) == 0 {
 		panic("Entity in invalid state")
 	}
-	ok := crypto.VerifyBlob(ro.vk, ro.signature, ro.content[:len(ro.content)-64])
+	ok := VerifyBlob(ro.vk, ro.signature, ro.content[:len(ro.content)-64])
 	if ok {
 		ro.sigok = sigValid
 		return true
@@ -1590,7 +1589,7 @@ func (ro *Entity) Encode() {
 	}
 	buf = append(buf, 0)
 	sig := make([]byte, 64)
-	crypto.SignBlob(ro.sk, ro.vk, sig, buf)
+	SignBlob(ro.sk, ro.vk, sig, buf)
 	buf = append(buf, sig...)
 	ro.content = buf
 	ro.signature = sig
@@ -1712,7 +1711,7 @@ func (ro *Entity) FullString() string {
 	if len(ro.sk) != 0 {
 		rv += "+SK"
 	}
-	rv += "\n VK: " + crypto.FmtKey(ro.vk)
+	rv += "\n VK: " + FmtKey(ro.vk)
 	if ro.contact != "" {
 		rv += "\n Contact: " + ro.contact
 	}
@@ -1726,7 +1725,7 @@ func (ro *Entity) FullString() string {
 		rv += "\n Expires: " + ro.expires.String()
 	}
 	for _, v := range ro.revokers {
-		rv += "\n Revoker: " + crypto.FmtKey(v)
+		rv += "\n Revoker: " + FmtKey(v)
 	}
 	return rv
 }
@@ -2063,7 +2062,7 @@ func (ro *Revocation) Encode(sk []byte) {
 	ro.hash = hash[:]
 
 	sig := make([]byte, 64)
-	crypto.SignBlob(sk, ro.vk, sig, buf)
+	SignBlob(sk, ro.vk, sig, buf)
 	buf = append(buf, sig...)
 	ro.content = buf
 	ro.signature = sig
@@ -2078,7 +2077,7 @@ func (ro *Revocation) SigValid() bool {
 	if len(ro.signature) != 64 || len(ro.content) == 0 {
 		panic("Revocation in invalid state")
 	}
-	ok := crypto.VerifyBlob(ro.vk, ro.signature, ro.content[:len(ro.content)-64])
+	ok := VerifyBlob(ro.vk, ro.signature, ro.content[:len(ro.content)-64])
 	if ok {
 		ro.sigok = sigValid
 		return true

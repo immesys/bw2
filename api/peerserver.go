@@ -209,8 +209,10 @@ func handleSession(cl *BosswaveClient, conn net.Conn) {
 					bws := bwe.AsBW(err)
 					errframe(nf.seqno, bws.Code, bws.Msg)
 					log.Infof("message failed verification: %#v", msg)
-					log.Infof("pac src %v\n", crypto.FmtKey(msg.PrimaryAccessChain.GetGiverVK()))
-					log.Infof("pac dst %v\n", crypto.FmtKey(msg.PrimaryAccessChain.GetReceiverVK()))
+					if msg.PrimaryAccessChain != nil {
+						log.Infof("pac src %v\n", crypto.FmtKey(msg.PrimaryAccessChain.GetGiverVK()))
+						log.Infof("pac dst %v\n", crypto.FmtKey(msg.PrimaryAccessChain.GetReceiverVK()))
+					}
 					log.Infof("roz are %#v\n", msg.RoutingObjects)
 					if msg.OriginVK != nil {
 						log.Infof("msg src %\v\n", crypto.FmtKey(*msg.OriginVK))

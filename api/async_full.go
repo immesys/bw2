@@ -323,13 +323,13 @@ func (c *BosswaveClient) Unsubscribe(id core.UniqueMessageID, actioncb func(erro
 	m.UnsubUMid = id
 	c.finishMessage(m)
 	//Just for dev, no reason to do this
-	err = m.Verify(c.BW())
-	if err != nil {
-		//So even though we fail, we deregister locally, so that
-		//messages coming from this subscription are ignored in future
-		regActionCB(err)
-		return
-	}
+	// err = m.Verify(c.BW())
+	// if err != nil {
+	// 	//So even though we fail, we deregister locally, so that
+	// 	//messages coming from this subscription are ignored in future
+	// 	regActionCB(err)
+	// 	return
+	// }
 	//end just for dev
 
 	err = c.VerifyAffinity(m)

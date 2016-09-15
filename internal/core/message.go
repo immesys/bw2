@@ -397,84 +397,87 @@ func (m *Message) Verify(res Resolver) error {
 		return m.VerifyResult
 	}
 
-	pac := m.PrimaryAccessChain
-	//First thing: check the uri for validity
-	urivalid, star, plus, _ := util.AnalyzeSuffix(m.TopicSuffix)
-	//Can't publish to wildcards
-	if (star || plus) && (m.Type == TypePublish || m.Type == TypePersist || m.Type == TypeLS) {
-		return doret(bwe.M(bwe.BadOperation, "you cannot publish or list a URI with a wildcard"))
-	}
-	if !urivalid {
-		return doret(bwe.M(bwe.BadURI, "URI is invalid"))
-	}
-
-	// Remove to simplify
-	// fromMVK := false
-	// //If message is from MVK it can do whatever it wants
-	// if m.OriginVK != nil && bytes.Equal(*m.OriginVK, m.MVK) {
-	// 	fromMVK = true
-	// 	goto endperm
-	// }
-
-	//These will be populated by the permissions search process
-	//only use them if you don't jump to endperm
-
-	//Can't get permissions if there is no access chain
-	if pac == nil {
-		return doret(bwe.M(bwe.BadPermissions, "missing PAC"))
-	}
-
-	pac = ElaborateDChain(pac, res)
-	if pac == nil {
-		return doret(bwe.M(bwe.Unresolvable, "could not elaborate the PAC hash"))
-	}
-
-	// not needed because we call getdot on each hash below
-	// resolved_ok := ResolveDotsInDChain(pac, m.RoutingObjects, res)
-	// 	if !ok {
-	// 		rverr = bwe.M(bwe.Unresolvable, "could not elaborate all DOTs in the PAC")
-	// 		goto endperm
-	// 	}
-
-	for i := 0; i < pac.NumHashes(); i++ {
-		di, state, err := res.ResolveDOT(pac.GetDotHash(i))
-		if err != nil {
-			return doret(bwe.WrapM(bwe.BadPermissions, "Could not verify DOT", err))
+	if m.Type != TypeUnsubscribe {
+		pac := m.PrimaryAccessChain
+		//First thing: check the uri for validity
+		urivalid, star, plus, _ := util.AnalyzeSuffix(m.TopicSuffix)
+		//Can't publish to wildcards
+		if (star || plus) && (m.Type == TypePublish || m.Type == TypePersist || m.Type == TypeLS) {
+			return doret(bwe.M(bwe.BadOperation, "you cannot publish or list a URI with a wildcard"))
 		}
-		if state != StateValid {
-			return doret(bwe.M(bwe.BadPermissions, fmt.Sprintf("PAC DOT %d invalid: %s", i, res.StateToString(state))))
+		if !urivalid {
+			return doret(bwe.M(bwe.BadURI, "URI is invalid"))
 		}
-		pac.SetDOT(i, di)
-	}
 
-	//Check the signature of all the dots. This also checks that their topics are
-	//well formed
-	if !pac.CheckAllSigs() {
-		return doret(bwe.M(bwe.InvalidSig, "PAC contained invalid DOTs (sig)"))
-	}
+		// Remove to simplify
+		// fromMVK := false
+		// //If message is from MVK it can do whatever it wants
+		// if m.OriginVK != nil && bytes.Equal(*m.OriginVK, m.MVK) {
+		// 	fromMVK = true
+		// 	goto endperm
+		// }
 
-	//Next check the chain is connected end to end, check the TTL and construct
-	//the merged topic
-	azErr, azMVK, azURI, _, _, _, azOVK := AnalyzeAccessDOTChain(int(m.Type), m.TopicSuffix, pac)
-	if azErr != nil {
-		return doret(azErr)
-	}
-	m.MergedTopic = azURI
+		//These will be populated by the permissions search process
+		//only use them if you don't jump to endperm
 
-	//Check if this is an ALL grant and we don't have an origin VK
-	if bytes.Equal(azOVK, util.EverybodySlice) {
-		if m.OriginVK == nil {
-			return doret(bwe.M(bwe.NoOrigin, "allgrant with no OVK ro"))
+		//Can't get permissions if there is no access chain
+		if pac == nil {
+			return doret(bwe.M(bwe.BadPermissions, "missing PAC"))
 		}
-	} else {
-		if m.OriginVK == nil {
-			m.OriginVK = &azOVK
+
+		pac = ElaborateDChain(pac, res)
+		if pac == nil {
+			return doret(bwe.M(bwe.Unresolvable, "could not elaborate the PAC hash"))
 		}
-	}
-	//Also check chain MVK matches message
-	if !bytes.Equal(m.MVK, azMVK) {
-		return doret(bwe.M(bwe.MVKMismatch, "chain namespace doesn't match message"))
-	}
+
+		// not needed because we call getdot on each hash below
+		// resolved_ok := ResolveDotsInDChain(pac, m.RoutingObjects, res)
+		// 	if !ok {
+		// 		rverr = bwe.M(bwe.Unresolvable, "could not elaborate all DOTs in the PAC")
+		// 		goto endperm
+		// 	}
+
+		for i := 0; i < pac.NumHashes(); i++ {
+			di, state, err := res.ResolveDOT(pac.GetDotHash(i))
+			if err != nil {
+				return doret(bwe.WrapM(bwe.BadPermissions, "Could not verify DOT", err))
+			}
+			if state != StateValid {
+				return doret(bwe.M(bwe.BadPermissions, fmt.Sprintf("PAC DOT %d invalid: %s", i, res.StateToString(state))))
+			}
+			pac.SetDOT(i, di)
+		}
+
+		//Check the signature of all the dots. This also checks that their topics are
+		//well formed
+		if !pac.CheckAllSigs() {
+			return doret(bwe.M(bwe.InvalidSig, "PAC contained invalid DOTs (sig)"))
+		}
+
+		//Next check the chain is connected end to end, check the TTL and construct
+		//the merged topic
+		azErr, azMVK, azURI, _, _, _, azOVK := AnalyzeAccessDOTChain(int(m.Type), m.TopicSuffix, pac)
+		if azErr != nil {
+			return doret(azErr)
+		}
+		m.MergedTopic = azURI
+
+		//Check if this is an ALL grant and we don't have an origin VK
+		if bytes.Equal(azOVK, util.EverybodySlice) {
+			if m.OriginVK == nil {
+				return doret(bwe.M(bwe.NoOrigin, "allgrant with no OVK ro"))
+			}
+		} else {
+			if m.OriginVK == nil {
+				m.OriginVK = &azOVK
+			}
+		}
+		//Also check chain MVK matches message
+		if !bytes.Equal(m.MVK, azMVK) {
+			return doret(bwe.M(bwe.MVKMismatch, "chain namespace doesn't match message"))
+		}
+
+	} //end unsub
 
 	//I don't think this can happen
 	if m.OriginVK == nil {

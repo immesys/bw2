@@ -73,7 +73,9 @@ func (cl *PeerClient) reconnectPeer() error {
 	if !bytes.Equal(proof[:32], cl.expectedVK) {
 		return errors.New("peer has a different VK")
 	}
+	cl.txmtx.Lock()
 	cl.conn = conn
+	cl.txmtx.Unlock()
 	return nil
 }
 
@@ -138,26 +140,26 @@ func (pc *PeerClient) rxloop() {
 		_, err := io.ReadFull(pc.conn, hdr)
 		if err != nil {
 			log.Infof("PEER CONNECTION to %s: %s", pc.target, err)
-			pc.asublock.Lock()
-			numsubs := len(pc.activesubs)
-			pc.asublock.Unlock()
-			if numsubs > 0 {
-				for {
-					log.Infof("We have active subs, attempting to reconnect to peer: %s", pc.target)
-					err := pc.reconnectPeer()
-					if err == nil {
-						log.Infof("Peer reconnected: %s", pc.target)
-						pc.regenSubs()
-						break
-					} else {
-						time.Sleep(5 * time.Second)
-					}
-				}
-				continue
-			} else {
-				return
+			pc.conn.Close()
+			pc.txmtx.Lock()
+			cbz := pc.replyCB
+			pc.replyCB = make(map[uint64]func(*nativeFrame))
+			pc.txmtx.Unlock()
+			for _, e := range cbz {
+				e(nil)
 			}
-
+			for {
+				log.Infof("Attempting to reconnect to peer: %s", pc.target)
+				err := pc.reconnectPeer()
+				if err == nil {
+					log.Infof("Peer reconnected: %s", pc.target)
+					pc.regenSubs()
+					break
+				} else {
+					time.Sleep(5 * time.Second)
+				}
+			}
+			continue
 		}
 		ln := binary.LittleEndian.Uint64(hdr)
 		seqno := binary.LittleEndian.Uint64(hdr[8:])
@@ -201,14 +203,14 @@ func (pc *PeerClient) transact(f *nativeFrame, onRX func(f *nativeFrame)) {
 	if err != nil {
 		log.Info("peer write error: ", err.Error())
 		pc.conn.Close()
-		onRX(nil)
+		go onRX(nil)
 		return
 	}
 	_, err = pc.conn.Write(f.body)
 	if err != nil {
 		log.Info("peer write error: ", err.Error())
 		pc.conn.Close()
-		onRX(nil)
+		go onRX(nil)
 	}
 }
 func (pc *PeerClient) PublishPersist(m *core.Message, actionCB func(err error)) {

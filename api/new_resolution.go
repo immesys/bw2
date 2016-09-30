@@ -530,8 +530,10 @@ func (bw *BW) cacheBuiltChains(k CacheKey, ro []*objects.DChain) {
 	bn, ok := bw.rdata.holdoff[k.nsvk]
 	if ok {
 		if bw.BC().CurrentBlock() > bn {
+			log.Info("removing holdoff")
 			delete(bw.rdata.holdoff, k.nsvk)
 		} else {
+			log.Info("observing holdoff")
 			return
 		}
 	}

@@ -143,11 +143,10 @@ func (pc *PeerClient) rxloop() {
 			pc.conn.Close()
 			pc.txmtx.Lock()
 			cbz := pc.replyCB
-			pc.replyCB = make(map[uint64]func(*nativeFrame))
-			pc.txmtx.Unlock()
 			for _, e := range cbz {
-				e(nil)
+				go e(nil)
 			}
+			pc.txmtx.Unlock()
 			for {
 				log.Infof("Attempting to reconnect to peer: %s", pc.target)
 				err := pc.reconnectPeer()
@@ -249,7 +248,10 @@ func (pc *PeerClient) Subscribe(m *core.Message,
 		seqno: pc.getSeqno(),
 	}
 	pc.transact(&nf, func(f *nativeFrame) {
-		//log.Infof("got sub response cmd: %d", f.cmd)
+		if f == nil {
+			//Peer error, on a subscribe it will just get regenned
+			return
+		}
 		switch f.cmd {
 		case nCmdRStatus:
 			fallthrough

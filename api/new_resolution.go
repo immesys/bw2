@@ -54,6 +54,7 @@ import (
 //  - We need an on-registry-transaction inv goroutine
 
 const holdoffConstant = 6
+const BlockReplay = 30
 
 var hasit string
 
@@ -253,7 +254,7 @@ func (bw *BW) checkChainChange() {
 		return
 	}
 
-	logs := bw.BC().FindLogsBetween(int64(bw.rdata.lastblock), int64(currentBlock), bc.UFI_Registry_Address,
+	logs := bw.BC().FindLogsBetween(int64(bw.rdata.lastblock)-BlockReplay, int64(currentBlock), bc.UFI_Registry_Address,
 		[][]bc.Bytes32{}, false)
 	bw.rdata.lastblock = currentBlock
 	for _, log := range logs {

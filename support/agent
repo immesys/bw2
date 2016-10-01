@@ -107,13 +107,13 @@ echo "Automated installer for BOSSWAVE $REL "
 			exit 1
 		fi
 		# work out if we need systemd
-		if [ ! "$(pidof systemd)" = ""  ]
+		if [ "$(pidof systemd)" = "" ] && [ "$(pidof systemd-udevd)" = "" ]
 		then
-			echo "Assuming systemd"
-			use_systemd=1
-		else
 			echo "Assuming upstart"
 			use_systemd=0
+		else
+			echo "Assuming systemd"
+			use_systemd=1
 		fi
 	fi
 

@@ -107,7 +107,7 @@ func NewBlockChain(datadir string) (BlockChainProvider, chan bool) {
 	ethConf := &eth.Config{
 		ChainConfig:             &core.ChainConfig{HomesteadBlock: params.MainNetHomesteadBlock},
 		Genesis:                 "",
-		FastSync:                false,
+		FastSync:                true,
 		BlockChainVersion:       3,
 		DatabaseCache:           DefaultDBCache,
 		DatabaseHandles:         utils.MakeDatabaseHandles(),

@@ -80,7 +80,6 @@ func (cl *PeerClient) reconnectPeer() error {
 }
 
 func (cl *BosswaveClient) ConnectToPeer(vk []byte, target string) (*PeerClient, error) {
-
 	rv := PeerClient{
 		conn:       nil,
 		replyCB:    make(map[uint64]func(*nativeFrame)),
@@ -93,17 +92,21 @@ func (cl *BosswaveClient) ConnectToPeer(vk []byte, target string) (*PeerClient, 
 	if err != nil {
 		return nil, err
 	}
+	go func() {
+		<-rv.bwcl.ctx.Done()
+		rv.conn.Close()
+	}()
 	go rv.rxloop()
 	return &rv, nil
 }
 
-func (pc *PeerClient) Destroy() {
-	//We don't care about our subs
-	pc.asublock.Lock()
-	pc.activesubs = make(map[uint64]*core.Message)
-	pc.asublock.Unlock()
-	pc.conn.Close()
-}
+// func (pc *PeerClient) Destroy() {
+// 	//We don't care about our subs
+// 	pc.asublock.Lock()
+// 	pc.activesubs = make(map[uint64]*core.Message)
+// 	pc.asublock.Unlock()
+// 	pc.conn.Close()
+// }
 func (pc *PeerClient) GetTarget() string {
 	return pc.target
 }
@@ -140,6 +143,9 @@ func (pc *PeerClient) rxloop() {
 		_, err := io.ReadFull(pc.conn, hdr)
 		if err != nil {
 			log.Infof("PEER CONNECTION to %s: %s", pc.target, err)
+			if pc.bwcl.ctx.Err() != nil {
+				return
+			}
 			pc.conn.Close()
 			pc.txmtx.Lock()
 			cbz := pc.replyCB
@@ -155,6 +161,9 @@ func (pc *PeerClient) rxloop() {
 					pc.regenSubs()
 					break
 				} else {
+					if pc.bwcl.ctx.Err() != nil {
+						return
+					}
 					time.Sleep(5 * time.Second)
 				}
 			}

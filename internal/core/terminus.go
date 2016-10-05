@@ -33,6 +33,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/net/context"
+
 	log "github.com/cihub/seelog"
 	"github.com/immesys/bw2/internal/store"
 	"github.com/immesys/bw2/util/bwe"
@@ -44,6 +46,7 @@ type Client struct {
 	subs []UniqueMessageID
 	tm   *Terminus
 	name string
+	ctx  context.Context
 }
 
 type clientid uint32
@@ -225,9 +228,31 @@ func CreateTerminus() *Terminus {
 	return rv
 }
 
-func (tm *Terminus) CreateClient(name string) *Client {
+func (tm *Terminus) CreateClient(ctx context.Context, name string) *Client {
 	cid := clientid(atomic.AddUint32(&tm.cid_head, 1))
-	c := Client{cid: cid, tm: tm, name: name}
+	c := Client{cid: cid, tm: tm, name: name, ctx: ctx}
+	go func() {
+		<-ctx.Done()
+		c.tm.rstree_lock.Lock()
+		for _, subid := range c.subs {
+			node, ok := c.tm.rstree[subid]
+			if ok {
+				np := node.subz[:0]
+				for _, s := range node.subz {
+					if s.client.cid != c.cid {
+						np = append(np, s)
+					}
+				}
+				node.subz = np
+			}
+			delete(c.tm.rstree, subid)
+		}
+		c.tm.rstree_lock.Unlock()
+		//Delete client
+		c.tm.c_maplock.Lock()
+		delete(c.tm.cmap, c.cid)
+		c.tm.c_maplock.Unlock()
+	}()
 	tm.c_maplock.Lock()
 	tm.cmap[cid] = &c
 	tm.c_maplock.Unlock()
@@ -317,28 +342,28 @@ func (cl *Client) List(m *Message, cb func(s string, ok bool)) {
 	}
 }
 
-func (cl *Client) Destroy() {
-	//delete all subscriptions
-	cl.tm.rstree_lock.Lock()
-	for _, subid := range cl.subs {
-		node, ok := cl.tm.rstree[subid]
-		if ok {
-			np := node.subz[:0]
-			for _, s := range node.subz {
-				if s.client.cid != cl.cid {
-					np = append(np, s)
-				}
-			}
-			node.subz = np
-		}
-		delete(cl.tm.rstree, subid)
-	}
-	cl.tm.rstree_lock.Unlock()
-	//Delete client
-	cl.tm.c_maplock.Lock()
-	delete(cl.tm.cmap, cl.cid)
-	cl.tm.c_maplock.Unlock()
-}
+//func (cl *Client) Destroy() {
+//delete all subscriptions
+// cl.tm.rstree_lock.Lock()
+// for _, subid := range cl.subs {
+// 	node, ok := cl.tm.rstree[subid]
+// 	if ok {
+// 		np := node.subz[:0]
+// 		for _, s := range node.subz {
+// 			if s.client.cid != cl.cid {
+// 				np = append(np, s)
+// 			}
+// 		}
+// 		node.subz = np
+// 	}
+// 	delete(cl.tm.rstree, subid)
+// }
+// cl.tm.rstree_lock.Unlock()
+// //Delete client
+// cl.tm.c_maplock.Lock()
+// delete(cl.tm.cmap, cl.cid)
+// cl.tm.c_maplock.Unlock()
+//}
 
 //Unsubscribe does what it says. For now the topic system is crude
 //so this doesn't seem necessary to have the subid instead of topic

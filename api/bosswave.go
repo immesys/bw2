@@ -26,6 +26,8 @@ import (
 	"strings"
 	"sync"
 
+	"golang.org/x/net/context"
+
 	"github.com/immesys/bw2/bc"
 	"github.com/immesys/bw2/crypto"
 	"github.com/immesys/bw2/internal/core"
@@ -111,6 +113,9 @@ type BosswaveClient struct {
 	bchain bc.BlockChainProvider
 	bcc    bc.BlockChainClient
 
+	ctx       context.Context
+	ctxCancel context.CancelFunc
+
 	maxage uint64
 
 	viewseq int
@@ -160,7 +165,7 @@ func (cl *BosswaveClient) BCC() bc.BlockChainClient {
 // a message appears for them. If a queueChanged function is specified, this
 // behaviour is supressed, and the caller needs to work out how to dispatch
 // messages when the queue has changed.
-func (bw *BW) CreateClient(name string) *BosswaveClient {
+func (bw *BW) CreateClient(pctx context.Context, name string) *BosswaveClient {
 	rv := &BosswaveClient{bw: bw,
 		mid:    uint64(rand.Int63() << 16),
 		peers:  make(map[string]*PeerClient),
@@ -169,16 +174,18 @@ func (bw *BW) CreateClient(name string) *BosswaveClient {
 		views:  make(map[int]*View),
 		subs:   make(map[core.UniqueMessageID]*Subscription),
 	}
-	rv.cl = bw.tm.CreateClient(name)
+	rv.ctx, rv.ctxCancel = context.WithCancel(pctx)
+	rv.cl = bw.tm.CreateClient(rv.ctx, name)
 	return rv
 }
 
-func (cl *BosswaveClient) Destroy() {
-	cl.cl.Destroy()
-	for _, p := range cl.peers {
-		p.Destroy()
-	}
-}
+// func (cl *BosswaveClient) Destroy() {
+//
+// 	cl.cl.Destroy()
+// 	for _, p := range cl.peers {
+// 		p.Destroy()
+// 	}
+// }
 
 //Resolve URI will convert the namespace into an nsvk if it is symbolic
 func (bw *BW) ResolveURI(uri string) (string, error) {

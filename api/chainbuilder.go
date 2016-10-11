@@ -139,7 +139,11 @@ func (b *ChainBuilder) getOptions(from []byte) []*objects.DOT {
 
 	for _, dl := range dlz {
 		if dl.S != StateValid {
-			b.status <- fmt.Sprintf("rejecting DOT(%s) - Status is %d", crypto.FmtHash(dl.D.GetHash()), dl.S)
+			if dl.D == nil {
+				b.status <- fmt.Sprintf("rejecting DOT - Status is %d", dl.S)
+			} else {
+				b.status <- fmt.Sprintf("rejecting DOT(%s) - Status is %d", crypto.FmtHash(dl.D.GetHash()), dl.S)
+			}
 			continue
 		}
 		if b.dotUseful(dl.D) {

@@ -1,8 +1,8 @@
 package util
 
 //The version of BW2 this is
-const BW2Version = "2.4.18 'Hadron'"
+const BW2Version = "2.5.2 'Iridium'"
 const BW2VersionMajor = 2
-const BW2VersionMinor = 4
-const BW2VersionSubminor = 18
-const BW2VersionName = "Hadron"
+const BW2VersionMinor = 5
+const BW2VersionSubminor = 2
+const BW2VersionName = "Iridium"

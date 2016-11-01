@@ -27,6 +27,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/net/context"
+
 	log "github.com/cihub/seelog"
 	"github.com/immesys/bw2/api"
 	"github.com/immesys/bw2/bc"
@@ -70,7 +72,11 @@ func mkSeqNo() int {
 }
 
 func (a *Adapter) handleClient(conn net.Conn) {
-	bwcl := a.bw.CreateClient("OOB:" + conn.RemoteAddr().String())
+	ctx, ctxCancel := context.WithCancel(context.Background())
+	defer func() {
+		ctxCancel()
+	}()
+	bwcl := a.bw.CreateClient(ctx, "OOB:"+conn.RemoteAddr().String())
 	out := bufio.NewWriter(conn)
 	in := bufio.NewReader(conn)
 	olock := sync.Mutex{}
@@ -87,10 +93,6 @@ func (a *Adapter) handleClient(conn net.Conn) {
 	helo := objects.CreateFrame(objects.CmdHello, mkSeqNo())
 	helo.AddHeader("version", util.BW2Version)
 	send(helo)
-
-	defer func() {
-		bwcl.Destroy()
-	}()
 
 	for {
 		f, err := objects.LoadFrameFromStream(in)

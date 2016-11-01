@@ -55,6 +55,8 @@ import (
 
 const holdoffConstant = 6
 const BlockReplay = 30
+const MaxCacheAgeTime = 1 * time.Hour
+const MaxCacheJumpBlocks = 100
 
 var hasit string
 
@@ -87,6 +89,8 @@ type ResolutionData struct {
 
 	expinvchan   chan struct{}
 	nextInterval time.Duration
+
+	lastDrop time.Time
 }
 
 func newResolutionData() *ResolutionData {
@@ -102,6 +106,20 @@ func newResolutionData() *ResolutionData {
 		holdoff:              make(map[bc.Bytes32]uint64),
 		nextInterval:         5 * time.Second,
 	}
+}
+
+func (bw *BW) dropAllCaches() {
+	bw.getlock()
+	defer bw.rellock()
+	bw.rdata.chaincache = make(map[bc.Bytes32]map[CacheKey][]*objects.DChain)
+	bw.rdata.entityCache = make(map[bc.Bytes32]*registryEntityResult)
+	bw.rdata.dotHashCache = make(map[bc.Bytes32]*registryDOTResult)
+	bw.rdata.dotFromInvCache = make(map[bc.Bytes32][]bc.Bytes32)
+	bw.rdata.dotFromCompleteCache = make(map[bc.Bytes32][]bc.Bytes32)
+	bw.rdata.dotToInvCache = make(map[bc.Bytes32][]bc.Bytes32)
+	bw.rdata.dotChainCache = make(map[bc.Bytes32][]bc.Bytes32)
+	bw.rdata.expinvchan = make(chan struct{})
+	bw.rdata.holdoff = make(map[bc.Bytes32]uint64)
 }
 
 func (bw *BW) startResolutionServices() {
@@ -248,9 +266,15 @@ func (bw *BW) checkChainChange() {
 	bw.rdata.chainchangemu.Lock()
 	defer bw.rdata.chainchangemu.Unlock()
 	currentBlock := bw.BC().CurrentBlock()
-	fmt.Printf("checking chain change for #%d\n", currentBlock)
+	fmt.Printf("checking chain change for #%d -> #%d\n", bw.rdata.lastblock, currentBlock)
 	if bw.rdata.lastblock == currentBlock {
 		fmt.Printf(" -- skip\n")
+		return
+	}
+	if currentBlock-bw.rdata.lastblock > MaxCacheJumpBlocks || bw.rdata.lastDrop.Sub(time.Now()) > MaxCacheAgeTime {
+		fmt.Printf("dropping all caches, block number jump > 100 blocks")
+		bw.rdata.lastDrop = time.Now()
+		go bw.dropAllCaches()
 		return
 	}
 

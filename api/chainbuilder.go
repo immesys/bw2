@@ -131,13 +131,19 @@ func (b *ChainBuilder) dotUseful(d *objects.DOT) bool {
 
 func (b *ChainBuilder) getOptions(from []byte) []*objects.DOT {
 	dlz, err := b.cl.BW().ResolveGrantedDOTs(from)
-	if err != nil {
-		panic(err)
-	}
 	rv := []*objects.DOT{}
+	if err != nil {
+		//can happen if chain is still synchronizing
+		return rv
+	}
+
 	for _, dl := range dlz {
 		if dl.S != StateValid {
-			b.status <- fmt.Sprintf("rejecting DOT(%s) - Status is %d", crypto.FmtHash(dl.D.GetHash()), dl.S)
+			if dl.D == nil {
+				b.status <- fmt.Sprintf("rejecting DOT - Status is %d", dl.S)
+			} else {
+				b.status <- fmt.Sprintf("rejecting DOT(%s) - Status is %d", crypto.FmtHash(dl.D.GetHash()), dl.S)
+			}
 			continue
 		}
 		if b.dotUseful(dl.D) {

@@ -135,7 +135,7 @@ func RestrictBy(from string, by string) (string, bool) {
 	//phase 1
 	//emit matching prefix
 	for ; fi < len(fp) && bi < len(bp); fi, bi = fi+1, bi+1 {
-		if fp[fi] == bp[bi] || (bp[bi] == "+" && fp[fi] != "*") {
+		if fp[fi] != "*" && (fp[fi] == bp[bi] || (bp[bi] == "+" && fp[fi] != "*")) {
 			fout = append(fout, fp[fi])
 		} else if fp[fi] == "+" && bp[bi] != "*" {
 			fout = append(fout, bp[bi])
@@ -146,7 +146,7 @@ func RestrictBy(from string, by string) (string, bool) {
 	//phase 2
 	//emit matching suffix
 	for ; fni >= fi && bni >= bi; fni, bni = fni-1, bni-1 {
-		if fp[fni] == bp[bni] || (bp[bni] == "+" && fp[fni] != "*") {
+		if bp[bni] != "*" && (fp[fni] == bp[bni] || (bp[bni] == "+" && fp[fni] != "*")) {
 			bout = append(bout, fp[fni])
 		} else if fp[fni] == "+" && bp[bni] != "*" {
 			bout = append(bout, bp[bni])

@@ -275,7 +275,6 @@ func (bw *BW) checkChainChange() {
 		fmt.Printf("dropping all caches, block number jump > 100 blocks")
 		bw.rdata.lastDrop = time.Now()
 		go bw.dropAllCaches()
-		return
 	}
 
 	logs := bw.BC().FindLogsBetween(int64(bw.rdata.lastblock)-BlockReplay, int64(currentBlock), bc.UFI_Registry_Address,

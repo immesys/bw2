@@ -29,6 +29,7 @@ func TestRestrictBy(t *testing.T) {
 	TRS(t, "a/*/c", "a/b/c", "a/b/c")
 	TRS(t, "a/*/c", "*/c", "a/*/c")
 	TRS(t, "a/*/b/c", "a/*/c", "a/*/b/c")
+	TRS(t, "eecs/*/!meta/giles", "*/!meta/giles", "eecs/*/!meta/giles")
 }
 
 func TestRestrictOrig(t *testing.T) {

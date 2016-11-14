@@ -19,6 +19,7 @@ package oob
 
 import (
 	"bufio"
+	"fmt"
 	"math/rand"
 	"net"
 	"os"
@@ -286,6 +287,8 @@ func commonUnpackMsg(m *core.Message, r *objects.Frame) {
 	if m.OriginVK == nil {
 		panic("Why no origin VK")
 	}
+	r.AddHeader("umid", fmt.Sprintf("%x", m.UMid))
+	r.AddHeader("signature", crypto.FmtSig(m.Signature))
 	r.AddHeader("from", crypto.FmtKey(*m.OriginVK))
 	r.AddHeader("uri", crypto.FmtKey(m.MVK)+"/"+m.TopicSuffix)
 	for _, ro := range m.RoutingObjects {

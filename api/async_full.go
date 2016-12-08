@@ -47,7 +47,6 @@ func InitLog(logfile string) {
     <outputs>
         <splitter formatid="common">
             <console/>
-            <file path="` + logfile + `"/>
         </splitter>
     </outputs>
 		<formats>

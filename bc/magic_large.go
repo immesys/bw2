@@ -2,5 +2,5 @@
 
 package bc
 
-const DefaultMaxPeers = 20
+const DefaultMaxPeers = 30
 const DefaultDBCache = 256

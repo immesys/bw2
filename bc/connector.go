@@ -85,6 +85,7 @@ func NewBlockChain(datadir string) (BlockChainProvider, chan bool) {
 	}
 	rv.am = accounts.NewManagerI(rv.ks, keydir)
 
+	fmt.Printf("USING MAX PEER LIMIT: %d\n", DefaultMaxPeers)
 	// Configure the node's service container
 	stackConf := &node.Config{
 		DataDir:         datadir,

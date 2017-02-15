@@ -57,12 +57,16 @@ type bcClient struct {
 
 var BOSSWAVEBootNodes = []*discover.Node{
 	// BOSSWAVE boot nodes
-	// Castle
-	discover.MustParseNode("enode://b2304f29230f9ceddb5e64e24ce5681f869d331a1dc41328eb4a7c26fedc92e24f34b87e775d7ce1793df376d63ae47ca00792ae7ecc01080aeebec14548e93b@128.32.37.201:30303"),
+	//boota ipv4
+	discover.MustParseNode("enode://6ae73d0621c9c9a6bdac4a332900f1f57ea927f1a03aef5c2ffffa70fca0fada636da3ceac45ee4a2addbdb2bdbe9cb129b3a098d57fa09ff451712ac9c80fc9@54.215.189.111:30301"),
+	//boota ipv6
+	discover.MustParseNode("enode://6ae73d0621c9c9a6bdac4a332900f1f57ea927f1a03aef5c2ffffa70fca0fada636da3ceac45ee4a2addbdb2bdbe9cb129b3a098d57fa09ff451712ac9c80fc9@[2600:1f1c:c2f:a400:2f8f:3b34:1f55:3f7a]:30301"),
+	//bootb ipv4
+	discover.MustParseNode("enode://832c5a520a1079190e9fb57827306ee3882231077a3c543c8cae4c3a386703b3a4e0fd3ca9cb6b00b0d5482efc3e4dd8aafdb7fedb061d74a9d500f230e45873@54.183.54.213:30301"),
+	//bootb ipv6
+	discover.MustParseNode("enode://832c5a520a1079190e9fb57827306ee3882231077a3c543c8cae4c3a386703b3a4e0fd3ca9cb6b00b0d5482efc3e4dd8aafdb7fedb061d74a9d500f230e45873@[2600:1f1c:c2f:a400:5c38:c2f5:7e26:841c]:30301"),
 	// Asylum
 	discover.MustParseNode("enode://686f709677c4d0f2cd58cf651ea8ce1375bef22dcf29065994e34c1c4fd6f86691698321460f43059cc6cea536cd66ef534208869cd27765c4455f577a42a107@128.32.37.241:30303"),
-	// BW2.io
-	discover.MustParseNode("enode://9cda6d7d65c465b92c413e6befd69e47588bb24806782a7bab0663de303e73f0cd2416e0d7c68cc9cba398d160ec34853252d382566bf6f706423b7bd7a712ef@54.183.221.12:30303"),
 }
 
 func NewBlockChain(datadir string) (BlockChainProvider, chan bool) {

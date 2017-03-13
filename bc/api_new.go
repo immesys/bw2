@@ -45,7 +45,7 @@ type Log interface {
 	String() string
 }
 type logWrapper struct {
-	vmlog *vm.Log
+	vmlog *types.Log
 }
 
 func (bc *blockChain) HeadBlockAge() int64 {

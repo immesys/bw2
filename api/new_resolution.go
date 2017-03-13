@@ -289,7 +289,8 @@ func (bw *BW) checkChainChange() {
 			if err != nil {
 				panic("Could not decode log dot")
 			}
-			fmt.Printf("flushing nsvk=%s fromvk=%s\n", crypto.FmtKey(ro.(*objects.DOT).GetAccessURIMVK()), crypto.FmtKey(ro.(*objects.DOT).GetGiverVK()))
+			fmt.Printf("flushing nsvk=%s fromvk=%s\n", crypto.FmtKey(ro.(*objects.DOT).GetAccessURIMVK()),
+				crypto.FmtKey(ro.(*objects.DOT).GetGiverVK()))
 			bw.FlushGrantedFromCache(ro.(*objects.DOT).GetGiverVK())
 			bw.FlushChainNSVK(ro.(*objects.DOT).GetAccessURIMVK())
 			fallthrough
@@ -300,7 +301,6 @@ func (bw *BW) checkChainChange() {
 			fmt.Printf("flushing entity")
 			bw.FlushEntity(log.Topics()[1][:])
 		default:
-
 		}
 	}
 }

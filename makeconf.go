@@ -69,9 +69,9 @@ func makeConf(c *cli.Context) error {
 	file := []string{
 		("# generated for " + util.BW2Version + "\n"),
 		("[router]\n"),
-		("Entity=" + entfile + "\n"),
-		("DB=" + dbpath + "\n"),
-		("LogPath=" + lpath + "\n"),
+		("Entity=" + filepath.ToSlash(entfile) + "\n"),
+		("DB=" + filepath.ToSlash(dbpath) + "\n"),
+		("LogPath=" + filepath.ToSlash(lpath) + "\n"),
 		("[native]\n"),
 		("ListenOn=:4514\n"),
 		("[oob]\n"),

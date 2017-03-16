@@ -100,6 +100,12 @@ func main() {
 					Name:  "conf",
 					Usage: "override the default config file",
 				},
+				cli.BoolFlag{
+					Name: "light",
+				},
+				cli.BoolFlag{
+					Name: "listenglobal",
+				},
 			},
 		},
 		{
@@ -573,6 +579,7 @@ func actionRouter(c *cli.Context) error {
 			fmt.Println("num goroutines:", runtime.NumGoroutine())
 		}
 	}()
+
 	if bw.Config.Native.ListenOn != "" {
 		go api.Start(bw)
 	} else {
@@ -585,5 +592,6 @@ func actionRouter(c *cli.Context) error {
 		fmt.Println("not starting oob server: no listen address")
 	}
 	<-shd
+	fmt.Printf("got shutdown\n")
 	return nil
 }

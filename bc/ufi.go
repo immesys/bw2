@@ -6,6 +6,7 @@ import (
 
 	"github.com/immesys/bw2/util/bwe"
 	"github.com/immesys/bw2bc/common"
+	"github.com/immesys/bw2bc/common/math"
 )
 
 /*
@@ -100,33 +101,33 @@ func EncodeABICall(ufi UFI, argvaluesi ...interface{}) (contract common.Address,
 			if !ok {
 				err = bwe.M(bwe.InvalidUFI, "Could not parse argument")
 			}
-			v = common.U256(v)
-			data = append(data, common.BigToBytes(v, 256)...)
+			v = math.U256(v)
+			data = append(data, math.PaddedBigBytes(v, 32)...)
 		case TInt:
 			v, ok := big.NewInt(0).SetString(argvalues[idx], 16)
 			if !ok {
 				err = bwe.M(bwe.InvalidUFI, "Could not parse argument")
 			}
-			v = common.S256(v)
-			data = append(data, common.BigToBytes(v, 256)...)
+			v = math.S256(v)
+			data = append(data, math.PaddedBigBytes(v, 32)...)
 		case TString:
-			offset := common.BigToBytes(big.NewInt(int64(endloc+len(extra))), 256)
+			offset := math.PaddedBigBytes(big.NewInt(int64(endloc+len(extra))), 32)
 			data = append(data, offset...)
-			extra = append(extra, common.BigToBytes(big.NewInt(int64(len(argvalues[idx]))), 256)...)
+			extra = append(extra, math.PaddedBigBytes(big.NewInt(int64(len(argvalues[idx]))), 32)...)
 			strPadLen := len(argvalues[idx])
 			if strPadLen%32 != 0 {
 				strPadLen += 32 - (strPadLen % 32)
 			}
 			extra = append(extra, common.RightPadBytes([]byte(argvalues[idx]), strPadLen)...)
 		case TDBytes:
-			offset := common.BigToBytes(big.NewInt(int64(endloc+len(extra))), 256)
+			offset := math.PaddedBigBytes(big.NewInt(int64(endloc+len(extra))), 32)
 			argv := common.FromHex(argvalues[idx])
 			origlen := len(argv)
 			if len(argv)%32 != 0 {
 				argv = common.RightPadBytes(argv, len(argv)+(32-len(argv)%32))
 			}
 			data = append(data, offset...)
-			extra = append(extra, common.BigToBytes(big.NewInt(int64(origlen)), 256)...)
+			extra = append(extra, math.PaddedBigBytes(big.NewInt(int64(origlen)), 32)...)
 			extra = append(extra, argv...)
 		case TBytes:
 			argv := common.FromHex(argvalues[idx])
@@ -157,20 +158,20 @@ func DecodeABIReturn(ufi UFI, data []byte) (retvalues []interface{}, err error) 
 		datv := data[idx*32 : (idx+1)*32]
 		switch arg {
 		case TUInt:
-			i := common.BytesToBig(datv)
-			i = common.U256(i)
+			i := big.NewInt(0).SetBytes(datv)
+			i = math.U256(i)
 			retvalues[idx] = i
 		case TInt:
-			i := common.BytesToBig(datv)
-			i = common.S256(i)
+			i := big.NewInt(0).SetBytes(datv)
+			i = math.S256(i)
 			retvalues[idx] = i
 		case TBytes:
 			cp := make([]byte, len(datv))
 			copy(cp, datv)
 			retvalues[idx] = cp
 		case TDBytes:
-			offset := common.BytesToBig(datv).Int64()
-			length := common.BytesToBig(data[offset : offset+32]).Int64()
+			offset := big.NewInt(0).SetBytes(datv).Int64()
+			length := big.NewInt(0).SetBytes(data[offset : offset+32]).Int64()
 			cp := make([]byte, length)
 			copy(cp, data[offset+32:offset+32+length])
 			retvalues[idx] = cp

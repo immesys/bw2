@@ -2,6 +2,7 @@ package bc
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"math/big"
 
@@ -9,14 +10,14 @@ import (
 	"github.com/immesys/bw2/objects"
 	"github.com/immesys/bw2/util/bwe"
 	"github.com/immesys/bw2bc/common"
+	"github.com/immesys/bw2bc/common/math"
 	"github.com/immesys/bw2bc/crypto/sha3"
-	"github.com/immesys/bw2bc/eth"
 )
 
-func (bcc *bcClient) CreateRoutingOffer(acc int, dr *objects.Entity, nsvk []byte,
+func (bcc *bcClient) CreateRoutingOffer(ctx context.Context, acc int, dr *objects.Entity, nsvk []byte,
 	confirmed func(err error)) {
 	//First lets find out what our nonce is
-	rv, err := bcc.bc.CallOffChain(StringToUFI(UFI_Affinity_DRNonces), dr.GetVK())
+	rv, err := bcc.bc.CallOffChain(ctx, StringToUFI(UFI_Affinity_DRNonces), dr.GetVK())
 	if err != nil {
 		panic(err)
 	}
@@ -28,13 +29,13 @@ func (bcc *bcClient) CreateRoutingOffer(acc int, dr *objects.Entity, nsvk []byte
 	d.Write([]byte("OfferRouting"))
 	d.Write(dr.GetVK())
 	d.Write(nsvk)
-	d.Write(common.BigToBytes(nonce, 256))
+	d.Write(math.PaddedBigBytes(nonce, 32))
 	hsh := d.Sum(nil)
 	sig := make([]byte, 64)
 	crypto.SignBlob(dr.GetSK(), dr.GetVK(), sig, hsh)
 
 	//Then let us try create offer
-	txhash, err := bcc.CallOnChain(acc, StringToUFI(UFI_Affinity_OfferRouting), "", "", "",
+	txhash, err := bcc.CallOnChain(ctx, acc, StringToUFI(UFI_Affinity_OfferRouting), "", "", "",
 		dr.GetVK(), nsvk, nonce, sig)
 	if err != nil {
 		confirmed(err)
@@ -42,10 +43,10 @@ func (bcc *bcClient) CreateRoutingOffer(acc int, dr *objects.Entity, nsvk []byte
 	}
 	//And wait for it to confirm
 	//meh we need to rewrite this function
-	bcc.bc.GetTransactionDetailsInt(txhash, bcc.DefaultTimeout, bcc.DefaultConfirmations,
-		nil, func(bn uint64, rcpt *eth.RPCTransaction, err error) {
+	bcc.bc.GetTransactionDetailsInt(ctx, txhash, bcc.DefaultTimeout, bcc.DefaultConfirmations,
+		nil, func(bn uint64, err error) {
 			//Check to see if it all matches now:
-			rvz, err := bcc.bc.CallOffChain(StringToUFI(UFI_Affinity_AffinityOffers),
+			rvz, err := bcc.bc.CallOffChain(ctx, StringToUFI(UFI_Affinity_AffinityOffers),
 				dr.GetVK(), nsvk)
 			if err != nil {
 				confirmed(err)
@@ -59,10 +60,10 @@ func (bcc *bcClient) CreateRoutingOffer(acc int, dr *objects.Entity, nsvk []byte
 		})
 }
 
-func (bcc *bcClient) CreateSRVRecord(acc int, dr *objects.Entity, record string,
+func (bcc *bcClient) CreateSRVRecord(ctx context.Context, acc int, dr *objects.Entity, record string,
 	confirmed func(err error)) {
 	//First lets find out what our nonce is
-	rv, err := bcc.bc.CallOffChain(StringToUFI(UFI_Affinity_DRNonces), dr.GetVK())
+	rv, err := bcc.bc.CallOffChain(ctx, StringToUFI(UFI_Affinity_DRNonces), dr.GetVK())
 	if err != nil {
 		panic(err)
 	}
@@ -73,14 +74,14 @@ func (bcc *bcClient) CreateSRVRecord(acc int, dr *objects.Entity, record string,
 	d := sha3.NewKeccak256()
 	d.Write([]byte("SetDesignatedRouterSRV"))
 	d.Write(dr.GetVK())
-	d.Write(common.BigToBytes(nonce, 256))
+	d.Write(math.PaddedBigBytes(nonce, 32))
 	d.Write([]byte(record))
 	hsh := d.Sum(nil)
 	sig := make([]byte, 64)
 	crypto.SignBlob(dr.GetSK(), dr.GetVK(), sig, hsh)
 
 	//Then let us set the record
-	txhash, err := bcc.CallOnChain(acc, StringToUFI(UFI_Affinity_SetDesignatedRouterSRV), "", "", "",
+	txhash, err := bcc.CallOnChain(ctx, acc, StringToUFI(UFI_Affinity_SetDesignatedRouterSRV), "", "", "",
 		dr.GetVK(), nonce, []byte(record), sig)
 	if err != nil {
 		confirmed(err)
@@ -88,14 +89,14 @@ func (bcc *bcClient) CreateSRVRecord(acc int, dr *objects.Entity, record string,
 	}
 	//And wait for it to confirm
 	//meh we need to rewrite this function
-	bcc.bc.GetTransactionDetailsInt(txhash, bcc.DefaultTimeout, bcc.DefaultConfirmations,
-		nil, func(bn uint64, rcpt *eth.RPCTransaction, err error) {
+	bcc.bc.GetTransactionDetailsInt(ctx, txhash, bcc.DefaultTimeout, bcc.DefaultConfirmations,
+		nil, func(bn uint64, err error) {
 			if err != nil {
 				confirmed(err)
 				return
 			}
 			//Check to see if it all matches now:
-			rvz, err := bcc.bc.CallOffChain(StringToUFI(UFI_Affinity_DRSRV),
+			rvz, err := bcc.bc.CallOffChain(ctx, StringToUFI(UFI_Affinity_DRSRV),
 				dr.GetVK())
 			if err != nil {
 				confirmed(err)
@@ -109,20 +110,24 @@ func (bcc *bcClient) CreateSRVRecord(acc int, dr *objects.Entity, record string,
 		})
 }
 
-func (bc *blockChain) FindRoutingOffers(nsvk []byte) (drs [][]byte) {
+func (bc *blockChain) FindRoutingOffers(ctx context.Context, nsvk []byte) (drs [][]byte, err error) {
 	//func (bc *blockChain) CallOnLogsSinceInt(since int64, hexaddr string, topics [][]common.Hash, cb func(l *vm.Log) bool) {
-	lgs := bc.FindLogsBetween(0, -1, UFI_Affinity_Address, [][]Bytes32{[]Bytes32{
-		HexToBytes32(EventSig_Affinity_NewAffinityOffer), //sig
-		Bytes32{}, //drvk
-		SliceToBytes32(nsvk),
-	}}, true)
+	lgs, err := bc.FindLogsBetweenHeavy(ctx, 0, -1, common.Address(HexToAddress(UFI_Affinity_Address)),
+		[][]common.Hash{
+			[]common.Hash{common.Hash(HexToBytes32(EventSig_Affinity_NewAffinityOffer))}, //sig
+			[]common.Hash{common.Hash{}},                                                 //drvk
+			[]common.Hash{common.Hash(SliceToBytes32(nsvk))},
+		})
+	if err != nil {
+		return nil, bwe.WrapM(bwe.BlockChainGenericError, "Could not scan logs:", err)
+	}
 	rv := [][]byte{}
 	seendr := make(map[Bytes32]struct{})
 	//In reverse order, check for open offers
 	for i := len(lgs) - 1; i >= 0; i-- {
 		drvk := lgs[i].Topics()[1]
 		//if valid offer still
-		rvz, err := bc.CallOffChain(StringToUFI(UFI_Affinity_AffinityOffers), drvk, nsvk)
+		rvz, err := bc.CallOffChain(ctx, StringToUFI(UFI_Affinity_AffinityOffers), drvk, nsvk)
 		if err != nil || len(rvz) != 1 {
 			panic(err) //not expecting here
 		}
@@ -134,16 +139,20 @@ func (bc *blockChain) FindRoutingOffers(nsvk []byte) (drs [][]byte) {
 			}
 		}
 	}
-	return rv
+	return rv, nil
 }
 
-func (bc *blockChain) FindRoutingAffinities(drvk []byte) (nsvks [][]byte) {
+func (bc *blockChain) FindRoutingAffinities(ctx context.Context, drvk []byte) (nsvks [][]byte, err error) {
 	//func (bc *blockChain) CallOnLogsSinceInt(since int64, hexaddr string, topics [][]common.Hash, cb func(l *vm.Log) bool) {
-	lgs := bc.FindLogsBetween(0, -1, UFI_Affinity_Address, [][]Bytes32{[]Bytes32{
-		HexToBytes32(EventSig_Affinity_NewDesignatedRouter), //sig
-		Bytes32{}, //nsvk
-		SliceToBytes32(drvk),
-	}}, true)
+	lgs, err := bc.FindLogsBetweenHeavy(ctx, 0, -1, common.Address(HexToAddress(UFI_Affinity_Address)),
+		[][]common.Hash{
+			[]common.Hash{common.Hash(HexToBytes32(EventSig_Affinity_NewDesignatedRouter))}, //sig
+			[]common.Hash{common.Hash{}},                                                    //drvk
+			[]common.Hash{common.Hash(SliceToBytes32(drvk))},
+		})
+	if err != nil {
+		return nil, bwe.WrapM(bwe.BlockChainGenericError, "Could not scan logs:", err)
+	}
 	rv := [][]byte{}
 	checked := make(map[Bytes32]bool)
 	//Check all of these to see if they are still current
@@ -152,18 +161,18 @@ func (bc *blockChain) FindRoutingAffinities(drvk []byte) (nsvks [][]byte) {
 		if _, ok := checked[nsvk]; ok {
 			continue
 		}
-		resdrvk, err := bc.GetDesignatedRouterFor(nsvk[:])
+		resdrvk, err := bc.GetDesignatedRouterFor(ctx, nsvk[:])
 		if err == nil && bytes.Equal(drvk, resdrvk) {
 			rv = append(rv, nsvk[:])
 		}
 		checked[nsvk] = true
 	}
-	return rv
+	return rv, nil
 }
 
-func (bcc *bcClient) RetractRoutingOffer(acc int, dr *objects.Entity, nsvk []byte, confirmed func(err error)) {
+func (bcc *bcClient) RetractRoutingOffer(ctx context.Context, acc int, dr *objects.Entity, nsvk []byte, confirmed func(err error)) {
 	//DR side
-	rv, err := bcc.bc.CallOffChain(StringToUFI(UFI_Affinity_DRNonces), dr.GetVK())
+	rv, err := bcc.bc.CallOffChain(ctx, StringToUFI(UFI_Affinity_DRNonces), dr.GetVK())
 	if err != nil {
 		panic(err)
 	}
@@ -175,23 +184,23 @@ func (bcc *bcClient) RetractRoutingOffer(acc int, dr *objects.Entity, nsvk []byt
 	d.Write([]byte("RetractRoutingDR"))
 	d.Write(dr.GetVK())
 	d.Write(nsvk)
-	d.Write(common.BigToBytes(nonce, 256))
+	d.Write(math.PaddedBigBytes(nonce, 32))
 	hsh := d.Sum(nil)
 	sig := make([]byte, 64)
 	crypto.SignBlob(dr.GetSK(), dr.GetVK(), sig, hsh)
 
 	//Then let us try create offer
-	txhash, err := bcc.CallOnChain(acc, StringToUFI(UFI_Affinity_RetractRoutingDR), "", "", "",
+	txhash, err := bcc.CallOnChain(ctx, acc, StringToUFI(UFI_Affinity_RetractRoutingDR), "", "", "",
 		dr.GetVK(), nsvk, nonce, sig)
 	if err != nil {
 		confirmed(err)
 		return
 	}
 	//And wait for it to confirm
-	bcc.bc.GetTransactionDetailsInt(txhash, bcc.DefaultTimeout, bcc.DefaultConfirmations,
-		nil, func(bn uint64, rcpt *eth.RPCTransaction, err error) {
+	bcc.bc.GetTransactionDetailsInt(ctx, txhash, bcc.DefaultTimeout, bcc.DefaultConfirmations,
+		nil, func(bn uint64, err error) {
 			//Check to see if it all matches now:
-			rvz, err := bcc.bc.CallOffChain(StringToUFI(UFI_Affinity_AffinityOffers),
+			rvz, err := bcc.bc.CallOffChain(ctx, StringToUFI(UFI_Affinity_AffinityOffers),
 				dr.GetVK(), nsvk)
 			if err != nil {
 				confirmed(err)
@@ -205,10 +214,10 @@ func (bcc *bcClient) RetractRoutingOffer(acc int, dr *objects.Entity, nsvk []byt
 		})
 }
 
-func (bcc *bcClient) RetractRoutingAcceptance(acc int, ns *objects.Entity, drvk []byte, confirmed func(err error)) {
+func (bcc *bcClient) RetractRoutingAcceptance(ctx context.Context, acc int, ns *objects.Entity, drvk []byte, confirmed func(err error)) {
 	//NS side
 	//Check to see if the offer is actually active
-	rvz, err := bcc.bc.CallOffChain(StringToUFI(UFI_Affinity_DesignatedRouterFor),
+	rvz, err := bcc.bc.CallOffChain(ctx, StringToUFI(UFI_Affinity_DesignatedRouterFor),
 		ns.GetVK())
 	if err != nil {
 		confirmed(err)
@@ -218,7 +227,7 @@ func (bcc *bcClient) RetractRoutingAcceptance(acc int, ns *objects.Entity, drvk 
 		confirmed(bwe.M(bwe.BlockChainGenericError, "The given routing offer is not active"))
 	}
 
-	rv, err := bcc.bc.CallOffChain(StringToUFI(UFI_Affinity_NSNonces), ns.GetVK())
+	rv, err := bcc.bc.CallOffChain(ctx, StringToUFI(UFI_Affinity_NSNonces), ns.GetVK())
 	if err != nil {
 		panic(err)
 	}
@@ -229,13 +238,13 @@ func (bcc *bcClient) RetractRoutingAcceptance(acc int, ns *objects.Entity, drvk 
 	d.Write([]byte("RetractRoutingNS"))
 	d.Write(ns.GetVK())
 	d.Write(drvk)
-	d.Write(common.BigToBytes(nonce, 256))
+	d.Write(math.PaddedBigBytes(nonce, 32))
 	hsh := d.Sum(nil)
 	sig := make([]byte, 64)
 	crypto.SignBlob(ns.GetSK(), ns.GetVK(), sig, hsh)
 
 	//Then let us try reject offer
-	txhash, err := bcc.CallOnChain(acc, StringToUFI(UFI_Affinity_RetractRoutingNS), "", "", "",
+	txhash, err := bcc.CallOnChain(ctx, acc, StringToUFI(UFI_Affinity_RetractRoutingNS), "", "", "",
 		ns.GetVK(), drvk, nonce, sig)
 	if err != nil {
 		confirmed(err)
@@ -244,14 +253,14 @@ func (bcc *bcClient) RetractRoutingAcceptance(acc int, ns *objects.Entity, drvk 
 
 	//And wait for it to confirm
 	//meh we need to rewrite this function
-	bcc.bc.GetTransactionDetailsInt(txhash, bcc.DefaultTimeout, bcc.DefaultConfirmations,
-		nil, func(bn uint64, rcpt *eth.RPCTransaction, err error) {
+	bcc.bc.GetTransactionDetailsInt(ctx, txhash, bcc.DefaultTimeout, bcc.DefaultConfirmations,
+		nil, func(bn uint64, err error) {
 			if err != nil {
 				confirmed(err)
 				return
 			}
 			//Check to see if it all matches now:
-			rvz, err := bcc.bc.CallOffChain(StringToUFI(UFI_Affinity_DesignatedRouterFor),
+			rvz, err := bcc.bc.CallOffChain(ctx, StringToUFI(UFI_Affinity_DesignatedRouterFor),
 				ns.GetVK())
 			if err != nil {
 				confirmed(err)
@@ -266,10 +275,10 @@ func (bcc *bcClient) RetractRoutingAcceptance(acc int, ns *objects.Entity, drvk 
 
 }
 
-func (bcc *bcClient) AcceptRoutingOffer(acc int, ns *objects.Entity, drvk []byte, confirmed func(err error)) {
+func (bcc *bcClient) AcceptRoutingOffer(ctx context.Context, acc int, ns *objects.Entity, drvk []byte, confirmed func(err error)) {
 	//First lets find out what our nonce is
 	fmt.Printf("ADRO ns=%s dr=%s\n", crypto.FmtKey(ns.GetVK()), crypto.FmtKey(drvk))
-	rv, err := bcc.bc.CallOffChain(StringToUFI(UFI_Affinity_NSNonces), ns.GetVK())
+	rv, err := bcc.bc.CallOffChain(ctx, StringToUFI(UFI_Affinity_NSNonces), ns.GetVK())
 	if err != nil {
 		panic(err)
 	}
@@ -280,13 +289,13 @@ func (bcc *bcClient) AcceptRoutingOffer(acc int, ns *objects.Entity, drvk []byte
 	d.Write([]byte("AcceptRouting"))
 	d.Write(ns.GetVK())
 	d.Write(drvk)
-	d.Write(common.BigToBytes(nonce, 256))
+	d.Write(math.PaddedBigBytes(nonce, 32))
 	hsh := d.Sum(nil)
 	sig := make([]byte, 64)
 	crypto.SignBlob(ns.GetSK(), ns.GetVK(), sig, hsh)
 
 	//Then let us try accept offer
-	txhash, err := bcc.CallOnChain(acc, StringToUFI(UFI_Affinity_AcceptRouting), "", "", "",
+	txhash, err := bcc.CallOnChain(ctx, acc, StringToUFI(UFI_Affinity_AcceptRouting), "", "", "",
 		ns.GetVK(), drvk, nonce, sig)
 	if err != nil {
 		confirmed(err)
@@ -294,14 +303,14 @@ func (bcc *bcClient) AcceptRoutingOffer(acc int, ns *objects.Entity, drvk []byte
 	}
 	//And wait for it to confirm
 	//meh we need to rewrite this function
-	bcc.bc.GetTransactionDetailsInt(txhash, bcc.DefaultTimeout, bcc.DefaultConfirmations,
-		nil, func(bn uint64, rcpt *eth.RPCTransaction, err error) {
+	bcc.bc.GetTransactionDetailsInt(ctx, txhash, bcc.DefaultTimeout, bcc.DefaultConfirmations,
+		nil, func(bn uint64, err error) {
 			if err != nil {
 				confirmed(err)
 				return
 			}
 			//Check to see if it all matches now:
-			rvz, err := bcc.bc.CallOffChain(StringToUFI(UFI_Affinity_DesignatedRouterFor),
+			rvz, err := bcc.bc.CallOffChain(ctx, StringToUFI(UFI_Affinity_DesignatedRouterFor),
 				ns.GetVK())
 			if err != nil {
 				confirmed(err)
@@ -315,8 +324,8 @@ func (bcc *bcClient) AcceptRoutingOffer(acc int, ns *objects.Entity, drvk []byte
 		})
 }
 
-func (bc *blockChain) GetDesignatedRouterFor(nsvk []byte) ([]byte, error) {
-	rvz, err := bc.CallOffChain(StringToUFI(UFI_Affinity_DesignatedRouterFor), nsvk)
+func (bc *blockChain) GetDesignatedRouterFor(ctx context.Context, nsvk []byte) ([]byte, error) {
+	rvz, err := bc.CallOffChain(ctx, StringToUFI(UFI_Affinity_DesignatedRouterFor), nsvk)
 	if err != nil {
 		return nil, err
 	}
@@ -326,8 +335,8 @@ func (bc *blockChain) GetDesignatedRouterFor(nsvk []byte) ([]byte, error) {
 	return rvz[0].([]byte), nil
 }
 
-func (bc *blockChain) GetSRVRecordFor(drvk []byte) (string, error) {
-	rvz, err := bc.CallOffChain(StringToUFI(UFI_Affinity_DRSRV), drvk)
+func (bc *blockChain) GetSRVRecordFor(ctx context.Context, drvk []byte) (string, error) {
+	rvz, err := bc.CallOffChain(ctx, StringToUFI(UFI_Affinity_DRSRV), drvk)
 	if err != nil {
 		return "", err
 	}

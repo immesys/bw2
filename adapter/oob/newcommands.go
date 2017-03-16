@@ -1,6 +1,7 @@
 package oob
 
 import (
+	"context"
 	"fmt"
 	"math/big"
 	"strconv"
@@ -13,6 +14,7 @@ import (
 	"github.com/immesys/bw2/objects"
 	"github.com/immesys/bw2/objects/advpo"
 	"github.com/immesys/bw2/util/bwe"
+	"github.com/immesys/bw2bc/common"
 )
 
 /*
@@ -45,7 +47,7 @@ func (bf *boundFrame) cmdPutDot() {
 		panic(bwe.WrapM(bwe.MalformedOOBCommand, "Could not load DOT: ", err))
 	}
 	dt := dti.(*objects.DOT)
-	bf.bwcl.BCC().PublishDOT(acc, dt, func(err error) {
+	bf.bwcl.BCC().PublishDOT(context.TODO(), acc, dt, func(err error) {
 		if err != nil {
 			bf.Err(err)
 		} else {
@@ -67,7 +69,7 @@ func (bf *boundFrame) cmdPutEntity() {
 		panic(bwe.WrapM(bwe.MalformedOOBCommand, "Could not load Entity", err))
 	}
 	ent := enti.(*objects.Entity)
-	bf.bwcl.BCC().PublishEntity(acc, ent, func(err error) {
+	bf.bwcl.BCC().PublishEntity(context.TODO(), acc, ent, func(err error) {
 		if err != nil {
 			bf.Err(err)
 		} else {
@@ -89,7 +91,7 @@ func (bf *boundFrame) cmdPutChain() {
 		panic(bwe.WrapM(bwe.MalformedOOBCommand, "Could not load DChain: ", err))
 	}
 	dc := dci.(*objects.DChain)
-	bf.bwcl.BCC().PublishAccessDChain(acc, dc, func(err error) {
+	bf.bwcl.BCC().PublishAccessDChain(context.TODO(), acc, dc, func(err error) {
 		if err != nil {
 			bf.Err(err)
 		} else {
@@ -107,7 +109,7 @@ func (bf *boundFrame) cmdEntityBalances() {
 		if err != nil {
 			panic(err)
 		}
-		decimal, human, err := bf.bwcl.BCC().GetBalance(i)
+		decimal, human, err := bf.bwcl.BCC().GetBalance(context.TODO(), i)
 		if err != nil {
 			panic(err)
 		}
@@ -127,8 +129,10 @@ func (bf *boundFrame) cmdAddressBalance() {
 	if !ok {
 		panic(bwe.M(bwe.InvalidOOBCommand, "Missing kv(address)"))
 	}
-	decimal, human := bf.bwcl.BC().GetAddrBalance(address)
-
+	decimal, human, err := bf.bwcl.BC().GetAddrBalance(context.TODO(), address)
+	if err != nil {
+		panic(err)
+	}
 	accbal := fmt.Sprintf("0x%s,%s,%s", address, decimal, human)
 	po, err := objects.CreateOpaquePayloadObject(objects.PONumAccountBalance, []byte(accbal))
 	if err != nil {
@@ -178,7 +182,8 @@ func (bf *boundFrame) cmdBCInteractionParams() {
 	}
 	r.AddHeader("peers", strconv.FormatInt(int64(peercount), 10))
 	r.AddHeader("highest", strconv.FormatInt(int64(highest), 10))
-	diff := bf.bwcl.BC().GetBlock(bf.bwcl.BC().CurrentBlock()).Difficulty
+	diff := bf.bwcl.BC().GetHeader(bf.bwcl.BC().CurrentBlock()).Difficulty.Int64()
+	//diff := bf.bwcl.BC().GetBlock(bf.bwcl.BC().CurrentBlock()).Difficulty
 	r.AddHeader("difficulty", strconv.FormatInt(int64(diff), 10))
 	bf.send(r)
 }
@@ -221,7 +226,7 @@ func (bf *boundFrame) cmdTransfer() {
 	gas, _ := bf.f.GetFirstHeader("gas")
 	gasprice, _ := bf.f.GetFirstHeader("gasprice")
 	data, _ := bf.f.GetFirstHeader("data")
-	bf.bwcl.BCC().TransactAndCheck(acc, addr, bigValue.Text(10), gas, gasprice, data,
+	bf.bwcl.BCC().TransactAndCheck(context.TODO(), acc, addr, bigValue.Text(10), gas, gasprice, common.FromHex(data),
 		bf.mkFinalGenericActionCB())
 }
 func (bf *boundFrame) cmdMakeShortAlias() {
@@ -234,7 +239,7 @@ func (bf *boundFrame) cmdMakeShortAlias() {
 	if len(content) > 32 {
 		content = content[:32]
 	}
-	bf.bwcl.BCC().CreateShortAlias(acc, bc.SliceToBytes32(content), func(alias uint64, err error) {
+	bf.bwcl.BCC().CreateShortAlias(context.TODO(), acc, bc.SliceToBytes32(content), func(alias uint64, err error) {
 		if err != nil {
 			bf.Err(err)
 		} else {
@@ -264,7 +269,7 @@ func (bf *boundFrame) cmdMakeLongAlias() {
 	if len(key) > 32 {
 		key = key[:32]
 	}
-	bf.bwcl.BCC().SetAlias(acc, bc.SliceToBytes32(key), bc.SliceToBytes32(content),
+	bf.bwcl.BCC().SetAlias(context.TODO(), acc, bc.SliceToBytes32(key), bc.SliceToBytes32(content),
 		bf.mkFinalGenericActionCB())
 }
 func (bf *boundFrame) cmdResolveAlias() {
@@ -332,7 +337,7 @@ func (bf *boundFrame) cmdNewDesignatedRouterOffer() {
 	if err != nil {
 		panic(err)
 	}
-	bf.bwcl.BCC().CreateRoutingOffer(acc, ent, nsvk, bf.mkFinalGenericActionCB())
+	bf.bwcl.BCC().CreateRoutingOffer(context.TODO(), acc, ent, nsvk, bf.mkFinalGenericActionCB())
 }
 func (bf *boundFrame) cmdRevokeRoutingObject() {
 	bf.checkChainAge()
@@ -394,7 +399,7 @@ func (bf *boundFrame) cmdPutRevocation() {
 		panic(bwe.WrapM(bwe.MalformedOOBCommand, "Could not load Revocation: ", err))
 	}
 	rvk := rvki.(*objects.Revocation)
-	bf.bwcl.BCC().PublishRevocation(acc, rvk, func(err error) {
+	bf.bwcl.BCC().PublishRevocation(context.TODO(), acc, rvk, func(err error) {
 		if err != nil {
 			bf.Err(err)
 		} else {
@@ -413,7 +418,7 @@ func (bf *boundFrame) cmdUpdateSRVRecord() {
 	if !srvok {
 		panic(bwe.M(bwe.InvalidOOBCommand, "missing kv(srv)"))
 	}
-	bf.bwcl.BCC().CreateSRVRecord(acc, ent, srv, bf.mkFinalGenericActionCB())
+	bf.bwcl.BCC().CreateSRVRecord(context.TODO(), acc, ent, srv, bf.mkFinalGenericActionCB())
 }
 
 func (bf *boundFrame) cmdListDesignatedRouterOffers() {
@@ -426,14 +431,17 @@ func (bf *boundFrame) cmdListDesignatedRouterOffers() {
 	if err != nil {
 		panic(err)
 	}
-	chosen, err := bf.bwcl.BW().BC().GetDesignatedRouterFor(nsvk)
+	chosen, err := bf.bwcl.BW().BC().GetDesignatedRouterFor(context.TODO(), nsvk)
 	var srv string
 	var srve error
 	if err == nil {
 		srv, srve = bf.bwcl.BW().LookupDesignatedRouterSRV(chosen)
 	}
 	fmt.Printf("err=%v chosen='%v', srve='%v' srv='%v'\n", err, crypto.FmtKey(chosen), srve, srv)
-	drvks := bf.bwcl.BW().BC().FindRoutingOffers(nsvk)
+	drvks, err := bf.bwcl.BW().BC().FindRoutingOffers(context.TODO(), nsvk)
+	if err != nil {
+		panic(err)
+	}
 	r := bf.mkFinalResponseOkayFrame()
 	if err == nil {
 		r.AddHeader("active", crypto.FmtKey(chosen))
@@ -464,7 +472,7 @@ func (bf *boundFrame) cmdAcceptDesignatedRouterOffer() {
 	if err != nil {
 		panic(err)
 	}
-	bf.bwcl.BCC().AcceptRoutingOffer(acc, ent, drvk, bf.mkFinalGenericActionCB())
+	bf.bwcl.BCC().AcceptRoutingOffer(context.TODO(), acc, ent, drvk, bf.mkFinalGenericActionCB())
 }
 
 func (bf *boundFrame) cmdResolveRegistryObject() {
@@ -608,7 +616,7 @@ func (bf *boundFrame) cmdRevokeDROffer() {
 	if err != nil {
 		panic(err)
 	}
-	bf.bwcl.BCC().RetractRoutingOffer(acc, ent, nsvk, bf.mkFinalGenericActionCB())
+	bf.bwcl.BCC().RetractRoutingOffer(context.TODO(), acc, ent, nsvk, bf.mkFinalGenericActionCB())
 }
 func (bf *boundFrame) cmdRevokeDRAccept() {
 	bf.checkChainAge()
@@ -622,7 +630,7 @@ func (bf *boundFrame) cmdRevokeDRAccept() {
 	if err != nil {
 		panic(err)
 	}
-	bf.bwcl.BCC().RetractRoutingAcceptance(acc, ent, drvk, bf.mkFinalGenericActionCB())
+	bf.bwcl.BCC().RetractRoutingAcceptance(context.TODO(), acc, ent, drvk, bf.mkFinalGenericActionCB())
 }
 func (bf *boundFrame) cmdFindDOTs() {
 	bf.checkChainAge()

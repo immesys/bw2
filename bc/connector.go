@@ -2,6 +2,7 @@ package bc
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path"
@@ -12,18 +13,17 @@ import (
 	"github.com/immesys/bw2/objects"
 	"github.com/immesys/bw2/util"
 	"github.com/immesys/bw2bc/accounts"
-	"github.com/immesys/bw2bc/accounts/keystore"
-	"github.com/immesys/bw2bc/accounts/usbwallet"
 	"github.com/immesys/bw2bc/cmd/utils"
 	"github.com/immesys/bw2bc/common"
 	"github.com/immesys/bw2bc/common/hexutil"
-	"github.com/immesys/bw2bc/core"
+	"github.com/immesys/bw2bc/common/math"
 	"github.com/immesys/bw2bc/eth"
 	"github.com/immesys/bw2bc/eth/filters"
 	"github.com/immesys/bw2bc/les"
 	"github.com/immesys/bw2bc/log"
 	"github.com/immesys/bw2bc/node"
 	"github.com/immesys/bw2bc/p2p/discover"
+	"github.com/immesys/bw2bc/p2p/discv5"
 	"github.com/immesys/bw2bc/p2p/nat"
 	"github.com/immesys/bw2bc/params"
 	"github.com/immesys/bw2bc/rlp"
@@ -40,19 +40,27 @@ const (
 type blockChain struct {
 	ks *entityKeyStore
 	//	x     *xeth.XEth
-	am    *accounts.Manager
-	fm    *filters.FilterSystem
-	eth   *eth.Ethereum
+	am *accounts.Manager
+	//fm    *filters.FilterSystem
+
+	fethi *eth.Ethereum
+	lethi *les.LightEthereum
+
 	nd    *node.Node
 	shdwn chan bool
 
-	api_txpool    *eth.PublicTxPoolAPI
-	api_privadmin *node.PrivateAdminAPI
-	api_pubadmin  *node.PublicAdminAPI
-	api_pubchain  *eth.PublicBlockChainAPI
-	api_pubtx     *eth.PublicTransactionPoolAPI
-	api_privacct  *eth.PrivateAccountAPI
-	api_pubeth    *eth.PublicEthereumAPI
+	isLight bool
+
+	api_es *filters.EventSystem
+	// api_txpool    *eth.PublicTxPoolAPI
+	// api_privadmin *node.PrivateAdminAPI
+	api_contract *eth.ContractBackend
+	api_pubadmin *node.PublicAdminAPI
+	//api_filter   *filters.PublicFilterAPI
+	// api_pubchain  *eth.PublicBlockChainAPI
+	// api_pubtx     *eth.PublicTransactionPoolAPI
+	// api_privacct  *eth.PrivateAccountAPI
+	// api_pubeth    *eth.PublicEthereumAPI
 }
 
 type bcClient struct {
@@ -61,6 +69,23 @@ type bcClient struct {
 	acc                  int
 	DefaultConfirmations uint64
 	DefaultTimeout       uint64
+}
+
+type PunchTransaction struct {
+	BlockHash        common.Hash     `json:"blockHash"`
+	BlockNumber      *hexutil.Big    `json:"blockNumber"`
+	From             common.Address  `json:"from"`
+	Gas              *hexutil.Big    `json:"gas"`
+	GasPrice         *hexutil.Big    `json:"gasPrice"`
+	Hash             common.Hash     `json:"hash"`
+	Input            hexutil.Bytes   `json:"input"`
+	Nonce            hexutil.Uint64  `json:"nonce"`
+	To               *common.Address `json:"to"`
+	TransactionIndex hexutil.Uint    `json:"transactionIndex"`
+	Value            *hexutil.Big    `json:"value"`
+	V                *hexutil.Big    `json:"v"`
+	R                *hexutil.Big    `json:"r"`
+	S                *hexutil.Big    `json:"s"`
 }
 
 var BOSSWAVEBootNodes = []*discover.Node{
@@ -76,23 +101,40 @@ var BOSSWAVEBootNodes = []*discover.Node{
 	// Asylum
 	discover.MustParseNode("enode://686f709677c4d0f2cd58cf651ea8ce1375bef22dcf29065994e34c1c4fd6f86691698321460f43059cc6cea536cd66ef534208869cd27765c4455f577a42a107@128.32.37.241:30303"),
 }
+var BOSSWAVEBootNodes5 = []*discv5.Node{
+	// BOSSWAVE boot nodes
+	//boota ipv4
+	discv5.MustParseNode("enode://6ae73d0621c9c9a6bdac4a332900f1f57ea927f1a03aef5c2ffffa70fca0fada636da3ceac45ee4a2addbdb2bdbe9cb129b3a098d57fa09ff451712ac9c80fc9@54.215.189.111:30301"),
+	//boota ipv6
+	discv5.MustParseNode("enode://6ae73d0621c9c9a6bdac4a332900f1f57ea927f1a03aef5c2ffffa70fca0fada636da3ceac45ee4a2addbdb2bdbe9cb129b3a098d57fa09ff451712ac9c80fc9@[2600:1f1c:c2f:a400:2f8f:3b34:1f55:3f7a]:30301"),
+	//bootb ipv4
+	discv5.MustParseNode("enode://832c5a520a1079190e9fb57827306ee3882231077a3c543c8cae4c3a386703b3a4e0fd3ca9cb6b00b0d5482efc3e4dd8aafdb7fedb061d74a9d500f230e45873@54.183.54.213:30301"),
+	//bootb ipv6
+	discv5.MustParseNode("enode://832c5a520a1079190e9fb57827306ee3882231077a3c543c8cae4c3a386703b3a4e0fd3ca9cb6b00b0d5482efc3e4dd8aafdb7fedb061d74a9d500f230e45873@[2600:1f1c:c2f:a400:5c38:c2f5:7e26:841c]:30301"),
+	// Asylum
+	discv5.MustParseNode("enode://686f709677c4d0f2cd58cf651ea8ce1375bef22dcf29065994e34c1c4fd6f86691698321460f43059cc6cea536cd66ef534208869cd27765c4455f577a42a107@128.32.37.241:30303"),
+}
 
-func N() (BlockChainProvider, chan bool) {
+func NewBlockChain(datadir string, maxLightPeers int, maxLightResources int, isLight bool, maxPeers int) (BlockChainProvider, chan bool) {
+	output := io.Writer(os.Stderr)
+	glogger := log.NewGlogHandler(log.StreamHandler(output, log.TerminalFormat(false)))
+	glogger.Verbosity(2)
+	log.Root().SetHandler(glogger)
 
 	var optIdentity string
-	var optLightClient bool
 	var optEnableJIT bool
 	var optKeystoreDir string
 	var optDatadir string
-	var optMaxPeers int
 	var optMaxPendingPeers int
+	var optEthashCacheDir string
+	var optEthashDataDir string
 
-	optIdentity = "identd"
-	optLightClient = false
+	optIdentity = "bw2bc"
 	optEnableJIT = false
-	optKeystoreDir = "/home/michael/.bw2bcdev/ks/"
-	optDatadir = "/home/michael/.bw2bcdev/dd/"
-	optMaxPeers = 20
+	optKeystoreDir = path.Join(datadir, "ks")
+	optDatadir = path.Join(datadir, "dd")
+	optEthashCacheDir = path.Join(datadir, "cd")
+	optEthashDataDir = path.Join(datadir, "et")
 	optMaxPendingPeers = 3
 
 	// Create the default extradata and construct the base node
@@ -114,10 +156,6 @@ func N() (BlockChainProvider, chan bool) {
 	//This is from utils.MakeNode
 	vsn := util.BW2Version
 
-	// if we're running a light client or server, force enable the v5 peer discovery unless it is explicitly disabled with --nodiscover
-	// note that explicitly specifying --v5disc overrides --nodiscover, in which case the later only disables v4 discovery
-	forceV5Discovery := (ctx.GlobalBool(LightModeFlag.Name) || ctx.GlobalInt(LightServFlag.Name) > 0) && !ctx.GlobalBool(NoDiscoverFlag.Name)
-
 	var comps []string
 	if optIdentity != "" {
 		comps = append(comps, optIdentity)
@@ -138,14 +176,14 @@ func N() (BlockChainProvider, chan bool) {
 		Name:              "bw2bc",
 		Version:           vsn,
 		UserIdent:         nodeUserIdent,
-		NoDiscovery:       true, //Only use v5
+		NoDiscovery:       false, //Only use v5
 		DiscoveryV5:       true,
 		DiscoveryV5Addr:   ":30304",
-		BootstrapNodes:    nil,
-		BootstrapNodesV5:  BOSSWAVEBootNodes,
+		BootstrapNodes:    BOSSWAVEBootNodes,
+		BootstrapNodesV5:  BOSSWAVEBootNodes5,
 		ListenAddr:        ":30302",
 		NAT:               nati,
-		MaxPeers:          optMaxPeers,
+		MaxPeers:          maxPeers,
 		MaxPendingPeers:   optMaxPendingPeers,
 		IPCPath:           "",
 		HTTPHost:          "",
@@ -154,20 +192,24 @@ func N() (BlockChainProvider, chan bool) {
 		HTTPModules:       []string{},
 		WSHost:            "",
 		WSPort:            0,
-		WSOrigins:         []string{},
+		WSOrigins:         "",
 		WSModules:         []string{},
 	}
-
 	stack, err := node.New(config)
 	if err != nil {
-		Fatalf("Failed to create the protocol stack: %v", err)
+		panic("Failed to create the protocol stack: " + err.Error())
 	}
 
+	rv := &blockChain{
+		ks:    NewEntityKeyStore(),
+		shdwn: make(chan bool, 1),
+	}
+	rv.nd = stack
 	backends := []accounts.Backend{
-		...
+		rv.ks,
 	}
 	am := accounts.NewManager(backends...)
-	stack.SetAccMan(m)
+	stack.SetAccMan(am)
 
 	cconfig := new(params.ChainConfig)
 
@@ -190,19 +232,19 @@ func N() (BlockChainProvider, chan bool) {
 		Etherbase:               common.Address{},
 		ChainConfig:             cconfig,
 		FastSync:                true,
-		LightMode:               optLightClient,
-		LightServ:               optSupportLight,
-		LightPeers:              10,
-		MaxPeers:                optMaxPeers,
+		LightMode:               isLight,
+		LightServ:               maxLightResources,
+		LightPeers:              maxLightPeers,
+		MaxPeers:                maxPeers,
 		DatabaseCache:           128,
 		DatabaseHandles:         utils.MakeDatabaseHandles(),
 		NetworkId:               28589,
 		MinerThreads:            0,
 		ExtraData:               nil,
 		DocRoot:                 "",
-		GasPrice:                common.String2Big(DefGasPrice),
-		GpoMinGasPrice:          common.String2Big(GpoMinGasPrice),
-		GpoMaxGasPrice:          common.String2Big(GpoMaxGasPrice),
+		GasPrice:                math.MustParseBig256(DefGasPrice),
+		GpoMinGasPrice:          math.MustParseBig256(GpoMinGasPrice),
+		GpoMaxGasPrice:          math.MustParseBig256(GpoMaxGasPrice),
 		GpoFullBlockRatio:       80,
 		GpobaseStepDown:         10,
 		GpobaseStepUp:           100,
@@ -211,17 +253,16 @@ func N() (BlockChainProvider, chan bool) {
 		EthashCacheDir:          optEthashCacheDir,
 		EthashCachesInMem:       1,
 		EthashCachesOnDisk:      2,
-		EthashDatasetDir:        optEthashDatasetDir,
+		EthashDatasetDir:        optEthashDataDir,
 		EthashDatasetsInMem:     1,
 		EthashDatasetsOnDisk:    2,
 		EnablePreimageRecording: false,
 	}
-
 	if ethConf.LightMode {
 		if err := stack.Register(func(ctx *node.ServiceContext) (node.Service, error) {
 			return les.New(ctx, ethConf)
 		}); err != nil {
-			Fatalf("Failed to register the Ethereum light node service: %v", err)
+			panic("Failed to register the Ethereum light node service: " + err.Error())
 		}
 	} else {
 		if err := stack.Register(func(ctx *node.ServiceContext) (node.Service, error) {
@@ -232,15 +273,14 @@ func N() (BlockChainProvider, chan bool) {
 			}
 			return fullNode, err
 		}); err != nil {
-			Fatalf("Failed to register the Ethereum full node service: %v", err)
+			panic("Failed to register the Ethereum full node service: " + err.Error())
 		}
 	}
-
 	//XTAG do this
 	// Add the Ethereum Stats daemon if requested
-	if url := ctx.GlobalString(utils.EthStatsURLFlag.Name); url != "" {
-		utils.RegisterEthStatsService(stack, url)
-	}
+	// if url := ctx.GlobalString(utils.EthStatsURLFlag.Name); url != "" {
+	// 	utils.RegisterEthStatsService(stack, url)
+	// }
 	//
 	// // Add the release oracle service so it boots along with node.
 	// if err := stack.Register(func(ctx *node.ServiceContext) (node.Service, error) {
@@ -256,10 +296,8 @@ func N() (BlockChainProvider, chan bool) {
 	// }); err != nil {
 	// 	utils.Fatalf("Failed to register the Geth release oracle service: %v", err)
 	// }
-
 	// Start up the node itself
 	utils.StartNode(stack)
-
 	// // Unlock any account specifically requested
 	// ks := stack.AccountManager().Backends(keystore.KeyStoreType)[0].(*keystore.KeyStore)
 	//
@@ -307,21 +345,38 @@ func N() (BlockChainProvider, chan bool) {
 	// }()
 	// Start auxiliary services if enabled
 	//register the APIs
-	var ethi *eth.Ethereum
-	err = rv.nd.Service(&ethi)
-	if err != nil {
-		panic(err)
-	}
-	rv.eth = ethi
-	rv.api_txpool = eth.NewPublicTxPoolAPI(ethi)
-	rv.api_privadmin = node.NewPrivateAdminAPI(rv.nd)
-	rv.api_pubadmin = node.NewPublicAdminAPI(rv.nd)
-	rv.api_pubchain = eth.NewPublicBlockChainAPI_S(ethi)
-	rv.api_pubtx = eth.NewPublicTransactionPoolAPI(ethi)
-	rv.api_privacct = eth.NewPrivateAccountAPI(ethi)
-	rv.api_pubeth = eth.NewPublicEthereumAPI(ethi)
-	rv.fm = filters.NewFilterSystem(rv.eth.EventMux())
+	var fethi *eth.Ethereum
+	var lethi *les.LightEthereum
 
+	if isLight {
+		err = rv.nd.Service(&lethi)
+		if err != nil {
+			panic(err)
+		}
+		rv.lethi = lethi
+		rv.api_es = filters.NewEventSystem(lethi.ApiBackend.EventMux(), lethi.ApiBackend, true)
+		rv.api_contract = eth.NewContractBackend(lethi.ApiBackend)
+	} else {
+		err = rv.nd.Service(&fethi)
+		if err != nil {
+			panic(err)
+		}
+		rv.fethi = fethi
+		rv.api_es = filters.NewEventSystem(fethi.ApiBackend.EventMux(), fethi.ApiBackend, false)
+		rv.api_contract = eth.NewContractBackend(fethi.ApiBackend)
+	}
+
+	rv.isLight = isLight
+
+	//rv.api_filter = filters.NewPublicFilterAPI(ethi.ApiBackend, isLight)
+	// rv.api_txpool = eth.NewPublicTxPoolAPI(ethi)
+	// rv.api_privadmin = node.NewPrivateAdminAPI(rv.nd)
+	rv.api_pubadmin = node.NewPublicAdminAPI(rv.nd)
+	// rv.api_pubchain = eth.NewPublicBlockChainAPI_S(ethi)
+	// rv.api_pubtx = eth.NewPublicTransactionPoolAPI(ethi)
+	// rv.api_privacct = eth.NewPrivateAccountAPI(ethi)
+	// rv.api_pubeth = eth.NewPublicEthereumAPI(ethi)
+	// rv.fm = filters.NewFilterSystem(rv.eth.EventMux())
 	//	eth.NewPublicBlockChainAPI(config *core.ChainConfig, bc *core.BlockChain, m *miner.Miner, chainDb ethdb.Database, gpo *eth.GasPriceOracle, eventMux *event.TypeMux, am *accounts.Manager)
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt)
@@ -331,117 +386,137 @@ func N() (BlockChainProvider, chan bool) {
 		rv.shdwn <- true
 	}()
 	go rv.DebugTXPoolLoop()
-	return rv, rv.shdwn
-}
-func NewBlockChain(datadir string) (BlockChainProvider, chan bool) {
-	keydir := path.Join(datadir, "keys")
-
-	// glog.SetV(3)
-	// glog.CopyStandardLogTo("INFO")
-	// glog.SetToStderr(true)
-	// glog.SetLogDir(datadir)
-
-	os.MkdirAll(datadir, os.ModeDir|0777)
-	os.MkdirAll(keydir, os.ModeDir|0777)
-	rv := &blockChain{
-		ks:    NewEntityKeyStore(),
-		shdwn: make(chan bool, 1),
-	}
-	rv.am = accounts.NewManagerI(rv.ks, keydir)
-
-	fmt.Printf("USING MAX PEER LIMIT: %d\n", DefaultMaxPeers)
-	// Configure the node's service container
-	stackConf := &node.Config{
-		DataDir:         datadir,
-		PrivateKey:      nil,
-		Name:            common.MakeName("BW2", util.BW2Version),
-		NoDiscovery:     false,
-		BootstrapNodes:  BOSSWAVEBootNodes,
-		ListenAddr:      ":30302",
-		NAT:             nil,
-		MaxPeers:        DefaultMaxPeers,
-		MaxPendingPeers: 0,
-		IPCPath:         "",
-		HTTPHost:        "",
-		HTTPPort:        80,
-		HTTPCors:        "",
-		HTTPModules:     []string{},
-		WSHost:          "",
-		WSPort:          81,
-		WSOrigins:       "",
-		WSModules:       []string{},
-	}
-	// Configure the Ethereum service
-
-	ethConf := &eth.Config{
-		ChainConfig:             &core.ChainConfig{HomesteadBlock: params.MainNetHomesteadBlock},
-		Genesis:                 "",
-		FastSync:                true,
-		BlockChainVersion:       3,
-		DatabaseCache:           DefaultDBCache,
-		DatabaseHandles:         utils.MakeDatabaseHandles(),
-		NetworkId:               28589,
-		AccountManager:          rv.am,
-		Etherbase:               common.Address{},
-		MinerThreads:            0,
-		ExtraData:               []byte{},
-		NatSpec:                 false,
-		DocRoot:                 "",
-		EnableJit:               false,
-		ForceJit:                false,
-		GasPrice:                common.String2Big(DefGasPrice),
-		GpoMinGasPrice:          common.String2Big(GpoMinGasPrice),
-		GpoMaxGasPrice:          common.String2Big(GpoMaxGasPrice),
-		GpoFullBlockRatio:       80,
-		GpobaseStepDown:         10,
-		GpobaseStepUp:           100,
-		GpobaseCorrectionFactor: 110,
-		SolcPath:                "",
-		AutoDAG:                 false,
-	}
-
-	// Assemble and return the protocol stack
-	stack, err := node.New(stackConf)
-	if err != nil {
-		panic("Failed to create the protocol stack: " + err.Error())
-	}
-	if err := stack.Register(func(ctx *node.ServiceContext) (node.Service, error) {
-		return eth.New(ctx, ethConf)
-	}); err != nil {
-		panic("Failed to register the Ethereum service: " + err.Error())
-	}
-
-	rv.nd = stack
-	// Start up the node itself
-	utils.StartNode(rv.nd)
-
-	//register the APIs
-	var ethi *eth.Ethereum
-	err = rv.nd.Service(&ethi)
-	if err != nil {
-		panic(err)
-	}
-	rv.eth = ethi
-	rv.api_txpool = eth.NewPublicTxPoolAPI(ethi)
-	rv.api_privadmin = node.NewPrivateAdminAPI(rv.nd)
-	rv.api_pubadmin = node.NewPublicAdminAPI(rv.nd)
-	rv.api_pubchain = eth.NewPublicBlockChainAPI_S(ethi)
-	rv.api_pubtx = eth.NewPublicTransactionPoolAPI(ethi)
-	rv.api_privacct = eth.NewPrivateAccountAPI(ethi)
-	rv.api_pubeth = eth.NewPublicEthereumAPI(ethi)
-	rv.fm = filters.NewFilterSystem(rv.eth.EventMux())
-
-	//	eth.NewPublicBlockChainAPI(config *core.ChainConfig, bc *core.BlockChain, m *miner.Miner, chainDb ethdb.Database, gpo *eth.GasPriceOracle, eventMux *event.TypeMux, am *accounts.Manager)
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt)
 	go func() {
-		<-sig
-		rv.nd.Stop()
-		rv.shdwn <- true
+		for {
+			time.Sleep(10 * time.Second)
+			ni, err := rv.api_pubadmin.NodeInfo()
+			fmt.Printf("us: %v\n", ni.Enode)
+			peers, err := rv.api_pubadmin.Peers()
+			for i, p := range peers {
+				fmt.Printf("peer [%02d] %s %s\n", i, p.Name, p.Network.RemoteAddress)
+			}
+		}
 	}()
-	go rv.DebugTXPoolLoop()
 	return rv, rv.shdwn
 }
+
+func (bc *blockChain) newFilter() *filters.Filter {
+	if bc.isLight {
+		return filters.New(bc.lethi.ApiBackend, true)
+	}
+	return filters.New(bc.fethi.ApiBackend, false)
+}
+
+//
+// func NewBlockChain(datadir string) (BlockChainProvider, chan bool) {
+// 	keydir := path.Join(datadir, "keys")
+//
+// 	// glog.SetV(3)
+// 	// glog.CopyStandardLogTo("INFO")
+// 	// glog.SetToStderr(true)
+// 	// glog.SetLogDir(datadir)
+//
+// 	os.MkdirAll(datadir, os.ModeDir|0777)
+// 	os.MkdirAll(keydir, os.ModeDir|0777)
+// 	rv := &blockChain{
+// 		ks:    NewEntityKeyStore(),
+// 		shdwn: make(chan bool, 1),
+// 	}
+// 	rv.am = accounts.NewManagerI(rv.ks, keydir)
+//
+// 	fmt.Printf("USING MAX PEER LIMIT: %d\n", DefaultMaxPeers)
+// 	// Configure the node's service container
+// 	stackConf := &node.Config{
+// 		DataDir:         datadir,
+// 		PrivateKey:      nil,
+// 		Name:            common.MakeName("BW2", util.BW2Version),
+// 		NoDiscovery:     false,
+// 		BootstrapNodes:  BOSSWAVEBootNodes,
+// 		ListenAddr:      ":30302",
+// 		NAT:             nil,
+// 		MaxPeers:        DefaultMaxPeers,
+// 		MaxPendingPeers: 0,
+// 		IPCPath:         "",
+// 		HTTPHost:        "",
+// 		HTTPPort:        80,
+// 		HTTPCors:        "",
+// 		HTTPModules:     []string{},
+// 		WSHost:          "",
+// 		WSPort:          81,
+// 		WSOrigins:       "",
+// 		WSModules:       []string{},
+// 	}
+// 	// Configure the Ethereum service
+//
+// 	ethConf := &eth.Config{
+// 		ChainConfig:             &core.ChainConfig{HomesteadBlock: params.MainNetHomesteadBlock},
+// 		Genesis:                 "",
+// 		FastSync:                true,
+// 		BlockChainVersion:       3,
+// 		DatabaseCache:           DefaultDBCache,
+// 		DatabaseHandles:         utils.MakeDatabaseHandles(),
+// 		NetworkId:               28589,
+// 		AccountManager:          rv.am,
+// 		Etherbase:               common.Address{},
+// 		MinerThreads:            0,
+// 		ExtraData:               []byte{},
+// 		NatSpec:                 false,
+// 		DocRoot:                 "",
+// 		EnableJit:               false,
+// 		ForceJit:                false,
+// 		GasPrice:                common.String2Big(DefGasPrice),
+// 		GpoMinGasPrice:          common.String2Big(GpoMinGasPrice),
+// 		GpoMaxGasPrice:          common.String2Big(GpoMaxGasPrice),
+// 		GpoFullBlockRatio:       80,
+// 		GpobaseStepDown:         10,
+// 		GpobaseStepUp:           100,
+// 		GpobaseCorrectionFactor: 110,
+// 		SolcPath:                "",
+// 		AutoDAG:                 false,
+// 	}
+//
+// 	// Assemble and return the protocol stack
+// 	stack, err := node.New(stackConf)
+// 	if err != nil {
+// 		panic("Failed to create the protocol stack: " + err.Error())
+// 	}
+// 	if err := stack.Register(func(ctx *node.ServiceContext) (node.Service, error) {
+// 		return eth.New(ctx, ethConf)
+// 	}); err != nil {
+// 		panic("Failed to register the Ethereum service: " + err.Error())
+// 	}
+//
+// 	rv.nd = stack
+// 	// Start up the node itself
+// 	utils.StartNode(rv.nd)
+//
+// 	//register the APIs
+// 	var ethi *eth.Ethereum
+// 	err = rv.nd.Service(&ethi)
+// 	if err != nil {
+// 		panic(err)
+// 	}
+// 	rv.eth = ethi
+// 	rv.api_txpool = eth.NewPublicTxPoolAPI(ethi)
+// 	rv.api_privadmin = node.NewPrivateAdminAPI(rv.nd)
+// 	rv.api_pubadmin = node.NewPublicAdminAPI(rv.nd)
+// 	rv.api_pubchain = eth.NewPublicBlockChainAPI_S(ethi)
+// 	rv.api_pubtx = eth.NewPublicTransactionPoolAPI(ethi)
+// 	rv.api_privacct = eth.NewPrivateAccountAPI(ethi)
+// 	rv.api_pubeth = eth.NewPublicEthereumAPI(ethi)
+// 	rv.fm = filters.NewFilterSystem(rv.eth.EventMux())
+//
+// 	//	eth.NewPublicBlockChainAPI(config *core.ChainConfig, bc *core.BlockChain, m *miner.Miner, chainDb ethdb.Database, gpo *eth.GasPriceOracle, eventMux *event.TypeMux, am *accounts.Manager)
+// 	sig := make(chan os.Signal, 1)
+// 	signal.Notify(sig, os.Interrupt)
+// 	go func() {
+// 		<-sig
+// 		rv.nd.Stop()
+// 		rv.shdwn <- true
+// 	}()
+// 	go rv.DebugTXPoolLoop()
+// 	return rv, rv.shdwn
+// }
 
 /*
 func NewBlockChain(datadir string) (BlockChainProvider, chan bool) {
@@ -519,32 +594,33 @@ func NewBlockChain(datadir string) (BlockChainProvider, chan bool) {
 */
 
 func (bc *blockChain) DebugTXPoolLoop() {
-	for {
-		time.Sleep(2 * time.Second)
-		p := bc.api_txpool.Inspect()
-		for k, v := range p["pending"] {
-			fmt.Println("P1: ", k, v)
-		}
-		for k, v := range p["queued"] {
-			fmt.Println("P2: ", k, v)
-		}
-		//fmt.Println("P:", p)
-		//	peers, e := bc.api_pubadmin.Peers()
-		//	if e != nil {
-		//		panic(e)
-		//	}
-		//	fmt.Printf("peers:\n %#v", peers)
-		/*for i, v := range bc.eth.TxPool().GetTransactions() {
-			if i == 0 {
-				fmt.Println()
-			}
-			fmt.Println("TX ", i)
-			fmt.Println(v.String())
-		}*/
-	}
+	// for {
+	// 	time.Sleep(2 * time.Second)
+	// 	p := bc.api_txpool.Inspect()
+	// 	for k, v := range p["pending"] {
+	// 		fmt.Println("P1: ", k, v)
+	// 	}
+	// 	for k, v := range p["queued"] {
+	// 		fmt.Println("P2: ", k, v)
+	// 	}
+	// 	//fmt.Println("P:", p)
+	// 	//	peers, e := bc.api_pubadmin.Peers()
+	// 	//	if e != nil {
+	// 	//		panic(e)
+	// 	//	}
+	// 	//	fmt.Printf("peers:\n %#v", peers)
+	// 	/*for i, v := range bc.eth.TxPool().GetTransactions() {
+	// 		if i == 0 {
+	// 			fmt.Println()
+	// 		}
+	// 		fmt.Println("TX ", i)
+	// 		fmt.Println(v.String())
+	// 	}*/
+	// }
 }
 
 func (bc *blockChain) ENode() string {
+	panic("who calls this? its an array now")
 	ni, err := bc.api_pubadmin.NodeInfo()
 	if err != nil {
 		panic(err)

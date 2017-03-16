@@ -1,11 +1,12 @@
 package bc
 
 import (
+	"context"
 	"math/big"
 
 	"github.com/immesys/bw2/util/bwe"
 	"github.com/immesys/bw2bc/common"
-	"github.com/immesys/bw2bc/eth"
+	"github.com/immesys/bw2bc/common/math"
 )
 
 //TODO rewrite this to use UFI
@@ -43,16 +44,16 @@ const (
 	EventSig_Alias_AliasCreated = "170b239b7d2c41f8c5caacdafe7409cda0f4b5012440739feea0576a40a156eb"
 )
 
-func (bc *blockChain) ResolveShortAlias(alias uint64) (res Bytes32, iszero bool, err error) {
+func (bc *blockChain) ResolveShortAlias(ctx context.Context, alias uint64) (res Bytes32, iszero bool, err error) {
 	key := big.NewInt(int64(alias))
-	keyarr := SliceToBytes32(common.BigToBytes(key, 256))
-	res, iszero, err = bc.ResolveAlias(keyarr)
+	keyarr := SliceToBytes32(math.PaddedBigBytes(key, 32))
+	res, iszero, err = bc.ResolveAlias(ctx, keyarr)
 	return
 }
 
-func (bc *blockChain) ResolveAlias(key Bytes32) (res Bytes32, iszero bool, err error) {
+func (bc *blockChain) ResolveAlias(ctx context.Context, key Bytes32) (res Bytes32, iszero bool, err error) {
 	// First check what the registry thinks of the DOTHash
-	rvz, err := bc.CallOffChain(StringToUFI(UFI_Alias_DB), common.Bytes2Big(key[:]))
+	rvz, err := bc.CallOffChain(ctx, StringToUFI(UFI_Alias_DB), new(big.Int).SetBytes(key[:]))
 	if err != nil || len(rvz) != 1 {
 		return Bytes32{}, true, bwe.WrapM(bwe.UFIInvocationError, "Expected 1 rv: ", err)
 	}
@@ -65,32 +66,36 @@ func (bc *blockChain) ResolveAlias(key Bytes32) (res Bytes32, iszero bool, err e
 //CreateShortAlias creates an alias, waits (Confirmations) then locates the
 //created short ID and sends it to the callback. If it times out (10 blocks)
 //then and error is passed
-func (bcc *bcClient) CreateShortAlias(acc int, val Bytes32, confirmed func(alias uint64, err error)) {
+func (bcc *bcClient) CreateShortAlias(ctx context.Context, acc int, val Bytes32, confirmed func(alias uint64, err error)) {
 	if val.Zero() {
 		confirmed(0, bwe.M(bwe.AliasError, "You cannot create an alias to zero"))
 		return
 	}
 
-	gprice := bcc.bc.GasPrice()
+	gprice, err := bcc.bc.GasPrice(ctx)
+	if err != nil {
+		confirmed(0, err)
+		return
+	}
 	sgprice := gprice.Text(10)
 	cash := big.NewInt(AliasCreateShortCost)
 	cash = cash.Mul(cash, gprice)
-	txhash, err := bcc.CallOnChain(acc, StringToUFI(UFI_Alias_CreateShortAlias), cash.Text(10), "", sgprice, val)
+	txhash, err := bcc.CallOnChain(ctx, acc, StringToUFI(UFI_Alias_CreateShortAlias), cash.Text(10), "", sgprice, val)
 	if err != nil {
 		confirmed(0, err)
 		return
 	}
 
-	bcc.bc.GetTransactionDetailsInt(txhash, bcc.DefaultTimeout, bcc.DefaultConfirmations,
-		nil, func(bnum uint64, tran *eth.RPCTransaction, err error) {
+	bcc.bc.GetTransactionDetailsInt(ctx, txhash, bcc.DefaultTimeout, bcc.DefaultConfirmations,
+		nil, func(bnum uint64, err error) {
 			if err != nil {
 				confirmed(0, err)
 				return
 			}
-			rcpt := bcc.bc.GetTransactionReceipt(tran.Hash.Hex())
+			rcpt := bcc.bc.GetTransactionReceipt(txhash)
 			for _, lg := range rcpt.Logs {
 				if lg.Topics[2] == common.Hash(val) {
-					short := common.BytesToBig(lg.Topics[1][:]).Int64()
+					short := new(big.Int).SetBytes(lg.Topics[1][:]).Int64()
 					confirmed(uint64(short), nil)
 					return
 				}
@@ -99,12 +104,12 @@ func (bcc *bcClient) CreateShortAlias(acc int, val Bytes32, confirmed func(alias
 		})
 }
 
-func (bcc *bcClient) SetAlias(acc int, key Bytes32, val Bytes32, confirmed func(err error)) {
+func (bcc *bcClient) SetAlias(ctx context.Context, acc int, key Bytes32, val Bytes32, confirmed func(err error)) {
 	if val.Zero() {
 		confirmed(bwe.M(bwe.AliasError, "You cannot create an alias to zero"))
 		return
 	}
-	rval, zero, err := bcc.bc.ResolveAlias(key)
+	rval, zero, err := bcc.bc.ResolveAlias(ctx, key)
 	if err != nil {
 		confirmed(bwe.WrapM(bwe.AliasError, "Preresolve error: ", err))
 		return
@@ -117,23 +122,27 @@ func (bcc *bcClient) SetAlias(acc int, key Bytes32, val Bytes32, confirmed func(
 		}
 		return
 	}
-	gprice := bcc.bc.GasPrice()
+	gprice, err := bcc.bc.GasPrice(ctx)
+	if err != nil {
+		confirmed(bwe.WrapM(bwe.AliasError, "Gas error: ", err))
+		return
+	}
 	sgprice := gprice.Text(10)
 	cash := big.NewInt(AliasCreateLongCost)
 	cash = cash.Mul(cash, gprice)
-	txhash, err := bcc.CallOnChain(acc, StringToUFI(UFI_Alias_SetAlias), cash.Text(10), "", sgprice, key, val)
+	txhash, err := bcc.CallOnChain(ctx, acc, StringToUFI(UFI_Alias_SetAlias), cash.Text(10), "", sgprice, key, val)
 	if err != nil {
 		confirmed(err)
 		return
 	}
 
-	bcc.bc.GetTransactionDetailsInt(txhash, bcc.DefaultTimeout, bcc.DefaultConfirmations,
-		nil, func(bnum uint64, rcpt *eth.RPCTransaction, err error) {
+	bcc.bc.GetTransactionDetailsInt(ctx, txhash, bcc.DefaultTimeout, bcc.DefaultConfirmations,
+		nil, func(bnum uint64, err error) {
 			if err != nil {
 				confirmed(err)
 				return
 			}
-			v, _, err := bcc.bc.ResolveAlias(key)
+			v, _, err := bcc.bc.ResolveAlias(ctx, key)
 			if err != nil {
 				confirmed(err)
 				return
@@ -147,8 +156,8 @@ func (bcc *bcClient) SetAlias(acc int, key Bytes32, val Bytes32, confirmed func(
 		})
 }
 
-func (bc *blockChain) UnresolveAlias(value Bytes32) (key Bytes32, iszero bool, err error) {
-	ret, err := bc.CallOffChain(StringToUFI(UFI_Alias_AliasFor), value)
+func (bc *blockChain) UnresolveAlias(ctx context.Context, value Bytes32) (key Bytes32, iszero bool, err error) {
+	ret, err := bc.CallOffChain(ctx, StringToUFI(UFI_Alias_AliasFor), value)
 	if err != nil {
 		return Bytes32{}, false, err
 	}

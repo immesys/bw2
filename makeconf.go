@@ -66,6 +66,14 @@ func makeConf(c *cli.Context) error {
 	if c.String("dbpath") != "" {
 		dbpath = c.String("dbpath")
 	}
+	amlight := "false"
+	if c.Bool("light") {
+		amlight = "true"
+	}
+	listenon := "127.0.0.1:28589"
+	if c.Bool("listenglobal") {
+		listenon = "0.0.0.0:28589"
+	}
 	file := []string{
 		("# generated for " + util.BW2Version + "\n"),
 		("[router]\n"),
@@ -75,7 +83,13 @@ func makeConf(c *cli.Context) error {
 		("[native]\n"),
 		("ListenOn=:4514\n"),
 		("[oob]\n"),
-		("ListenOn=127.0.0.1:28589\n"),
+		("ListenOn=" + listenon + "\n"),
+		("[altruism]\n"),
+		("MaxLightPeers=20\n"),
+		("MaxLightResourcePercentage=50\n"),
+		("[p2p]\n"),
+		("MaxPeers=20\n"),
+		("IAmLight=" + amlight + "\n"),
 	}
 	for _, s := range file {
 		_, err := conf.WriteString(s)

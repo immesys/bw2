@@ -1,18 +1,19 @@
 package bc
 
 import (
+	"bytes"
+	"context"
 	"fmt"
 	"math/big"
 	"time"
 
 	"github.com/immesys/bw2/util/bwe"
+	ethereum "github.com/immesys/bw2bc"
 	"github.com/immesys/bw2bc/common"
 	"github.com/immesys/bw2bc/core"
 	"github.com/immesys/bw2bc/core/types"
-	"github.com/immesys/bw2bc/core/vm"
-	"github.com/immesys/bw2bc/eth"
-	"github.com/immesys/bw2bc/eth/filters"
-	"github.com/immesys/bw2bc/rpc"
+	"github.com/immesys/bw2bc/params"
+	"github.com/immesys/bw2bc/rlp"
 )
 
 const (
@@ -33,6 +34,14 @@ type Block struct {
 	Logs       []Log
 }
 
+type BlockHeader struct {
+	Number     uint64
+	Hash       Bytes32
+	Time       int64
+	Difficulty uint64
+	Parent     Bytes32
+}
+
 type Log interface {
 	ContractAddress() Address
 	Topics() []Bytes32
@@ -49,27 +58,42 @@ type logWrapper struct {
 }
 
 func (bc *blockChain) HeadBlockAge() int64 {
-	head, err := bc.api_pubchain.GetBlockByNumber(-1, false)
-	if err != nil {
-		panic(err)
+	var hdr *types.Header
+	if bc.isLight {
+		hdr = bc.lethi.BlockChain().CurrentHeader()
+	} else {
+		hdr = bc.fethi.BlockChain().CurrentHeader()
 	}
-	btime := head["timestamp"].(*rpc.HexNumber).Int64()
-	now := time.Now().Unix()
-	return now - btime
+	return time.Now().Unix() - hdr.Time.Int64()
 }
 
-func (bc *blockChain) GasPrice() *big.Int {
-	return bc.api_pubeth.GasPrice()
+func (bc *blockChain) GasPrice(ctx context.Context) (*big.Int, error) {
+	if bc.isLight {
+		return bc.lethi.ApiBackend.SuggestPrice(ctx)
+	} else {
+		return bc.fethi.ApiBackend.SuggestPrice(ctx)
+	}
 }
 
-func (bc *blockChain) GetAddrBalance(addr string) (decimal string, human string) {
-	rv, err := bc.api_pubchain.GetBalance(common.HexToAddress(addr), -1)
-	if err != nil {
-		panic(err)
+func (bc *blockChain) GetAddrBalance(ctx context.Context, addr string) (decimal string, human string, err error) {
+	var rv *big.Int
+	if bc.isLight {
+		sdb := bc.lethi.BlockChain().State()
+		rv, err = sdb.GetBalance(ctx, common.HexToAddress(addr))
+		if err != nil {
+			return "", "", err
+		}
+	} else {
+		sdb, err := bc.fethi.BlockChain().State()
+		if err != nil {
+			return "", "", err
+		}
+		rv = sdb.GetBalance(common.HexToAddress(addr))
 	}
 	decimal = rv.Text(10)
-	human = common.CurrencyToString(rv)
-	return
+	//HeH
+	human = decimal
+	return decimal, human, nil
 }
 
 func (lw *logWrapper) String() string {
@@ -125,7 +149,7 @@ func (l *logWrapper) MatchesAnyTopicsStrict(topics [][]Bytes32) bool {
 	}
 	return false
 }
-func blockFromCore(b *types.Block, l vm.Logs) *Block {
+func blockFromCore(b *types.Block, l []*types.Log) *Block {
 	lw := make([]Log, len(l))
 	for i, lg := range l {
 		lw[i] = &logWrapper{lg}
@@ -140,85 +164,106 @@ func blockFromCore(b *types.Block, l vm.Logs) *Block {
 	}
 }
 
+func (bc *blockChain) GetHeader(height uint64) *types.Header {
+	if bc.isLight {
+		return bc.lethi.BlockChain().GetHeaderByNumber(height)
+	}
+	return bc.fethi.BlockChain().GetHeaderByNumber(height)
+}
 func (bc *blockChain) GetBlock(height uint64) *Block {
-	coreblock := bc.eth.BlockChain().GetBlockByNumber(height)
-	if coreblock == nil {
-		return nil
-	}
-	var lgs []*vm.Log
-	receipts := core.GetBlockReceipts(bc.eth.ChainDb(), coreblock.Hash())
-	for _, r := range receipts {
-		if len(r.Logs) > 0 {
-			lgs = append(lgs, r.Logs...)
-		}
-	}
-	b := blockFromCore(coreblock, lgs)
-	return b
+	panic("if we could avoid this, yeah that'd be great")
+	// coreblock := bc.eth.BlockChain().GetBlockByNumber(height)
+	// if coreblock == nil {
+	// 	return nil
+	// }
+	// var lgs []*types.Log
+	// receipts := core.GetBlockReceipts(bc.eth.ChainDb(), coreblock.Hash(), height)
+	// for _, r := range receipts {
+	// 	if len(r.Logs) > 0 {
+	// 		lgs = append(lgs, r.Logs...)
+	// 	}
+	// }
+	// b := blockFromCore(coreblock, lgs)
+	// return b
 }
 
 //Subscribes to new blocks, and calls the callback on each one. If the function
 //returns true, the subscription is cancelled and no more calls will occur
 //if it returns false, it will continue to be called
-func (bc *blockChain) CallOnNewBlocksInt(cb func(*types.Block, vm.Logs) (stop bool)) {
-	f := filters.New(bc.eth.ChainDb())
-	id := -1
-	//There might be invocations of the callback queued before we unsub. To
-	//ensure downstream does not get unexpected invocations of the callback
-	//after they return true, add a check here
-	haveUnsubbed := false
-	f.BlockCallback = func(b *types.Block, logs vm.Logs) {
-		if haveUnsubbed {
-			return
-		}
-		unsub := cb(b, logs)
-		if unsub {
-			haveUnsubbed = true
-			if id < 0 {
-				panic(id)
-			}
-			go bc.fm.Remove(id)
-		}
-	}
-	f.SetBeginBlock(-1)
-	var err error
-	id, err = bc.fm.Add(f, filters.ChainFilter)
-	if err != nil {
-		panic(err)
-	}
-}
+// Removed in jansky
+// func (bc *blockChain) CallOnNewBlocksInt(cb func(*types.Block, vm.Logs) (stop bool)) {
+// 	f := filters.New(bc.eth.ChainDb())
+// 	id := -1
+// 	//There might be invocations of the callback queued before we unsub. To
+// 	//ensure downstream does not get unexpected invocations of the callback
+// 	//after they return true, add a check here
+// 	haveUnsubbed := false
+// 	f.BlockCallback = func(b *types.Block, logs vm.Logs) {
+// 		if haveUnsubbed {
+// 			return
+// 		}
+// 		unsub := cb(b, logs)
+// 		if unsub {
+// 			haveUnsubbed = true
+// 			if id < 0 {
+// 				panic(id)
+// 			}
+// 			go bc.fm.Remove(id)
+// 		}
+// 	}
+// 	f.SetBeginBlock(-1)
+// 	var err error
+// 	id, err = bc.fm.Add(f, filters.ChainFilter)
+// 	if err != nil {
+// 		panic(err)
+// 	}
+// }
 
+func (bc *blockChain) CurrentHeader() *types.Header {
+	if bc.isLight {
+		return bc.lethi.BlockChain().CurrentHeader()
+	}
+	return bc.fethi.BlockChain().CurrentHeader()
+}
 func (bc *blockChain) CurrentBlock() uint64 {
-	return bc.eth.BlockChain().CurrentBlock().NumberU64()
+	return bc.CurrentHeader().Number.Uint64()
 }
 
-func (bc *blockChain) CallOnNewBlocks(cb func(*Block) (stop bool)) {
-	bc.CallOnNewBlocksInt(func(coreb *types.Block, corelogs vm.Logs) bool {
-		return cb(blockFromCore(coreb, corelogs))
-	})
+func (bc *blockChain) NewHeads(ctx context.Context) chan *types.Header {
+	rvc := make(chan *types.Header, 100)
+	sub := bc.api_es.SubscribeNewHeads(rvc)
+	go func() {
+		<-ctx.Done()
+		sub.Unsubscribe()
+	}()
+	return rvc
 }
 
-func (bc *blockChain) AfterBlocks(n uint64) chan bool {
+// func (bc *blockChain) CallOnNewBlocks(cb func(*Block) (stop bool)) {
+// 	bc.CallOnNewBlocksInt(func(coreb *types.Block, corelogs vm.Logs) bool {
+// 		return cb(blockFromCore(coreb, corelogs))
+// 	})
+// }
+
+func (bc *blockChain) AfterBlocks(ctx context.Context, n uint64) chan bool {
 	rv := make(chan bool, 1)
 	start := bc.CurrentBlock()
-	bc.CallOnNewBlocksInt(func(b *types.Block, l vm.Logs) bool {
-		if bc.CurrentBlock() >= start+n {
-			rv <- true
-			return true
-		}
-		return false
-	})
-	return rv
-}
-
-//Returns True on channel if timeout, false if block
-func (bc *blockChain) AfterBlocksOrTime(blocks uint64, t time.Duration) chan bool {
-	rv := make(chan bool, 1)
+	octx, cancel := context.WithCancel(ctx)
+	hdrc := bc.NewHeads(octx)
 	go func() {
-		select {
-		case <-time.After(t):
-			rv <- true
-		case <-bc.AfterBlocks(blocks):
-			rv <- false
+		for {
+			select {
+			case header := <-hdrc:
+				if header.Number.Uint64() >= start+n {
+					rv <- true
+					cancel()
+					return
+				}
+			case <-ctx.Done():
+				rv <- false
+				cancel()
+				return
+			}
 		}
 	}()
 	return rv
@@ -230,97 +275,153 @@ func (bc *blockChain) SyncProgress() (peercount int, start, current, highest uin
 		panic(e)
 	}
 	peercount = len(peers)
-	start, current, highest, _, _ = bc.eth.Downloader().Progress()
-	return
+
+	var sp ethereum.SyncProgress
+	if bc.isLight {
+		sp = bc.lethi.Downloader().Progress()
+	} else {
+		sp = bc.fethi.Downloader().Progress()
+	}
+	fmt.Printf("also we have %v / %v state info\n", sp.PulledStates, sp.KnownStates)
+	return peercount, sp.StartingBlock, sp.CurrentBlock, sp.HighestBlock
 }
 
 const LatestBlock = -1
 const PendingBlock = -2
 
-func (bc *blockChain) CallOffChain(ufi UFI, params ...interface{}) (ret []interface{}, err error) {
-	return bc.CallOffSpecificChain(LatestBlock, ufi, params...)
+func (bc *blockChain) CallOffChain(ctx context.Context, ufi UFI, params ...interface{}) (ret []interface{}, err error) {
+	return bc.CallOffSpecificChain(ctx, LatestBlock, ufi, params...)
 }
 
 //CallOffChain is used for calling constant functions to get return values
 //It executes locally and does not cost any money
-func (bc *blockChain) CallOffSpecificChain(block int64, ufi UFI, params ...interface{}) (ret []interface{}, err error) {
+func (bc *blockChain) CallOffSpecificChain(ctx context.Context, block int64, ufi UFI, params ...interface{}) (ret []interface{}, err error) {
 	addr, calldata, err := EncodeABICall(ufi, params...)
 	if err != nil {
 		return nil, bwe.WrapM(bwe.InvalidUFI, "Invalid off-chain UFI call args", err)
 	}
-	type CallArgs struct {
-		From     common.Address  `json:"from"`
-		To       *common.Address `json:"to"`
-		Gas      *rpc.HexNumber  `json:"gas"`
-		GasPrice *rpc.HexNumber  `json:"gasPrice"`
-		Value    rpc.HexNumber   `json:"value"`
-		Data     string          `json:"data"`
+
+	cm := ethereum.CallMsg{
+		To:   &addr,
+		Gas:  BWDefaultGasBig,
+		Data: calldata,
 	}
-	ca := eth.CallArgs{To: &addr,
-		Gas:  rpc.NewHexNumber(BWDefaultGasBig),
-		Data: common.ToHex(calldata),
-	}
-	// Call executes the given transaction on the state for the given block number.
-	// It doesn't make and changes in the state/blockchain and is useful to execute and retrieve values.
-	// func (s *PublicBlockChainAPI) Call(args CallArgs, blockNr rpc.BlockNumber) (string, error) {
-	// 	result, _, err := s.doCall(args, blockNr)
-	// 	return result, err
-	// }
-	res, err := bc.api_pubchain.Call(ca, rpc.BlockNumber(block))
+
+	res, err := bc.api_contract.CallContract(ctx, cm, big.NewInt(block))
+
 	if err != nil {
 		return nil, bwe.WrapC(bwe.UFIInvocationError, err)
 	}
-	rv, err := DecodeABIReturn(ufi, common.FromHex(res))
+	rv, err := DecodeABIReturn(ufi, res)
 	if err != nil {
 		return nil, bwe.WrapM(bwe.InvalidUFI, "Invalid off-chain UFI return args", err)
 	}
 	return rv, nil
 }
 
-//If strict is false, ANY topic matching is sufficient (ethereum default) if strict is true,
-//then all nonzero topics must match in their respective positions.
-func (bc *blockChain) FindLogsBetween(since int64, until int64, hexaddr string, topics [][]Bytes32, strict bool) []Log {
-	f := filters.New(bc.eth.ChainDb())
-	if hexaddr != "" {
-		f.SetAddresses([]common.Address{common.HexToAddress(hexaddr)})
+//Topics is not what you think. Its
+// [
+//  [topic0, topic0alt, topic0alt2],
+//  [topic1, ... ...]
+// ...
+// ]
+// not as previously thought, a list of [4]. But rather a [4] of lists
+func (bc *blockChain) FindLogsBetweenHeavy(ctx context.Context, since int64, until int64, addr common.Address, topics [][]common.Hash) ([]Log, error) {
+	if until < 0 {
+		until = int64(bc.CurrentBlock())
 	}
-	ts := make([][]common.Hash, len(topics))
-	for i1, slc := range topics {
-		el := make([]common.Hash, len(slc))
-		for i2, sub := range slc {
-			el[i2] = common.Hash(sub)
-		}
-		ts[i1] = el
-	}
-	f.SetTopics(ts)
+
+	var addrBytes Bytes32
+	copy(addrBytes[:], addr[:])
+	f := bc.newFilter()
 	f.SetBeginBlock(since)
 	f.SetEndBlock(until)
-	rawlog := f.Find()
-	rv := []Log{}
-	for _, v := range rawlog {
-		vv := &logWrapper{v}
-		if !strict || vv.MatchesAnyTopicsStrict(topics) {
-			rv = append(rv, vv)
-		}
+	f.SetAddresses([]common.Address{addr})
+	f.SetTopics(topics)
+	lgs, err := f.Find(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return rv
+	rv := make([]Log, len(lgs))
+	for i, l := range lgs {
+		rv[i] = &logWrapper{l}
+	}
+	return rv, nil
 }
 
-func (bc *blockChain) CallOnBlocksBetween(from uint64, to uint64, cb func(b *Block)) {
-	max := bc.CurrentBlock()
-	if to > max {
-		to = max
-	}
-	for ; from < to; from++ {
-		b := bc.GetBlock(from)
-		if b == nil {
-			break
-		}
-		cb(b)
-	}
-	cb(nil)
-	return
-}
+//
+// //If strict is false, ANY topic matching is sufficient (ethereum default) if strict is true,
+// //then all nonzero topics must match in their respective positions.
+// func (bc *blockChain) FindLogsBetween(since int64, until int64, hexaddr string, topics [][]Bytes32, strict bool) []Log {
+// 	if until < 0 {
+// 		until = bc.eth.BlockChain().CurrentHeader().Number.Int64()
+// 	}
+// 	var addrBytes Bytes32
+// 	copy(addrBytes[:], common.HexToAddress(hexaddr))
+//
+// 	//must convert contract addr3ess
+// 	rv := []Log{}
+// 	for n := since; n <= until; n++ {
+// 		hdr := bc.eth.BlockChain().GetHeaderByNumber(uint64(n))
+// 		if hdr == nil {
+// 			return rv
+// 		}
+// 		worthy := false
+// 		if hdr.Bloom.TestBytes(addrBytes) {
+// 			for _, slc := range topics {
+// 				worthy = testBloom(hdr.Bloom, topics, strict)
+// 				if worthy {
+// 					break
+// 				}
+// 			}
+// 		}
+// 		//Bloom thinks block is interesting
+// 		if worthy {
+//
+// 		}
+// 	}
+//
+// 	f := filters.New(bc.eth.ChainDb())
+// 	if hexaddr != "" {
+// 		f.SetAddresses([]common.Address{common.HexToAddress(hexaddr)})
+// 	}
+// 	ts := make([][]common.Hash, len(topics))
+// 	for i1, slc := range topics {
+// 		el := make([]common.Hash, len(slc))
+// 		for i2, sub := range slc {
+// 			el[i2] = common.Hash(sub)
+// 		}
+// 		ts[i1] = el
+// 	}
+// 	f.SetTopics(ts)
+// 	f.SetBeginBlock(since)
+// 	f.SetEndBlock(until)
+// 	rawlog := f.Find()
+// 	rv := []Log{}
+// 	for _, v := range rawlog {
+// 		vv := &logWrapper{v}
+// 		if !strict || vv.MatchesAnyTopicsStrict(topics) {
+// 			rv = append(rv, vv)
+// 		}
+// 	}
+// 	return rv
+// }
+
+// func (bc *blockChain) CallOnBlocksBetween(from uint64, to uint64, cb func(b *Block)) {
+// 	max := bc.CurrentBlock()
+// 	if to > max {
+// 		to = max
+// 	}
+// 	for ; from < to; from++ {
+// 		b := bc.GetBlock(from)
+// 		if b == nil {
+// 			break
+// 		}
+// 		cb(b)
+// 	}
+// 	cb(nil)
+// 	return
+// }
 
 func (bcc *bcClient) SetDefaultConfirmations(c uint64) {
 	bcc.DefaultConfirmations = c
@@ -355,18 +456,44 @@ func (bcc *bcClient) GetAddresses() ([]Address, error) {
 
 //CallOnChain executes a real distributed invocation of the identified function.
 //It can cost some money. If gas is omitted, it defaults to three million
-func (bcc *bcClient) CallOnChain(acc int, ufi UFI, value, gas, gasPrice string, params ...interface{}) (txhash string, err error) {
+func (bcc *bcClient) CallOnChain(ctx context.Context, acc int, ufi UFI, value, gas, gasPrice string, params ...interface{}) (txhash common.Hash, err error) {
 	addr, calldata, err := EncodeABICall(ufi, params...)
 	if err != nil {
-		return "", bwe.WrapM(bwe.InvalidUFI, "Invalid on-chain UFI call args", err)
+		return common.Hash{}, bwe.WrapM(bwe.InvalidUFI, "Invalid on-chain UFI call args", err)
 	}
-	return bcc.Transact(acc, addr.Hex(), value, gas, gasPrice, common.ToHex(calldata))
+	return bcc.Transact(ctx, acc, addr.Hex(), value, gas, gasPrice, calldata)
 }
 
-func (bcc *bcClient) Transact(accidx int, to, value, gas, gasPrice, code string) (txhash string, err error) {
+func (bcc *bcClient) signAndSendTransaction(ctx context.Context, accidx int, tx *types.Transaction) (common.Hash, error) {
+	var chainID *big.Int
+	var cfg *params.ChainConfig
+	if bcc.bc.isLight {
+		cfg = bcc.bc.lethi.ApiBackend.ChainConfig()
+	} else {
+		cfg = bcc.bc.fethi.ApiBackend.ChainConfig()
+	}
+	if cfg.IsEIP155(bcc.bc.CurrentHeader().Number) {
+		chainID = cfg.ChainId
+	}
+	signed, err := bcc.bc.ks.BWSignTx(accidx, bcc.ent, tx, chainID)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	if bcc.bc.isLight {
+		err = bcc.bc.lethi.ApiBackend.SendTx(ctx, signed)
+	} else {
+		err = bcc.bc.fethi.ApiBackend.SendTx(ctx, signed)
+	}
+	if err != nil {
+		return common.Hash{}, err
+	}
+	return signed.Hash(), nil
+}
+
+func (bcc *bcClient) Transact(ctx context.Context, accidx int, to, value, gas, gasPrice string, code []byte) (txhash common.Hash, err error) {
 	acc, err := bcc.GetAddress(accidx)
 	if err != nil {
-		return "", err
+		return common.Hash{}, err
 	}
 	if gas == "" {
 		if len(code) == 0 {
@@ -378,14 +505,19 @@ func (bcc *bcClient) Transact(accidx int, to, value, gas, gasPrice, code string)
 	gasb := big.NewInt(0)
 	_, ok := gasb.SetString(gas, 0)
 	if !ok {
-		return "", bwe.M(bwe.InvalidUFI, "Invalid on-chain UFI call gas")
+		return common.Hash{}, bwe.M(bwe.InvalidUFI, "Invalid on-chain UFI call gas")
 	}
 	var gasp *big.Int = nil
 	if gasPrice != "" {
 		gasp = big.NewInt(0)
 		_, ok = gasp.SetString(gasPrice, 0)
 		if !ok {
-			return "", bwe.M(bwe.InvalidUFI, "Invalid on-chain UFI call gasPrice")
+			return common.Hash{}, bwe.M(bwe.InvalidUFI, "Invalid on-chain UFI call gasPrice")
+		}
+	} else {
+		gasp, err = bcc.bc.api_contract.SuggestGasPrice(ctx)
+		if err != nil {
+			return common.Hash{}, bwe.WrapM(bwe.BlockChainGenericError, "Could not get optimal gas price", err)
 		}
 	}
 	if value == "" {
@@ -394,116 +526,198 @@ func (bcc *bcClient) Transact(accidx int, to, value, gas, gasPrice, code string)
 	valb := big.NewInt(0)
 	_, ok = valb.SetString(value, 0)
 	if !ok {
-		return "", bwe.M(bwe.InvalidUFI, "Invalid on-chain UFI call value")
+		return common.Hash{}, bwe.M(bwe.InvalidUFI, "Invalid on-chain UFI call value")
 	}
-	var terr error
-	commaddr := common.HexToAddress(to)
-	txhashc, terr := bcc.bc.api_privacct.SignAndSendTransaction(eth.SendTxArgs{
-		From:     common.Address(acc),
-		To:       &commaddr,
-		Gas:      rpc.NewHexNumber(gasb),
-		GasPrice: nil,
-		Value:    rpc.NewHexNumber(valb),
-		Data:     code,
-		Nonce:    nil,
-	}, "")
-	txhash = txhashc.Hex()
+	toa := common.HexToAddress(to)
+	var nonce uint64
+	if bcc.bc.isLight {
+		nonce, err = bcc.bc.lethi.TxPool().GetNonce(ctx, common.Address(acc))
+		if err != nil {
+			return common.Hash{}, bwe.WrapM(bwe.BlockChainGenericError, "Could not get txpool nonce", err)
+		}
+	} else {
+		nonce = bcc.bc.fethi.TxPool().State().GetNonce(common.Address(acc))
+	}
+	tx := types.NewTransaction(nonce, toa, valb, gasb, gasp, code)
+
+	txhash, terr := bcc.signAndSendTransaction(ctx, accidx, tx)
 	if terr != nil {
-		err = bwe.WrapM(bwe.BlockChainGenericError, "Could not transact", terr)
-		return
+		return common.Hash{}, bwe.WrapM(bwe.BlockChainGenericError, "Could not transact", terr)
 	}
-	err = nil
-	return
+	return txhash, nil
 }
 
-func (bcc *bcClient) TransactAndCheck(accidx int, to, value, gas, gasPrice, code string, confirmed func(error)) {
-	txhash, err := bcc.Transact(accidx, to, value, gas, gasPrice, code)
+func (bcc *bcClient) TransactAndCheck(ctx context.Context, accidx int, to, value, gas, gasPrice string, code []byte, confirmed func(error)) {
+	txhash, err := bcc.Transact(ctx, accidx, to, value, gas, gasPrice, code)
 	if err != nil {
 		confirmed(err)
 		return
 	}
-	bcc.bc.GetTransactionDetailsInt(txhash, bcc.DefaultTimeout, bcc.DefaultConfirmations,
-		nil, func(bnum uint64, rptt *eth.RPCTransaction, err error) {
+	bcc.bc.GetTransactionDetailsInt(ctx, txhash, bcc.DefaultTimeout, bcc.DefaultConfirmations,
+		nil, func(bnum uint64, err error) {
 			confirmed(err)
 		})
 }
 
-func (bc *blockChain) GetTransactionReceipt(txhash string) *types.Receipt {
-	return core.GetReceipt(bc.eth.ChainDb(), common.HexToHash(txhash))
+func (bc *blockChain) getTransaction(txHash common.Hash) (tx *types.Transaction, pending bool, blocknum int64, err error) {
+	var txData []byte
+	if bc.isLight {
+		panic("not supported on light yet")
+		txData, err = bc.lethi.ApiBackend.ChainDb().Get(txHash.Bytes())
+	} else {
+		txData, err = bc.fethi.ChainDb().Get(txHash.Bytes())
+	}
+	fmt.Printf("get transaction rv len=%d err=%v\n", len(txData), err)
+	isPending := false
+	tx = new(types.Transaction)
+
+	if err == nil && len(txData) > 0 {
+		if err := rlp.DecodeBytes(txData, tx); err != nil {
+			return nil, isPending, -1, err
+		}
+	} else {
+		// pending transaction?
+		if bc.isLight {
+			tx = bc.lethi.ApiBackend.GetPoolTransaction(txHash)
+		} else {
+			tx = bc.fethi.ApiBackend.GetPoolTransaction(txHash)
+		}
+		isPending = true
+	}
+
+	if !isPending {
+		var txBlock struct {
+			BlockHash  common.Hash
+			BlockIndex uint64
+			Index      uint64
+		}
+		var blockData []byte
+		//TODO LIGHTIFY
+		blockData, err := bc.fethi.ChainDb().Get(append(txHash.Bytes(), 0x0001))
+		if err != nil {
+			return nil, false, 0, err
+		}
+
+		reader := bytes.NewReader(blockData)
+		if err = rlp.Decode(reader, &txBlock); err != nil {
+			return nil, false, 0, err
+		}
+
+		return tx, false, int64(txBlock.BlockIndex), nil
+	}
+
+	return tx, true, -1, nil
 }
-func (bc *blockChain) GetTransactionDetailsInt(txhash string, timeout uint64, confirmations uint64,
-	onseen func(blocknum uint64, rpct *eth.RPCTransaction, err error),
-	onconfirmed func(blocknum uint64, rpct *eth.RPCTransaction, err error)) {
+
+// func (bc *blockChain) intGetTransactionByHash(ctx context.Context, hash common.Hash) (*types.Transaction, error) {
+// 	var tx *types.Transaction
+// 	var isPending bool
+// 	var err error
+//
+// 	if tx, isPending, err = bc.getTransaction(hash); err != nil {
+// 		log.Debug("Failed to retrieve transaction", "hash", hash, "err", err)
+// 		return nil, nil
+// 	} else if tx == nil {
+// 		return nil, nil
+// 	}
+// 	if isPending {
+// 		return newRPCPendingTransaction(tx), nil
+// 	}
+//
+// 	blockHash, _, _, err := getTransactionBlockData(s.b.ChainDb(), hash)
+// 	if err != nil {
+// 		log.Debug("Failed to retrieve transaction block", "hash", hash, "err", err)
+// 		return nil, nil
+// 	}
+//
+// 	if block, _ := s.b.GetBlock(ctx, blockHash); block != nil {
+// 		return newRPCTransaction(block, hash)
+// 	}
+// 	return nil, nil
+// }
+
+func (bc *blockChain) GetTransactionReceipt(txhash common.Hash) *types.Receipt {
+	if bc.isLight {
+		panic("is not supported on light")
+	}
+	return core.GetReceipt(bc.fethi.ChainDb(), txhash)
+}
+
+func (bc *blockChain) GetTransactionDetailsInt(ctx context.Context, txhash common.Hash, timeoutblocks uint64, confirmations uint64,
+	onseen func(blocknum uint64, err error),
+	onconfirmed func(blocknum uint64, err error)) {
 
 	startblock := bc.CurrentBlock()
-	starttime := time.Now().UnixNano() / 1000000000
-	timeouttime := starttime + int64(timeout*20)
 
 	waitConfirmations := func(found uint64) {
 		for {
-			//If we are past the number of confirmations required
-			curblock := bc.CurrentBlock()
-			fmt.Println("Waiting for confirmations on", txhash, "seen at", found, "curblock", curblock)
-			curtime := time.Now().UnixNano() / 1000000000
-			if curblock >= found+confirmations {
-				//See if it is still there
-				rpct, err := bc.api_pubtx.GetTransactionByHash(common.HexToHash(txhash))
-				if err != nil {
-					panic("hmm?" + err.Error())
-				}
-				if err == nil && rpct != nil && rpct.BlockNumber != nil && rpct.BlockNumber.Uint64() < curblock-confirmations {
-					if onconfirmed != nil {
-						onconfirmed(rpct.BlockNumber.Uint64(), rpct, nil)
-					}
-					return
-				}
-			}
-			//Or we have timed out
-			if curblock >= startblock+timeout || curtime > timeouttime {
+			if ctx.Err() != nil {
 				if onconfirmed != nil {
-					onconfirmed(0, nil, bwe.M(bwe.TransactionConfirmationTimeout, "Timeout waiting for confirmations"))
+					onconfirmed(0, bwe.M(bwe.TransactionConfirmationTimeout, "Timeout waiting for confirmations"))
 				}
 				return
 			}
-			<-bc.AfterBlocksOrTime(1, 5*time.Second)
+			//If we are past the number of confirmations required
+			curblock := bc.CurrentBlock()
+			fmt.Println("Waiting for confirmations on", txhash, "seen at", found, "curblock", curblock)
+			if curblock >= found+confirmations {
+				tx, pending, blocknum, err := bc.getTransaction(txhash)
+				if err != nil {
+					onconfirmed(0, bwe.WrapM(bwe.TransactionConfirmationTimeout, "Got TX error", err))
+				}
+				if !(pending || tx == nil) {
+					if blocknum > 0 && uint64(blocknum) < curblock-confirmations {
+						onconfirmed(uint64(blocknum), nil)
+						return
+					}
+				}
+			}
+			//Or we have timed out
+			if curblock >= startblock+timeoutblocks {
+				if onconfirmed != nil {
+					onconfirmed(0, bwe.M(bwe.TransactionConfirmationTimeout, "Timeout waiting for confirmations"))
+				}
+				return
+			}
+			<-bc.AfterBlocks(ctx, 1)
 		}
 	}
 
 	go func() {
 		for {
 			curblock := bc.CurrentBlock()
-			//log.Infof("Waiting for appearance of", txhash, "oblock is", startblock, "curblock is", curblock)
-			curtime := time.Now().UnixNano() / 1000000000
-			rpct, err := bc.api_pubtx.GetTransactionByHash(common.HexToHash(txhash))
+			tx, pending, blocknum, err := bc.getTransaction(txhash)
 			if err != nil {
 				panic("hmm2?" + err.Error())
 			}
-			if err == nil && rpct != nil && rpct.BlockNumber != nil {
+			if err == nil && !pending && tx != nil && blocknum > 0 {
 				if onseen != nil {
-					onseen(rpct.BlockNumber.Uint64(), rpct, nil)
+					onseen(uint64(blocknum), nil)
 				}
-				waitConfirmations(rpct.BlockNumber.Uint64())
+				waitConfirmations(uint64(blocknum))
 				return
 			}
-			if curblock >= startblock+timeout || curtime > timeouttime {
+			if curblock >= startblock+timeoutblocks {
 				if onseen != nil {
-					onseen(0, nil, bwe.M(bwe.TransactionTimeout, "Timeout waiting for tx to appear"))
+					onseen(0, bwe.M(bwe.TransactionTimeout, "Timeout waiting for tx to appear"))
 				}
 				if onconfirmed != nil {
-					onconfirmed(0, nil, bwe.M(bwe.TransactionTimeout, "Timeout waiting for tx to appear"))
+					onconfirmed(0, bwe.M(bwe.TransactionTimeout, "Timeout waiting for tx to appear"))
 				}
 				return
 			}
-			<-bc.AfterBlocksOrTime(1, 5*time.Second)
+			sctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			<-bc.AfterBlocks(sctx, 1)
+			cancel()
 		}
 	}()
 }
 
-func (bcc *bcClient) GetBalance(idx int) (decimal string, human string, err error) {
+func (bcc *bcClient) GetBalance(ctx context.Context, idx int) (decimal string, human string, err error) {
 	acc, err := bcc.GetAddress(idx)
 	if err != nil {
 		return "", "", err
 	}
-	dec, hum := bcc.bc.GetAddrBalance(acc.Hex())
+	dec, hum, err := bcc.bc.GetAddrBalance(ctx, acc.Hex())
 	return dec, hum, err
 }

@@ -37,6 +37,14 @@ type BWConfig struct {
 	OOB struct {
 		ListenOn string
 	}
+	Altruism struct {
+		MaxLightPeers              int
+		MaxLightResourcePercentage int
+	}
+	P2P struct {
+		MaxPeers int
+		IAmLight bool
+	}
 }
 
 // LoadConfig will load and return a configuration. If "" is specified for the filename,

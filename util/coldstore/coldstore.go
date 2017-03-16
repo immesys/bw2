@@ -10,7 +10,7 @@ import (
 	"github.com/immesys/bw2/crypto"
 	"github.com/immesys/bw2/objects"
 	"github.com/immesys/bw2/util/bwe"
-	"github.com/immesys/bw2bc/common"
+	"github.com/immesys/bw2bc/common/math"
 	ethcrypto "github.com/immesys/bw2bc/crypto"
 	"github.com/immesys/bw2bc/crypto/secp256k1"
 	"golang.org/x/crypto/blowfish"
@@ -75,7 +75,7 @@ func GetAccountHex(ro *objects.Entity, index int) (string, error) {
 	}
 	seed := make([]byte, 64)
 	copy(seed[0:32], ro.GetSK())
-	copy(seed[32:64], common.BigToBytes(big.NewInt(int64(index)), 256))
+	copy(seed[32:64], math.PaddedBigBytes(big.NewInt(int64(index)), 32))
 	rand := sha3.Sum512(seed)
 	reader := bytes.NewReader(rand[:])
 	privateKeyECDSA, err := ecdsa.GenerateKey(secp256k1.S256(), reader)
@@ -119,7 +119,7 @@ func space4hex(b []byte) string {
 func printAddr(ent *objects.Entity, index int) {
 	seed := make([]byte, 64)
 	copy(seed[0:32], ent.GetSK())
-	copy(seed[32:64], common.BigToBytes(big.NewInt(int64(index)), 256))
+	copy(seed[32:64], math.PaddedBigBytes(big.NewInt(int64(index)), 32))
 	rand := sha3.Sum512(seed)
 	reader := bytes.NewReader(rand[:])
 	privateKeyECDSA, err := ecdsa.GenerateKey(secp256k1.S256(), reader)

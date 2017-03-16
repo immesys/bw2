@@ -1,11 +1,11 @@
 package bc
 
 import (
+	"context"
 	"math/big"
 
 	"github.com/immesys/bw2/objects"
 	"github.com/immesys/bw2/util/bwe"
-	"github.com/immesys/bw2bc/eth"
 )
 
 const (
@@ -19,32 +19,32 @@ const (
 const RegistryLag = 5
 
 //Publish the given entity
-func (bcc *bcClient) PublishEntity(acc int, ent *objects.Entity, confirmed func(err error)) {
+func (bcc *bcClient) PublishEntity(ctx context.Context, acc int, ent *objects.Entity, confirmed func(err error)) {
 	blob := ent.GetContent()
 	if len(blob) < 96 {
 		panic(bwe.M(bwe.BadOperation, "Entity not encoded"))
 	}
-	ob, _, _ := bcc.bc.ResolveEntity(ent.GetVK())
+	ob, _, _ := bcc.bc.ResolveEntity(ctx, ent.GetVK())
 	if ob != nil {
 		//Entity already exists
 		confirmed(nil)
 		return
 	}
-	txhash, err := bcc.CallOnChain(acc, StringToUFI(UFI_Registry_AddEntity), "", "", "",
+	txhash, err := bcc.CallOnChain(ctx, acc, StringToUFI(UFI_Registry_AddEntity), "", "", "",
 		blob)
 	if err != nil {
 		confirmed(err)
 		return
 	}
 	//And wait for it to confirm
-	bcc.bc.GetTransactionDetailsInt(txhash, bcc.DefaultTimeout, bcc.DefaultConfirmations,
-		nil, func(bn uint64, rcpt *eth.RPCTransaction, err error) {
+	bcc.bc.GetTransactionDetailsInt(ctx, txhash, bcc.DefaultTimeout, bcc.DefaultConfirmations,
+		nil, func(bn uint64, err error) {
 			if err != nil {
 				confirmed(err)
 				return
 			}
 			//Check to see if entity state is valid
-			_, _, err = bcc.bc.ResolveEntity(ent.GetVK())
+			_, _, err = bcc.bc.ResolveEntity(ctx, ent.GetVK())
 			if err != nil {
 				confirmed(bwe.WrapM(bwe.RegistryEntityInvalid, "Could not publish: ", err))
 				return
@@ -55,33 +55,33 @@ func (bcc *bcClient) PublishEntity(acc int, ent *objects.Entity, confirmed func(
 }
 
 //Publish the given DOT. The entities must be published already
-func (bcc *bcClient) PublishDOT(acc int, dot *objects.DOT, confirmed func(err error)) {
+func (bcc *bcClient) PublishDOT(ctx context.Context, acc int, dot *objects.DOT, confirmed func(err error)) {
 	blob := dot.GetContent()
 	if len(blob) < 96 {
 		panic(bwe.M(bwe.BadOperation, "DOT not encoded"))
 	}
-	ob, _, _ := bcc.bc.ResolveDOT(dot.GetHash())
+	ob, _, _ := bcc.bc.ResolveDOT(ctx, dot.GetHash())
 	if ob != nil {
 		//DOT already exists
 		confirmed(nil)
 		return
 	}
 
-	txhash, err := bcc.CallOnChain(acc, StringToUFI(UFI_Registry_AddDOT), "", "", "",
+	txhash, err := bcc.CallOnChain(ctx, acc, StringToUFI(UFI_Registry_AddDOT), "", "", "",
 		blob)
 	if err != nil {
 		confirmed(err)
 		return
 	}
 	//And wait for it to confirm
-	bcc.bc.GetTransactionDetailsInt(txhash, bcc.DefaultTimeout, bcc.DefaultConfirmations,
-		nil, func(bn uint64, rcpt *eth.RPCTransaction, err error) {
+	bcc.bc.GetTransactionDetailsInt(ctx, txhash, bcc.DefaultTimeout, bcc.DefaultConfirmations,
+		nil, func(bn uint64, err error) {
 			if err != nil {
 				confirmed(err)
 				return
 			}
 			//Check to see if entity state is valid
-			_, _, err = bcc.bc.ResolveDOT(dot.GetHash())
+			_, _, err = bcc.bc.ResolveDOT(ctx, dot.GetHash())
 			if err != nil {
 				confirmed(bwe.WrapM(bwe.RegistryDOTInvalid, "Could not publish: ", err))
 				return
@@ -92,33 +92,33 @@ func (bcc *bcClient) PublishDOT(acc int, dot *objects.DOT, confirmed func(err er
 }
 
 //Publish the given DChain. The dots and entities must be published already
-func (bcc *bcClient) PublishAccessDChain(acc int, chain *objects.DChain, confirmed func(err error)) {
+func (bcc *bcClient) PublishAccessDChain(ctx context.Context, acc int, chain *objects.DChain, confirmed func(err error)) {
 	blob := chain.GetContent()
 	if len(blob) < 32 {
 		panic(bwe.M(bwe.BadOperation, "Chain not encoded"))
 	}
-	ob, _, _ := bcc.bc.ResolveAccessDChain(chain.GetChainHash())
+	ob, _, _ := bcc.bc.ResolveAccessDChain(ctx, chain.GetChainHash())
 	if ob != nil {
 		//Chain already exists
 		confirmed(nil)
 		return
 	}
 
-	txhash, err := bcc.CallOnChain(acc, StringToUFI(UFI_Registry_AddChain), "", "", "",
+	txhash, err := bcc.CallOnChain(ctx, acc, StringToUFI(UFI_Registry_AddChain), "", "", "",
 		blob)
 	if err != nil {
 		confirmed(err)
 		return
 	}
 	//And wait for it to confirm
-	bcc.bc.GetTransactionDetailsInt(txhash, bcc.DefaultTimeout, bcc.DefaultConfirmations,
-		nil, func(bn uint64, rcpt *eth.RPCTransaction, err error) {
+	bcc.bc.GetTransactionDetailsInt(ctx, txhash, bcc.DefaultTimeout, bcc.DefaultConfirmations,
+		nil, func(bn uint64, err error) {
 			if err != nil {
 				confirmed(err)
 				return
 			}
 			//Check to see if entity state is valid
-			_, _, err = bcc.bc.ResolveAccessDChain(chain.GetChainHash())
+			_, _, err = bcc.bc.ResolveAccessDChain(ctx, chain.GetChainHash())
 			if err != nil {
 				confirmed(bwe.WrapM(bwe.RegistryChainInvalid, "Could not publish: ", err))
 				return
@@ -127,7 +127,7 @@ func (bcc *bcClient) PublishAccessDChain(acc int, chain *objects.DChain, confirm
 			confirmed(nil)
 		})
 }
-func (bcc *bcClient) PublishRevocation(acc int, rvk *objects.Revocation, confirmed func(err error)) {
+func (bcc *bcClient) PublishRevocation(ctx context.Context, acc int, rvk *objects.Revocation, confirmed func(err error)) {
 	blob := rvk.GetContent()
 	if len(blob) < 128 {
 		panic(bwe.M(bwe.BadOperation, "Revocation not encoded"))
@@ -135,7 +135,7 @@ func (bcc *bcClient) PublishRevocation(acc int, rvk *objects.Revocation, confirm
 	var targetufi string
 	var targetparam Bytes32
 	var isEntity bool
-	ob, s, _ := bcc.bc.ResolveDOT(rvk.GetTarget())
+	ob, s, _ := bcc.bc.ResolveDOT(ctx, rvk.GetTarget())
 	if ob != nil {
 		targetufi = UFI_Registry_RevokeDOT
 		targetparam = SliceToBytes32(ob.GetHash())
@@ -144,7 +144,7 @@ func (bcc *bcClient) PublishRevocation(acc int, rvk *objects.Revocation, confirm
 			return
 		}
 	} else {
-		ob, s, _ := bcc.bc.ResolveEntity(rvk.GetTarget())
+		ob, s, _ := bcc.bc.ResolveEntity(ctx, rvk.GetTarget())
 		if ob != nil {
 			targetufi = UFI_Registry_RevokeEntity
 			targetparam = SliceToBytes32(ob.GetVK())
@@ -160,7 +160,7 @@ func (bcc *bcClient) PublishRevocation(acc int, rvk *objects.Revocation, confirm
 		}
 	}
 
-	txhash, err := bcc.CallOnChain(acc, StringToUFI(targetufi), "", "", "",
+	txhash, err := bcc.CallOnChain(ctx, acc, StringToUFI(targetufi), "", "", "",
 		targetparam, blob)
 	if err != nil {
 		confirmed(err)
@@ -168,14 +168,14 @@ func (bcc *bcClient) PublishRevocation(acc int, rvk *objects.Revocation, confirm
 	}
 
 	//And wait for it to confirm
-	bcc.bc.GetTransactionDetailsInt(txhash, bcc.DefaultTimeout, bcc.DefaultConfirmations,
-		nil, func(bn uint64, rcpt *eth.RPCTransaction, err error) {
+	bcc.bc.GetTransactionDetailsInt(ctx, txhash, bcc.DefaultTimeout, bcc.DefaultConfirmations,
+		nil, func(bn uint64, err error) {
 			if err != nil {
 				confirmed(err)
 				return
 			}
 			if isEntity {
-				_, s, err = bcc.bc.ResolveEntity(rvk.GetTarget())
+				_, s, err = bcc.bc.ResolveEntity(ctx, rvk.GetTarget())
 				if err != nil {
 					confirmed(bwe.WrapM(bwe.RegistryEntityInvalid, "Could not revoke: ", err))
 					return
@@ -185,7 +185,7 @@ func (bcc *bcClient) PublishRevocation(acc int, rvk *objects.Revocation, confirm
 					return
 				}
 			} else {
-				_, s, err = bcc.bc.ResolveDOT(rvk.GetTarget())
+				_, s, err = bcc.bc.ResolveDOT(ctx, rvk.GetTarget())
 				if err != nil {
 					confirmed(bwe.WrapM(bwe.RegistryDOTInvalid, "Could not revoke: ", err))
 					return
@@ -204,9 +204,9 @@ func (bcc *bcClient) PublishRevocation(acc int, rvk *objects.Revocation, confirm
 //and expiry. Will also check for entity revocations and expiry.
 //Note that if it is expired or revoked it will still return the DOT,
 //so check the error not for nil
-func (bc *blockChain) ResolveDOT(dothash []byte) (*objects.DOT, int, error) {
+func (bc *blockChain) ResolveDOT(ctx context.Context, dothash []byte) (*objects.DOT, int, error) {
 	// First check what the registry thinks of the DOTHash in the very latest block
-	rvz, err := bc.CallOffSpecificChain(PendingBlock, StringToUFI(UFI_Registry_DOTs), dothash)
+	rvz, err := bc.CallOffSpecificChain(ctx, PendingBlock, StringToUFI(UFI_Registry_DOTs), dothash)
 	if err != nil || len(rvz) != 3 {
 		return nil, StateError, bwe.WrapM(bwe.UFIInvocationError, "Expected 3 rv: ", err)
 	}
@@ -239,7 +239,7 @@ func (bc *blockChain) ResolveDOT(dothash []byte) (*objects.DOT, int, error) {
 
 	if state == StateValid {
 		//Ok lets see if it was still valid Lag blocks ago
-		rvz, err := bc.CallOffSpecificChain(int64(bc.CurrentBlock()-RegistryLag), StringToUFI(UFI_Registry_DOTs), dothash)
+		rvz, err := bc.CallOffSpecificChain(ctx, int64(bc.CurrentBlock()-RegistryLag), StringToUFI(UFI_Registry_DOTs), dothash)
 		if err != nil || len(rvz) != 3 {
 			return nil, StateError, bwe.WrapM(bwe.UFIInvocationError, "Expected 3 rv: ", err)
 		}
@@ -255,9 +255,9 @@ func (bc *blockChain) ResolveDOT(dothash []byte) (*objects.DOT, int, error) {
 
 //Resolve an Entity from the registry. Also checks for revocations
 //and expiry.
-func (bc *blockChain) ResolveEntity(vk []byte) (*objects.Entity, int, error) {
+func (bc *blockChain) ResolveEntity(ctx context.Context, vk []byte) (*objects.Entity, int, error) {
 	// First check what the registry thinks of the vk
-	rvz, err := bc.CallOffSpecificChain(PendingBlock, StringToUFI(UFI_Registry_Entities), vk)
+	rvz, err := bc.CallOffSpecificChain(ctx, PendingBlock, StringToUFI(UFI_Registry_Entities), vk)
 	if err != nil || len(rvz) != 3 {
 		return nil, StateError, bwe.WrapM(bwe.UFIInvocationError, "Expected 3 rv: ", err)
 	}
@@ -290,7 +290,7 @@ func (bc *blockChain) ResolveEntity(vk []byte) (*objects.Entity, int, error) {
 
 	if state == StateValid {
 		//Ok lets see if it was still valid Lag blocks ago
-		rvz, err := bc.CallOffSpecificChain(int64(bc.CurrentBlock()-RegistryLag), StringToUFI(UFI_Registry_Entities), vk)
+		rvz, err := bc.CallOffSpecificChain(ctx, int64(bc.CurrentBlock()-RegistryLag), StringToUFI(UFI_Registry_Entities), vk)
 		if err != nil || len(rvz) != 3 {
 			return nil, StateError, bwe.WrapM(bwe.UFIInvocationError, "Expected 3 rv: ", err)
 		}
@@ -303,9 +303,9 @@ func (bc *blockChain) ResolveEntity(vk []byte) (*objects.Entity, int, error) {
 //Resolve a chain from the registry, Also checks for revocations
 //and expiry from all the DOTs and Entities. Will error if any
 //dots or entities do not resolve.
-func (bc *blockChain) ResolveAccessDChain(chainhash []byte) (*objects.DChain, int, error) {
+func (bc *blockChain) ResolveAccessDChain(ctx context.Context, chainhash []byte) (*objects.DChain, int, error) {
 	// First check what the registry thinks of the vk
-	rvz, err := bc.CallOffSpecificChain(PendingBlock, StringToUFI(UFI_Registry_DChains), chainhash)
+	rvz, err := bc.CallOffSpecificChain(ctx, PendingBlock, StringToUFI(UFI_Registry_DChains), chainhash)
 	if err != nil || len(rvz) != 3 {
 		return nil, StateError, bwe.WrapM(bwe.UFIInvocationError, "Expected 3 rv: ", err)
 	}
@@ -334,7 +334,7 @@ func (bc *blockChain) ResolveAccessDChain(chainhash []byte) (*objects.DChain, in
 	dc := dci.(*objects.DChain) // This won't fail
 
 	if state == StateValid {
-		rvz, err := bc.CallOffSpecificChain(int64(bc.CurrentBlock()-RegistryLag), StringToUFI(UFI_Registry_DChains), chainhash)
+		rvz, err := bc.CallOffSpecificChain(ctx, int64(bc.CurrentBlock()-RegistryLag), StringToUFI(UFI_Registry_DChains), chainhash)
 		if err != nil || len(rvz) != 3 {
 			return nil, StateError, bwe.WrapM(bwe.UFIInvocationError, "Expected 3 rv: ", err)
 		}
@@ -348,10 +348,10 @@ func (bc *blockChain) ResolveAccessDChain(chainhash []byte) (*objects.DChain, in
 	return dc, int(state), nil
 }
 
-func (bc *blockChain) ResolveDOTsFromVK(vk Bytes32) ([]Bytes32, error) {
+func (bc *blockChain) ResolveDOTsFromVK(ctx context.Context, vk Bytes32) ([]Bytes32, error) {
 	rv := []Bytes32{}
 	for i := 0; ; i++ {
-		rvz, err := bc.CallOffSpecificChain(int64(bc.CurrentBlock()-RegistryLag), StringToUFI(UFI_Registry_DOTFromVK), vk, int64(i))
+		rvz, err := bc.CallOffSpecificChain(ctx, int64(bc.CurrentBlock()-RegistryLag), StringToUFI(UFI_Registry_DOTFromVK), vk, int64(i))
 		if err != nil || len(rvz) != 1 {
 			//End of array
 			return rv, nil

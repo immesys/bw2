@@ -82,14 +82,16 @@ func OpenBWContext(config *core.BWConfig) (*BW, chan bool) {
 		os.Exit(1)
 	}
 	store.Initialize(config.Router.DB)
-
 	rv.Entity = ent
 	//In future we can add our own on-shutdown logic here. For now
 	//only the BC has shutdown tasks
 	var bcShutdown chan bool
-	rv.bchain, bcShutdown = bc.NewBlockChain(path.Join(config.Router.DB, "bw2bc"))
+	rv.bchain, bcShutdown = bc.NewBlockChain(path.Join(config.Router.DB, "bw2bc"),
+		config.Altruism.MaxLightPeers,
+		config.Altruism.MaxLightResourcePercentage,
+		config.P2P.IAmLight,
+		config.P2P.MaxPeers)
 	rv.startResolutionServices()
-
 	return rv, bcShutdown
 }
 

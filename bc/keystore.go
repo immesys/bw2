@@ -4,18 +4,19 @@ import (
 	"bytes"
 	"crypto/ecdsa"
 	"fmt"
-	"io"
 	"math/big"
 	"sync"
 
 	"github.com/immesys/bw2/objects"
+	ethereum "github.com/immesys/bw2bc"
 	"github.com/immesys/bw2bc/accounts"
+	"github.com/immesys/bw2bc/accounts/keystore"
 	"github.com/immesys/bw2bc/common"
+	"github.com/immesys/bw2bc/common/math"
 	"github.com/immesys/bw2bc/core/types"
 	ethcrypto "github.com/immesys/bw2bc/crypto"
 	"github.com/immesys/bw2bc/crypto/secp256k1"
 	"github.com/immesys/bw2bc/event"
-	"github.com/pborman/uuid"
 	"golang.org/x/crypto/sha3"
 )
 
@@ -24,8 +25,8 @@ const MaxEntityAccounts = 16
 const namespace = "66d4d61e-957e-4a4a-9959-c0eeb46cbf68"
 
 type entityKeyStore struct {
-	ekeys map[Bytes32][]*accounts.Key
-	akeys map[common.Address]*accounts.Key
+	ekeys map[Bytes32][]*keystore.Key
+	akeys map[common.Address]*keystore.Key
 	alist []common.Address
 	ents  []*objects.Entity
 	mu    sync.Mutex
@@ -33,118 +34,102 @@ type entityKeyStore struct {
 
 func NewEntityKeyStore() *entityKeyStore {
 	rv := &entityKeyStore{
-		ekeys: make(map[Bytes32][]*accounts.Key),
-		akeys: make(map[common.Address]*accounts.Key),
+		ekeys: make(map[Bytes32][]*keystore.Key),
+		akeys: make(map[common.Address]*keystore.Key),
 	}
 	return rv
 }
 
-// Account represents an Ethereum account located at a specific location defined
-// by the optional URL field.
-type Account struct {
-	Address common.Address `json:"address"` // Ethereum account address derived from the key
-	URL     URL            `json:"url"`     // Optional resource locator within a backend
+func (eks *entityKeyStore) URL() accounts.URL {
+	panic("probably not required")
+}
+func (eks *entityKeyStore) Status() string {
+	return "okay"
+}
+func (eks *entityKeyStore) Open(passphrase string) error {
+	return nil
+}
+func (eks *entityKeyStore) Close() error {
+	return nil
+}
+func (eks *entityKeyStore) Accounts() []accounts.Account {
+	return []accounts.Account{}
+}
+func (eks *entityKeyStore) Contains(account accounts.Account) bool {
+	return true //probably
+}
+func (eks *entityKeyStore) Derive(path accounts.DerivationPath, pin bool) (accounts.Account, error) {
+	panic("probably not required")
+}
+func (eks *entityKeyStore) SelfDerive(base accounts.DerivationPath, chain ethereum.ChainStateReader) {
+	panic("probably not required")
 }
 
-// Wallet represents a software or hardware wallet that might contain one or more
-// accounts (derived from the same seed).
-type Wallet interface {
-	// URL retrieves the canonical path under which this wallet is reachable. It is
-	// user by upper layers to define a sorting order over all wallets from multiple
-	// backends.
-	URL() URL
+// SignHash calculates a ECDSA signature for the given hash. The produced
+// signature is in the [R || S || V] format where V is 0 or 1.
+func (eks *entityKeyStore) SignHash(a accounts.Account, hash []byte) ([]byte, error) {
+	eks.mu.Lock()
+	defer eks.mu.Unlock()
+	k, ok := eks.akeys[a.Address]
+	if !ok {
+		return nil, fmt.Errorf("Addr not found: %x", a.Address)
+	}
 
-	// Status returns a textual status to aid the user in the current state of the
-	// wallet.
-	Status() string
+	// Sign the hash using plain ECDSA operations
+	return ethcrypto.Sign(hash, k.PrivateKey)
+}
 
-	// Open initializes access to a wallet instance. It is not meant to unlock or
-	// decrypt account keys, rather simply to establish a connection to hardware
-	// wallets and/or to access derivation seeds.
-	//
-	// The passphrase parameter may or may not be used by the implementation of a
-	// particular wallet instance. The reason there is no passwordless open method
-	// is to strive towards a uniform wallet handling, oblivious to the different
-	// backend providers.
-	//
-	// Please note, if you open a wallet, you must close it to release any allocated
-	// resources (especially important when working with hardware wallets).
-	Open(passphrase string) error
+// SignTx signs the given transaction with the requested account.
+func (eks *entityKeyStore) SignTx(a accounts.Account, tx *types.Transaction, chainID *big.Int) (*types.Transaction, error) {
+	eks.mu.Lock()
+	defer eks.mu.Unlock()
+	k, ok := eks.akeys[a.Address]
+	if !ok {
+		return nil, fmt.Errorf("Addr not found: %x", a.Address)
+	}
 
-	// Close releases any resources held by an open wallet instance.
-	Close() error
+	// Depending on the presence of the chain ID, sign with EIP155 or homestead
+	if chainID != nil {
+		return types.SignTx(tx, types.NewEIP155Signer(chainID), k.PrivateKey)
+	}
+	return types.SignTx(tx, types.HomesteadSigner{}, k.PrivateKey)
+}
 
-	// Accounts retrieves the list of signing accounts the wallet is currently aware
-	// of. For hierarchical deterministic wallets, the list will not be exhaustive,
-	// rather only contain the accounts explicitly pinned during account derivation.
-	Accounts() []Account
+// SignHashWithPassphrase signs hash if the private key matching the given address
+// can be decrypted with the given passphrase. The produced signature is in the
+// [R || S || V] format where V is 0 or 1.
+func (eks *entityKeyStore) SignHashWithPassphrase(a accounts.Account, passphrase string, hash []byte) (signature []byte, err error) {
+	return eks.SignHash(a, hash)
+}
 
-	// Contains returns whether an account is part of this particular wallet or not.
-	Contains(account Account) bool
+// SignTxWithPassphrase signs the transaction if the private key matching the
+// given address can be decrypted with the given passphrase.
+func (eks *entityKeyStore) SignTxWithPassphrase(a accounts.Account, passphrase string, tx *types.Transaction, chainID *big.Int) (*types.Transaction, error) {
+	return eks.SignTx(a, tx, chainID)
+}
 
-	// Derive attempts to explicitly derive a hierarchical deterministic account at
-	// the specified derivation path. If requested, the derived account will be added
-	// to the wallet's tracked account list.
-	Derive(path DerivationPath, pin bool) (Account, error)
+func (eks *entityKeyStore) BWSignTx(accidx int, ent *objects.Entity, tx *types.Transaction, chainID *big.Int) (*types.Transaction, error) {
+	eks.mu.Lock()
+	defer eks.mu.Unlock()
 
-	// SelfDerive sets a base account derivation path from which the wallet attempts
-	// to discover non zero accounts and automatically add them to list of tracked
-	// accounts.
-	//
-	// Note, self derivaton will increment the last component of the specified path
-	// opposed to decending into a child path to allow discovering accounts starting
-	// from non zero components.
-	//
-	// You can disable automatic account discovery by calling SelfDerive with a nil
-	// chain state reader.
-	SelfDerive(base DerivationPath, chain ethereum.ChainStateReader)
+	vk := SliceToBytes32(ent.GetVK())
+	kz, ok := eks.ekeys[vk]
 
-	// SignHash requests the wallet to sign the given hash.
-	//
-	// It looks up the account specified either solely via its address contained within,
-	// or optionally with the aid of any location metadata from the embedded URL field.
-	//
-	// If the wallet requires additional authentication to sign the request (e.g.
-	// a password to decrypt the account, or a PIN code o verify the transaction),
-	// an AuthNeededError instance will be returned, containing infos for the user
-	// about which fields or actions are needed. The user may retry by providing
-	// the needed details via SignHashWithPassphrase, or by other means (e.g. unlock
-	// the account in a keystore).
-	SignHash(account Account, hash []byte) ([]byte, error)
-
-	// SignTx requests the wallet to sign the given transaction.
-	//
-	// It looks up the account specified either solely via its address contained within,
-	// or optionally with the aid of any location metadata from the embedded URL field.
-	//
-	// If the wallet requires additional authentication to sign the request (e.g.
-	// a password to decrypt the account, or a PIN code o verify the transaction),
-	// an AuthNeededError instance will be returned, containing infos for the user
-	// about which fields or actions are needed. The user may retry by providing
-	// the needed details via SignTxWithPassphrase, or by other means (e.g. unlock
-	// the account in a keystore).
-	SignTx(account Account, tx *types.Transaction, chainID *big.Int) (*types.Transaction, error)
-
-	// SignHashWithPassphrase requests the wallet to sign the given hash with the
-	// given passphrase as extra authentication information.
-	//
-	// It looks up the account specified either solely via its address contained within,
-	// or optionally with the aid of any location metadata from the embedded URL field.
-	SignHashWithPassphrase(account Account, passphrase string, hash []byte) ([]byte, error)
-
-	// SignTxWithPassphrase requests the wallet to sign the given transaction, with the
-	// given passphrase as extra authentication information.
-	//
-	// It looks up the account specified either solely via its address contained within,
-	// or optionally with the aid of any location metadata from the embedded URL field.
-	SignTxWithPassphrase(account Account, passphrase string, tx *types.Transaction, chainID *big.Int) (*types.Transaction, error)
+	if !ok {
+		return nil, fmt.Errorf("Addr idx not found: %x", accidx)
+	}
+	k := kz[accidx]
+	if chainID != nil {
+		return types.SignTx(tx, types.NewEIP155Signer(chainID), k.PrivateKey)
+	}
+	return types.SignTx(tx, types.HomesteadSigner{}, k.PrivateKey)
 }
 
 func (eks *entityKeyStore) Wallets() []accounts.Wallet {
 	return []accounts.Wallet{eks}
 }
 
-func (eks *entityKeyStore) Subscribe(sink chan-< WalletEvent) event.Subscription {
+func (eks *entityKeyStore) Subscribe(sink chan<- accounts.WalletEvent) event.Subscription {
 	return nil
 }
 
@@ -172,7 +157,7 @@ func (eks *entityKeyStore) AddEntity(ent *objects.Entity) {
 		}
 	}
 	eks.ents = append(eks.ents, ent)
-	mainkeys := make([]*accounts.Key, MaxEntityAccounts)
+	mainkeys := make([]*keystore.Key, MaxEntityAccounts)
 
 	for i := 0; i < MaxEntityAccounts; i++ {
 		mainkeys[i], _ = createKeyByIndex(ent, i)
@@ -197,22 +182,11 @@ func (eks *entityKeyStore) GetEntityKeyAddresses(ent *objects.Entity) ([]common.
 	}
 	return nil, fmt.Errorf("Could not find addresses")
 }
-func (eks *entityKeyStore) GetKeyAddresses() ([]common.Address, error) {
-	return nil, fmt.Errorf("We don't support this")
-	//We could, but I am dubious we want to
-	/*
-		rv := make([]common.Address, len(eks.alist))
-		eks.mu.Lock()
-		defer eks.mu.Unlock()
-		copy(rv, eks.alist)
-		return rv
-	*/
-}
 
-func createKeyByIndex(ent *objects.Entity, index int) (*accounts.Key, error) {
+func createKeyByIndex(ent *objects.Entity, index int) (*keystore.Key, error) {
 	seed := make([]byte, 64)
 	copy(seed[0:32], ent.GetSK())
-	copy(seed[32:64], common.BigToBytes(big.NewInt(int64(index)), 256))
+	copy(seed[32:64], math.PaddedBigBytes(big.NewInt(int64(index)), 32))
 	rand := sha3.Sum512(seed)
 	reader := bytes.NewReader(rand[:])
 	privateKeyECDSA, err := ecdsa.GenerateKey(secp256k1.S256(), reader)
@@ -220,35 +194,21 @@ func createKeyByIndex(ent *objects.Entity, index int) (*accounts.Key, error) {
 		return nil, err
 	}
 	//namespace is public key
-	ns := uuid.Parse(namespace)
-	id := uuid.NewSHA1(ns, seed)
-	key := &accounts.Key{
-		Id:         id,
+	// ns := uuid.Parse(namespace)
+	// id := uuid.NewSHA1(ns, seed)
+	key := &keystore.Key{
 		Address:    ethcrypto.PubkeyToAddress(privateKeyECDSA.PublicKey),
 		PrivateKey: privateKeyECDSA,
 	}
 	return key, nil
 }
 
-func (eks *entityKeyStore) GenerateNewKey(r io.Reader, s string) (*accounts.Key, error) {
-	return nil, fmt.Errorf("Unsupported operation")
-}
-
-func (eks *entityKeyStore) GetKey(addr common.Address, filename string, auth string) (*accounts.Key, error) {
-	eks.mu.Lock()
-	defer eks.mu.Unlock()
-	k, ok := eks.akeys[addr]
-	if ok {
-		return k, nil
-	}
-	return nil, fmt.Errorf("Addr not found: %x", addr)
-}
-
-func (eks *entityKeyStore) StoreKey(filename string, k *accounts.Key, auth string) error {
-	panic(k)
-	//return fmt.Errorf("Unsupported operation")
-}
-
-func (eks *entityKeyStore) JoinPath(filename string) string {
-	panic("joinpath called")
-}
+// func (eks *entityKeyStore) GetKey(addr common.Address, filename string, auth string) (*keystore.Key, error) {
+// 	eks.mu.Lock()
+// 	defer eks.mu.Unlock()
+// 	k, ok := eks.akeys[addr]
+// 	if ok {
+// 		return k, nil
+// 	}
+// 	return nil, fmt.Errorf("Addr not found: %x", addr)
+// }

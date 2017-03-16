@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/hex"
 	"regexp"
 	"strings"
@@ -17,7 +18,7 @@ func (bw *BW) UnresolveAlias(val []byte) (string, bool, error) {
 	if len(val) > 32 {
 		return "", false, nil
 	}
-	key, iszero, err := bw.BC().UnresolveAlias(bc.SliceToBytes32(val))
+	key, iszero, err := bw.BC().UnresolveAlias(context.TODO(), bc.SliceToBytes32(val))
 	if err != nil || iszero {
 		return "", false, err
 	}
@@ -27,12 +28,12 @@ func (bw *BW) UnresolveAlias(val []byte) (string, bool, error) {
 //Get the host:port SRV record for a drvk. XTAG add this to the bc caching
 //mechanism
 func (bw *BW) LookupDesignatedRouterSRV(drvk []byte) (string, error) {
-	return bw.bchain.GetSRVRecordFor(drvk)
+	return bw.bchain.GetSRVRecordFor(context.TODO(), drvk)
 }
 
 //XTAG add this to the bc caching mechanism
 func (bw *BW) LookupDesignatedRouter(nsvk []byte) ([]byte, error) {
-	return bw.bchain.GetDesignatedRouterFor(nsvk)
+	return bw.bchain.GetDesignatedRouterFor(context.TODO(), nsvk)
 }
 func (bw *BW) LookupDesignatedRouterS(nsvk string) ([]byte, error) {
 	nsvkbin, err := crypto.UnFmtKey(nsvk)
@@ -45,7 +46,7 @@ func (bw *BW) LookupDesignatedRouterS(nsvk string) ([]byte, error) {
 func (bw *BW) ResolveLongAlias(in string) ([]byte, error) {
 	k := bc.Bytes32{}
 	copy(k[:], []byte(in))
-	res, iszero, err := bw.bchain.ResolveAlias(k)
+	res, iszero, err := bw.bchain.ResolveAlias(context.TODO(), k)
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +65,7 @@ func (bw *BW) ResolveShortAlias(hexstr string) ([]byte, error) {
 	}
 	k := bc.Bytes32{}
 	copy(k[32-len(bin):], bin)
-	res, iszero, err := bw.bchain.ResolveAlias(k)
+	res, iszero, err := bw.bchain.ResolveAlias(context.TODO(), k)
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +145,7 @@ func (bw *BW) ResolveKey(name string) ([]byte, error) {
 	}
 	k := bc.Bytes32{}
 	copy(k[:], []byte(name))
-	res, iszero, err := bw.bchain.ResolveAlias(k)
+	res, iszero, err := bw.bchain.ResolveAlias(context.TODO(), k)
 	if err != nil {
 		return nil, err
 	}

@@ -1,7 +1,9 @@
 package api
 
 import (
+	"context"
 	"fmt"
+	"math/big"
 	"runtime"
 	"sync"
 	"time"
@@ -124,18 +126,20 @@ func (bw *BW) dropAllCaches() {
 
 func (bw *BW) startResolutionServices() {
 	bw.rdata.lastblock = bw.BC().CurrentBlock()
-	bw.BC().CallOnNewBlocks(func(b *bc.Block) bool {
-		//Try avoid making the goroutine for a nop
-		bw.rdata.chainchangemu.Lock()
-		lblock := bw.rdata.lastblock
-		bw.rdata.chainchangemu.Unlock()
-		currentBlock := bw.BC().CurrentBlock()
-		if lblock == currentBlock {
-			return false
+	cheader := bw.BC().NewHeads(context.Background())
+	go func() {
+		for _ = range cheader {
+			//Try avoid making the goroutine for a nop
+			bw.rdata.chainchangemu.Lock()
+			lblock := bw.rdata.lastblock
+			bw.rdata.chainchangemu.Unlock()
+			currentBlock := bw.BC().CurrentBlock()
+			if lblock != currentBlock {
+				go bw.checkChainChange()
+			}
 		}
-		go bw.checkChainChange()
-		return false
-	})
+		panic("channel should not end")
+	}()
 	go func() {
 		for {
 			select {
@@ -276,14 +280,17 @@ func (bw *BW) checkChainChange() {
 		bw.rdata.lastDrop = time.Now()
 		go bw.dropAllCaches()
 	}
-
-	logs := bw.BC().FindLogsBetween(int64(bw.rdata.lastblock)-BlockReplay, int64(currentBlock), bc.UFI_Registry_Address,
-		[][]bc.Bytes32{}, false)
+	//TODO maybe fix this
+	logs, err := bw.BC().FindLogsBetweenHeavy(context.Background(), int64(bw.rdata.lastblock)-BlockReplay, int64(currentBlock), common.Address(bc.HexToAddress(bc.UFI_Registry_Address)),
+		[][]common.Hash{})
+	if err != nil {
+		panic(err)
+	}
 	bw.rdata.lastblock = currentBlock
 	for _, log := range logs {
 		switch log.Topics()[0] {
 		case bc.HexToBytes32(bc.EventSig_Registry_NewDOT):
-			ln := common.BytesToBig(log.Data()[32:64]).Int64()
+			ln := new(big.Int).SetBytes(log.Data()[32:64]).Int64()
 			datahex := log.Data()[64 : 64+ln]
 			ro, err := objects.NewDOT(objects.ROAccessDOT, datahex)
 			if err != nil {
@@ -419,7 +426,7 @@ func (bw *BW) resolveEntityFromCache(vk []byte) (bool, *objects.Entity, int) {
 }
 func (bw *BW) resolveEntityFromBC(vk []byte) (ro *objects.Entity, s int, err error) {
 	var si int
-	ro, si, err = bw.BC().ResolveEntity(vk)
+	ro, si, err = bw.BC().ResolveEntity(context.TODO(), vk)
 	s = int(si)
 	if s == StateValid && ro.IsExpired() {
 		s = StateExpired
@@ -446,7 +453,7 @@ func (bw *BW) resolveDOTFromCache(hash []byte) (bool, *objects.DOT, int) {
 }
 func (bw *BW) resolveDOTFromBC(hash []byte) (*objects.DOT, int, error) {
 	var si int
-	ro, si, err := bw.BC().ResolveDOT(hash)
+	ro, si, err := bw.BC().ResolveDOT(context.TODO(), hash)
 	if err != nil {
 		return nil, StateError, err
 	}
@@ -495,7 +502,7 @@ func (bw *BW) cacheDOT(ro *objects.DOT, s int) {
 }
 func (bw *BW) resolveAccessDChainFromBC(hash []byte) (*objects.DChain, int, error) {
 	var si int
-	ro, si, err := bw.BC().ResolveAccessDChain(hash)
+	ro, si, err := bw.BC().ResolveAccessDChain(context.TODO(), hash)
 	if err != nil {
 		return nil, StateError, err
 	}
@@ -577,7 +584,7 @@ func (bw *BW) resolveGrantedDOTsFromCache(vk []byte) (bool, []bc.Bytes32) {
 }
 func (bw *BW) resolveGrantedDOTsFromBC(vk []byte) ([]bc.Bytes32, error) {
 	kvk := bc.SliceToBytes32(vk)
-	dhashes, err := bw.BC().ResolveDOTsFromVK(kvk)
+	dhashes, err := bw.BC().ResolveDOTsFromVK(context.TODO(), kvk)
 	return dhashes, err
 }
 func (bw *BW) cacheGrantedDOTs(vk []byte, dots []bc.Bytes32) {

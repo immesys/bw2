@@ -389,9 +389,9 @@ func NewBlockChain(datadir string, maxLightPeers int, maxLightResources int, isL
 	go func() {
 		for {
 			time.Sleep(10 * time.Second)
-			ni, err := rv.api_pubadmin.NodeInfo()
+			ni, _ := rv.api_pubadmin.NodeInfo()
 			fmt.Printf("us: %v\n", ni.Enode)
-			peers, err := rv.api_pubadmin.Peers()
+			peers, _ := rv.api_pubadmin.Peers()
 			for i, p := range peers {
 				fmt.Printf("peer [%02d] %s %s\n", i, p.Name, p.Network.RemoteAddress)
 			}

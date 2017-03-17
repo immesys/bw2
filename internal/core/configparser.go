@@ -24,8 +24,13 @@ import (
 	"github.com/scalingdata/gcfg"
 )
 
+const cfgversion = 2
+
 // BWConfig is the configuration for a router
 type BWConfig struct {
+	Config struct {
+		Version int
+	}
 	Router struct {
 		Entity  string
 		DB      string
@@ -42,8 +47,13 @@ type BWConfig struct {
 		MaxLightResourcePercentage int
 	}
 	P2P struct {
-		MaxPeers int
-		IAmLight bool
+		MaxPeers          int
+		IAmLight          bool
+		PermittedNetworks string
+	}
+	Mining struct {
+		Threads     int
+		Benificiary string
 	}
 }
 
@@ -63,6 +73,10 @@ func LoadConfig(filename string) *BWConfig {
 			log.Criticalf("Could not load default config file: %v", err)
 			os.Exit(1)
 		}
+	}
+	if rv.Config.Version != cfgversion {
+		log.Criticalf("Your config file version is out of date. Run bw2 makeconf to get a new format config file\n")
+		os.Exit(1)
 	}
 	return rv
 }

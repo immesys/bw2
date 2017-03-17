@@ -19,6 +19,7 @@ package main
 
 import (
 	"fmt"
+	"html/template"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -27,6 +28,66 @@ import (
 	"github.com/immesys/bw2/util"
 	"github.com/urfave/cli"
 )
+
+type configparams struct {
+	BW2Version string
+	Entfile    string
+	DBPath     string
+	Lpath      string
+	ListenOn   string
+	AmLight    string
+}
+
+const configTemplate = `# Generated for {{.BW2Version}}
+[config]
+# this is the version of config file
+Version=2
+
+[router]
+# this entity is used only if you are a DR
+Entity={{.Entfile}}
+DB={{.DBPath}}
+LogPath={{.Lpath}}
+
+[native]
+# this is for DR peering. You can set this to an
+# internal IP if you are not planning on acting
+# as a router
+ListenOn=:4514
+
+[oob]
+# OOB clients must be trusted. It is best to leave this
+# on 127.0.0.1 but if you are in a container you must
+# set it to 0.0.0.0
+ListenOn={{.ListenOn}}
+
+[altruism]
+# this decides how many light clients you will allow
+# to connect to you.
+MaxLightPeers=20
+# this decides what fraction of total resources can
+# be spent on helping light clients
+MaxLightResourcePercentage=50
+
+[p2p]
+# having more peers may increase bandwidth usage
+# but also improve your sync speed
+MaxPeers=20
+# Are we a light client?
+IAmLight={{.AmLight}}
+# What networks will we allow p2p traffic to/from
+PermittedNetworks=0.0.0.0/0,::0/0
+
+[mining]
+# A nonzero value implies we will CPU mine
+Threads=0
+# Where the mining ether goes.
+# The 0x475b312fa8c3cdc6a770694d2929b9dc66fe0f33
+# address is the 410 Reserve Bank used for funding
+# paper experiments. You can check its balance
+# with bw2 i reservebank
+Benificiary=0x475b312fa8c3cdc6a770694d2929b9dc66fe0f33
+`
 
 func makeConf(c *cli.Context) error {
 	fname := "bw2.ini"
@@ -74,29 +135,21 @@ func makeConf(c *cli.Context) error {
 	if c.Bool("listenglobal") {
 		listenon = "0.0.0.0:28589"
 	}
-	file := []string{
-		("# generated for " + util.BW2Version + "\n"),
-		("[router]\n"),
-		("Entity=" + entfile + "\n"),
-		("DB=" + dbpath + "\n"),
-		("LogPath=" + lpath + "\n"),
-		("[native]\n"),
-		("ListenOn=:4514\n"),
-		("[oob]\n"),
-		("ListenOn=" + listenon + "\n"),
-		("[altruism]\n"),
-		("MaxLightPeers=20\n"),
-		("MaxLightResourcePercentage=50\n"),
-		("[p2p]\n"),
-		("MaxPeers=20\n"),
-		("IAmLight=" + amlight + "\n"),
+	tmp, err := template.New("root").Parse(configTemplate)
+	if err != nil {
+		panic(err)
 	}
-	for _, s := range file {
-		_, err := conf.WriteString(s)
-		if err != nil {
-			fmt.Println(err)
-			os.Exit(1)
-		}
+	params := configparams{
+		BW2Version: util.BW2Version,
+		Entfile:    entfile,
+		DBPath:     dbpath,
+		Lpath:      lpath,
+		ListenOn:   listenon,
+		AmLight:    amlight,
+	}
+	err = tmp.ExecuteTemplate(conf, "root", params)
+	if err != nil {
+		panic(err)
 	}
 	err = conf.Close()
 	if err != nil {

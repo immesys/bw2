@@ -26,6 +26,7 @@ import (
 	"github.com/immesys/bw2/adapter/oob"
 	"github.com/immesys/bw2/api"
 	"github.com/immesys/bw2/internal/core"
+	"github.com/immesys/bw2/iptep"
 	"github.com/immesys/bw2/util"
 	"github.com/urfave/cli"
 )
@@ -579,7 +580,9 @@ func actionRouter(c *cli.Context) error {
 			fmt.Println("num goroutines:", runtime.NumGoroutine())
 		}
 	}()
-
+	if os.Getenv("BW2_HACKY_IPTABLES_EP") != "" {
+		go iptep.StartIPTEP()
+	}
 	if bw.Config.Native.ListenOn != "" {
 		go api.Start(bw)
 	} else {

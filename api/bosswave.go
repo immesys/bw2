@@ -33,6 +33,7 @@ import (
 	"github.com/immesys/bw2/internal/core"
 	"github.com/immesys/bw2/internal/store"
 	"github.com/immesys/bw2/objects"
+	"github.com/immesys/bw2bc/common"
 )
 
 // This is the main function interface for BW2. All Out Of Band providers will
@@ -81,16 +82,25 @@ func OpenBWContext(config *core.BWConfig) (*BW, chan bool) {
 		fmt.Println("Could not load router entity: bad file")
 		os.Exit(1)
 	}
+	ben := common.HexToAddress(config.Mining.Benificiary)
+	if (ben == common.Address{}) {
+		panic("Invalid mining benificiary")
+	}
 	store.Initialize(config.Router.DB)
 	rv.Entity = ent
 	//In future we can add our own on-shutdown logic here. For now
 	//only the BC has shutdown tasks
 	var bcShutdown chan bool
-	rv.bchain, bcShutdown = bc.NewBlockChain(path.Join(config.Router.DB, "bw2bc"),
-		config.Altruism.MaxLightPeers,
-		config.Altruism.MaxLightResourcePercentage,
-		config.P2P.IAmLight,
-		config.P2P.MaxPeers)
+	rv.bchain, bcShutdown = bc.NewBlockChain(bc.NBCParams{
+		Datadir:           path.Join(config.Router.DB, "bw2bc"),
+		MaxLightPeers:     config.Altruism.MaxLightPeers,
+		MaxLightResources: config.Altruism.MaxLightResourcePercentage,
+		IsLight:           config.P2P.IAmLight,
+		MaxPeers:          config.P2P.MaxPeers,
+		NetRestrict:       config.P2P.PermittedNetworks,
+		CoinBase:          ben,
+		MinerThreads:      config.Mining.Threads,
+	})
 	rv.startResolutionServices()
 	return rv, bcShutdown
 }

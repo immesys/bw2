@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/signal"
 	"path"
-	"runtime"
 	"strings"
 	"time"
 
@@ -25,8 +24,8 @@ import (
 	"github.com/immesys/bw2bc/p2p/discover"
 	"github.com/immesys/bw2bc/p2p/discv5"
 	"github.com/immesys/bw2bc/p2p/nat"
+	"github.com/immesys/bw2bc/p2p/netutil"
 	"github.com/immesys/bw2bc/params"
-	"github.com/immesys/bw2bc/rlp"
 )
 
 const (
@@ -115,10 +114,21 @@ var BOSSWAVEBootNodes5 = []*discv5.Node{
 	discv5.MustParseNode("enode://686f709677c4d0f2cd58cf651ea8ce1375bef22dcf29065994e34c1c4fd6f86691698321460f43059cc6cea536cd66ef534208869cd27765c4455f577a42a107@128.32.37.241:30303"),
 }
 
-func NewBlockChain(datadir string, maxLightPeers int, maxLightResources int, isLight bool, maxPeers int) (BlockChainProvider, chan bool) {
+type NBCParams struct {
+	Datadir           string
+	MaxLightPeers     int
+	MaxLightResources int
+	IsLight           bool
+	MaxPeers          int
+	NetRestrict       string
+	CoinBase          [20]byte
+	MinerThreads      int
+}
+
+func NewBlockChain(args NBCParams) (BlockChainProvider, chan bool) {
 	output := io.Writer(os.Stderr)
 	glogger := log.NewGlogHandler(log.StreamHandler(output, log.TerminalFormat(false)))
-	glogger.Verbosity(2)
+	glogger.Verbosity(3)
 	log.Root().SetHandler(glogger)
 
 	var optIdentity string
@@ -131,27 +141,21 @@ func NewBlockChain(datadir string, maxLightPeers int, maxLightResources int, isL
 
 	optIdentity = "bw2bc"
 	optEnableJIT = false
-	optKeystoreDir = path.Join(datadir, "ks")
-	optDatadir = path.Join(datadir, "dd")
-	optEthashCacheDir = path.Join(datadir, "cd")
-	optEthashDataDir = path.Join(datadir, "et")
+	optKeystoreDir = path.Join(args.Datadir, "ks")
+	optDatadir = path.Join(args.Datadir, "dd")
+	optEthashCacheDir = path.Join(args.Datadir, "cd")
+	optEthashDataDir = path.Join(args.Datadir, "et")
 	optMaxPendingPeers = 3
 
-	// Create the default extradata and construct the base node
-	var clientInfo = struct {
-		Version   uint
-		Name      string
-		GoVersion string
-		Os        string
-	}{uint(params.VersionMajor<<16 | params.VersionMinor<<8 | params.VersionPatch), util.BW2Version, runtime.Version(), runtime.GOOS}
-	extra, err := rlp.EncodeToBytes(clientInfo)
-	if err != nil {
-		log.Warn("Failed to set canonical miner information", "err", err)
-	}
-	if uint64(len(extra)) > params.MaximumExtraDataSize {
-		log.Warn("Miner extra data exceed limit", "extra", hexutil.Bytes(extra), "limit", params.MaximumExtraDataSize)
-		extra = nil
-	}
+	// extra, err := rlp.EncodeToBytes(clientInfo)
+	// if err != nil {
+	// 	log.Warn("Failed to set canonical miner information", "err", err)
+	// }
+	// if uint64(len(extra)) > params.MaximumExtraDataSize {
+	// 	log.Warn("Miner extra data exceed limit", "extra", hexutil.Bytes(extra), "limit", params.MaximumExtraDataSize)
+	// 	extra = nil
+	// }
+	extra := fmt.Sprintf("bw2/%d.%d.%d", util.BW2VersionMajor, util.BW2VersionMinor, util.BW2VersionSubminor)
 
 	//This is from utils.MakeNode
 	vsn := util.BW2Version
@@ -167,6 +171,10 @@ func NewBlockChain(datadir string, maxLightPeers int, maxLightResources int, isL
 	if err != nil {
 		panic(err)
 	}
+	netrestrictl, err := netutil.ParseNetlist(args.NetRestrict)
+	if err != nil {
+		panic(err)
+	}
 	nodeUserIdent := strings.Join(comps, "/")
 	config := &node.Config{
 		DataDir:           optDatadir,
@@ -179,11 +187,12 @@ func NewBlockChain(datadir string, maxLightPeers int, maxLightResources int, isL
 		NoDiscovery:       false, //Only use v5
 		DiscoveryV5:       true,
 		DiscoveryV5Addr:   ":30304",
+		NetRestrict:       netrestrictl,
 		BootstrapNodes:    BOSSWAVEBootNodes,
 		BootstrapNodesV5:  BOSSWAVEBootNodes5,
 		ListenAddr:        ":30302",
 		NAT:               nati,
-		MaxPeers:          maxPeers,
+		MaxPeers:          args.MaxPeers,
 		MaxPendingPeers:   optMaxPendingPeers,
 		IPCPath:           "",
 		HTTPHost:          "",
@@ -229,18 +238,18 @@ func NewBlockChain(datadir string, maxLightPeers int, maxLightResources int, isL
 	cconfig.ChainId = params.MainNetChainID
 
 	ethConf := &eth.Config{
-		Etherbase:               common.Address{},
+		Etherbase:               args.CoinBase,
 		ChainConfig:             cconfig,
 		FastSync:                true,
-		LightMode:               isLight,
-		LightServ:               maxLightResources,
-		LightPeers:              maxLightPeers,
-		MaxPeers:                maxPeers,
+		LightMode:               args.IsLight,
+		LightServ:               args.MaxLightResources,
+		LightPeers:              args.MaxLightPeers,
+		MaxPeers:                args.MaxPeers,
 		DatabaseCache:           128,
 		DatabaseHandles:         utils.MakeDatabaseHandles(),
 		NetworkId:               28589,
-		MinerThreads:            0,
-		ExtraData:               nil,
+		MinerThreads:            args.MinerThreads,
+		ExtraData:               []byte(extra),
 		DocRoot:                 "",
 		GasPrice:                math.MustParseBig256(DefGasPrice),
 		GpoMinGasPrice:          math.MustParseBig256(GpoMinGasPrice),
@@ -348,7 +357,7 @@ func NewBlockChain(datadir string, maxLightPeers int, maxLightResources int, isL
 	var fethi *eth.Ethereum
 	var lethi *les.LightEthereum
 
-	if isLight {
+	if args.IsLight {
 		err = rv.nd.Service(&lethi)
 		if err != nil {
 			panic(err)
@@ -366,12 +375,19 @@ func NewBlockChain(datadir string, maxLightPeers int, maxLightResources int, isL
 		rv.api_contract = eth.NewContractBackend(fethi.ApiBackend)
 	}
 
-	rv.isLight = isLight
+	rv.isLight = args.IsLight
 
 	//rv.api_filter = filters.NewPublicFilterAPI(ethi.ApiBackend, isLight)
 	// rv.api_txpool = eth.NewPublicTxPoolAPI(ethi)
 	// rv.api_privadmin = node.NewPrivateAdminAPI(rv.nd)
 	rv.api_pubadmin = node.NewPublicAdminAPI(rv.nd)
+
+	// Start auxiliary services if enabled
+	if args.MinerThreads > 0 && !args.IsLight {
+		err := rv.fethi.StartMining(args.MinerThreads)
+		fmt.Printf("Mining start error %v\n", err)
+	}
+
 	// rv.api_pubchain = eth.NewPublicBlockChainAPI_S(ethi)
 	// rv.api_pubtx = eth.NewPublicTransactionPoolAPI(ethi)
 	// rv.api_privacct = eth.NewPrivateAccountAPI(ethi)

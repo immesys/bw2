@@ -26,6 +26,7 @@ import (
 	"github.com/immesys/bw2bc/p2p/nat"
 	"github.com/immesys/bw2bc/p2p/netutil"
 	"github.com/immesys/bw2bc/params"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 const (
@@ -402,12 +403,17 @@ func NewBlockChain(args NBCParams) (BlockChainProvider, chan bool) {
 		rv.shdwn <- true
 	}()
 	go rv.DebugTXPoolLoop()
+	peersg := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "total_peers",
+		Help: "total number of peers",
+	})
 	go func() {
 		for {
 			time.Sleep(10 * time.Second)
 			ni, _ := rv.api_pubadmin.NodeInfo()
 			fmt.Printf("us: %v\n", ni.Enode)
 			peers, _ := rv.api_pubadmin.Peers()
+			peersg.Set(float64(len(peers)))
 			for i, p := range peers {
 				fmt.Printf("peer [%02d] %s %s\n", i, p.Name, p.Network.RemoteAddress)
 			}

@@ -107,6 +107,14 @@ func main() {
 				cli.BoolFlag{
 					Name: "listenglobal",
 				},
+				cli.IntFlag{
+					Name:  "minerthreads",
+					Value: 0,
+				},
+				cli.StringFlag{
+					Name:  "benificiary",
+					Value: "0x475b312fa8c3cdc6a770694d2929b9dc66fe0f33",
+				},
 			},
 		},
 		{

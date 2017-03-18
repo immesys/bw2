@@ -30,12 +30,14 @@ import (
 )
 
 type configparams struct {
-	BW2Version string
-	Entfile    string
-	DBPath     string
-	Lpath      string
-	ListenOn   string
-	AmLight    string
+	BW2Version   string
+	Entfile      string
+	DBPath       string
+	Lpath        string
+	ListenOn     string
+	AmLight      string
+	MinerThreads int
+	Benificiary  string
 }
 
 const configTemplate = `# Generated for {{.BW2Version}}
@@ -80,13 +82,13 @@ PermittedNetworks=0.0.0.0/0,::0/0
 
 [mining]
 # A nonzero value implies we will CPU mine
-Threads=0
+Threads={{.MinerThreads}}
 # Where the mining ether goes.
 # The 0x475b312fa8c3cdc6a770694d2929b9dc66fe0f33
 # address is the 410 Reserve Bank used for funding
 # paper experiments. You can check its balance
 # with bw2 i reservebank
-Benificiary=0x475b312fa8c3cdc6a770694d2929b9dc66fe0f33
+Benificiary={{.Benificiary}}
 `
 
 func makeConf(c *cli.Context) error {
@@ -140,12 +142,14 @@ func makeConf(c *cli.Context) error {
 		panic(err)
 	}
 	params := configparams{
-		BW2Version: util.BW2Version,
-		Entfile:    entfile,
-		DBPath:     dbpath,
-		Lpath:      lpath,
-		ListenOn:   listenon,
-		AmLight:    amlight,
+		BW2Version:   util.BW2Version,
+		Entfile:      entfile,
+		DBPath:       dbpath,
+		Lpath:        lpath,
+		ListenOn:     listenon,
+		AmLight:      amlight,
+		MinerThreads: c.Int("minerthreads"),
+		Benificiary:  c.String("benificiary"),
 	}
 	err = tmp.ExecuteTemplate(conf, "root", params)
 	if err != nil {

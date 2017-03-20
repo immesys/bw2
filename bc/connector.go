@@ -104,13 +104,13 @@ var BOSSWAVEBootNodes = []*discover.Node{
 var BOSSWAVEBootNodes5 = []*discv5.Node{
 	// BOSSWAVE boot nodes
 	//boota ipv4
-	discv5.MustParseNode("enode://6ae73d0621c9c9a6bdac4a332900f1f57ea927f1a03aef5c2ffffa70fca0fada636da3ceac45ee4a2addbdb2bdbe9cb129b3a098d57fa09ff451712ac9c80fc9@54.215.189.111:30301"),
+	discv5.MustParseNode("enode://6ae73d0621c9c9a6bdac4a332900f1f57ea927f1a03aef5c2ffffa70fca0fada636da3ceac45ee4a2addbdb2bdbe9cb129b3a098d57fa09ff451712ac9c80fc9@54.215.189.111:30305"),
 	//boota ipv6
-	discv5.MustParseNode("enode://6ae73d0621c9c9a6bdac4a332900f1f57ea927f1a03aef5c2ffffa70fca0fada636da3ceac45ee4a2addbdb2bdbe9cb129b3a098d57fa09ff451712ac9c80fc9@[2600:1f1c:c2f:a400:2f8f:3b34:1f55:3f7a]:30301"),
+	discv5.MustParseNode("enode://6ae73d0621c9c9a6bdac4a332900f1f57ea927f1a03aef5c2ffffa70fca0fada636da3ceac45ee4a2addbdb2bdbe9cb129b3a098d57fa09ff451712ac9c80fc9@[2600:1f1c:c2f:a400:2f8f:3b34:1f55:3f7a]:30305"),
 	//bootb ipv4
-	discv5.MustParseNode("enode://832c5a520a1079190e9fb57827306ee3882231077a3c543c8cae4c3a386703b3a4e0fd3ca9cb6b00b0d5482efc3e4dd8aafdb7fedb061d74a9d500f230e45873@54.183.54.213:30301"),
+	discv5.MustParseNode("enode://832c5a520a1079190e9fb57827306ee3882231077a3c543c8cae4c3a386703b3a4e0fd3ca9cb6b00b0d5482efc3e4dd8aafdb7fedb061d74a9d500f230e45873@54.183.54.213:30305"),
 	//bootb ipv6
-	discv5.MustParseNode("enode://832c5a520a1079190e9fb57827306ee3882231077a3c543c8cae4c3a386703b3a4e0fd3ca9cb6b00b0d5482efc3e4dd8aafdb7fedb061d74a9d500f230e45873@[2600:1f1c:c2f:a400:5c38:c2f5:7e26:841c]:30301"),
+	discv5.MustParseNode("enode://832c5a520a1079190e9fb57827306ee3882231077a3c543c8cae4c3a386703b3a4e0fd3ca9cb6b00b0d5482efc3e4dd8aafdb7fedb061d74a9d500f230e45873@[2600:1f1c:c2f:a400:5c38:c2f5:7e26:841c]:30305"),
 	// Asylum
 	discv5.MustParseNode("enode://686f709677c4d0f2cd58cf651ea8ce1375bef22dcf29065994e34c1c4fd6f86691698321460f43059cc6cea536cd66ef534208869cd27765c4455f577a42a107@128.32.37.241:30303"),
 }
@@ -407,6 +407,12 @@ func NewBlockChain(args NBCParams) (BlockChainProvider, chan bool) {
 		Name: "total_peers",
 		Help: "total number of peers",
 	})
+	ageg := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "chain_head_timestamp",
+		Help: "timestamp of head",
+	})
+	prometheus.MustRegister(peersg)
+	prometheus.MustRegister(ageg)
 	go func() {
 		for {
 			time.Sleep(10 * time.Second)
@@ -417,6 +423,7 @@ func NewBlockChain(args NBCParams) (BlockChainProvider, chan bool) {
 			for i, p := range peers {
 				fmt.Printf("peer [%02d] %s %s\n", i, p.Name, p.Network.RemoteAddress)
 			}
+			ageg.Set(float64(rv.CurrentHeader().Time.Int64()))
 		}
 	}()
 	return rv, rv.shdwn

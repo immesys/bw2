@@ -100,6 +100,8 @@ func OpenBWContext(config *core.BWConfig) (*BW, chan bool) {
 		NetRestrict:       config.P2P.PermittedNetworks,
 		CoinBase:          ben,
 		MinerThreads:      config.Mining.Threads,
+		ExternalAddr:      config.P2P.ExternalIP,
+		ListenPort:        config.P2P.Port,
 	})
 	rv.startResolutionServices()
 	return rv, bcShutdown

@@ -115,6 +115,22 @@ func main() {
 					Name:  "benificiary",
 					Value: "0x475b312fa8c3cdc6a770694d2929b9dc66fe0f33",
 				},
+				cli.StringFlag{
+					Name:  "externalip",
+					Value: "",
+				},
+				cli.IntFlag{
+					Name:  "listenport",
+					Value: 30302,
+				},
+				cli.IntFlag{
+					Name:  "maxpeers",
+					Value: 20,
+				},
+				cli.IntFlag{
+					Name:  "maxlightpeers",
+					Value: 10,
+				},
 			},
 		},
 		{

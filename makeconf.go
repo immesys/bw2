@@ -30,14 +30,18 @@ import (
 )
 
 type configparams struct {
-	BW2Version   string
-	Entfile      string
-	DBPath       string
-	Lpath        string
-	ListenOn     string
-	AmLight      string
-	MinerThreads int
-	Benificiary  string
+	BW2Version    string
+	Entfile       string
+	DBPath        string
+	Lpath         string
+	ListenOn      string
+	AmLight       string
+	MinerThreads  int
+	Benificiary   string
+	ExternalIP    string
+	ListenPort    int
+	MaxPeers      int
+	MaxLightPeers int
 }
 
 const configTemplate = `# Generated for {{.BW2Version}}
@@ -66,7 +70,7 @@ ListenOn={{.ListenOn}}
 [altruism]
 # this decides how many light clients you will allow
 # to connect to you.
-MaxLightPeers=20
+MaxLightPeers={{.MaxLightPeers}}
 # this decides what fraction of total resources can
 # be spent on helping light clients
 MaxLightResourcePercentage=50
@@ -74,11 +78,21 @@ MaxLightResourcePercentage=50
 [p2p]
 # having more peers may increase bandwidth usage
 # but also improve your sync speed
-MaxPeers=20
+MaxPeers={{.MaxPeers}}
 # Are we a light client?
 IAmLight={{.AmLight}}
 # What networks will we allow p2p traffic to/from
 PermittedNetworks=0.0.0.0/0,::0/0
+# If you are on a NAT or inside a container,
+# set this to improve peering. Without this
+# you can originate connections to other peers,
+# but they cannot originate connections to you.
+ExternalIP={{.ExternalIP}}
+# This is the port to listen on for peering
+# it will need the port above it, so if you are forwarding
+# make sure to forward both of them. Also make sure you
+# forward the same port, don't remap
+Port={{.ListenPort}}
 
 [mining]
 # A nonzero value implies we will CPU mine
@@ -142,14 +156,18 @@ func makeConf(c *cli.Context) error {
 		panic(err)
 	}
 	params := configparams{
-		BW2Version:   util.BW2Version,
-		Entfile:      entfile,
-		DBPath:       dbpath,
-		Lpath:        lpath,
-		ListenOn:     listenon,
-		AmLight:      amlight,
-		MinerThreads: c.Int("minerthreads"),
-		Benificiary:  c.String("benificiary"),
+		BW2Version:    util.BW2Version,
+		Entfile:       entfile,
+		DBPath:        dbpath,
+		Lpath:         lpath,
+		ListenOn:      listenon,
+		AmLight:       amlight,
+		MinerThreads:  c.Int("minerthreads"),
+		Benificiary:   c.String("benificiary"),
+		ExternalIP:    c.String("externalip"),
+		ListenPort:    c.Int("listenport"),
+		MaxPeers:      c.Int("maxpeers"),
+		MaxLightPeers: c.Int("maxlightpeers"),
 	}
 	err = tmp.ExecuteTemplate(conf, "root", params)
 	if err != nil {

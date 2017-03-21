@@ -124,6 +124,8 @@ type NBCParams struct {
 	NetRestrict       string
 	CoinBase          [20]byte
 	MinerThreads      int
+	ExternalAddr      string
+	ListenPort        int
 }
 
 func NewBlockChain(args NBCParams) (BlockChainProvider, chan bool) {
@@ -140,7 +142,7 @@ func NewBlockChain(args NBCParams) (BlockChainProvider, chan bool) {
 	var optEthashCacheDir string
 	var optEthashDataDir string
 
-	optIdentity = "bw2bc"
+	optIdentity = "BW2"
 	optEnableJIT = false
 	optKeystoreDir = path.Join(args.Datadir, "ks")
 	optDatadir = path.Join(args.Datadir, "dd")
@@ -168,7 +170,11 @@ func NewBlockChain(args NBCParams) (BlockChainProvider, chan bool) {
 	if optEnableJIT {
 		comps = append(comps, "JIT")
 	}
-	nati, err := nat.Parse("any")
+	natarg := "any"
+	if args.ExternalAddr != "" {
+		natarg = "extip:" + args.ExternalAddr
+	}
+	nati, err := nat.Parse(natarg)
 	if err != nil {
 		panic(err)
 	}
@@ -182,16 +188,16 @@ func NewBlockChain(args NBCParams) (BlockChainProvider, chan bool) {
 		KeyStoreDir:       optKeystoreDir,
 		UseLightweightKDF: true,
 		PrivateKey:        nil,
-		Name:              "bw2bc",
+		Name:              "BW2",
 		Version:           vsn,
 		UserIdent:         nodeUserIdent,
 		NoDiscovery:       false, //Only use v5
 		DiscoveryV5:       true,
-		DiscoveryV5Addr:   ":30304",
+		DiscoveryV5Addr:   fmt.Sprintf(":%d", args.ListenPort+1),
 		NetRestrict:       netrestrictl,
 		BootstrapNodes:    BOSSWAVEBootNodes,
 		BootstrapNodesV5:  BOSSWAVEBootNodes5,
-		ListenAddr:        ":30302",
+		ListenAddr:        fmt.Sprintf(":%d", args.ListenPort),
 		NAT:               nati,
 		MaxPeers:          args.MaxPeers,
 		MaxPendingPeers:   optMaxPendingPeers,

@@ -50,6 +50,8 @@ type BWConfig struct {
 		MaxPeers          int
 		IAmLight          bool
 		PermittedNetworks string
+		ExternalIP        string
+		Port              int
 	}
 	Mining struct {
 		Threads     int

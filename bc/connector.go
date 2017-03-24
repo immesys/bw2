@@ -429,7 +429,7 @@ func NewBlockChain(args NBCParams) (BlockChainProvider, chan bool) {
 			for i, p := range peers {
 				fmt.Printf("peer [%02d] %s %s\n", i, p.Name, p.Network.RemoteAddress)
 			}
-			ageg.Set(float64(rv.CurrentHeader().Time.Int64()))
+			ageg.Set(float64(rv.CurrentHeader().Time.Int64()) * 1e9)
 		}
 	}()
 	return rv, rv.shdwn

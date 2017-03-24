@@ -127,24 +127,36 @@ func (bw *BW) dropAllCaches() {
 
 var btimeDelta prometheus.Gauge
 var btime prometheus.Gauge
+var rtime prometheus.Gauge
+var bDiff prometheus.Gauge
 var bNumber prometheus.Gauge
 
 func init() {
 	btimeDelta = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "total_btimedelta",
+		Name: "total_block_timedelta",
 		Help: "total block time delta",
 	})
 	btime = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "res_block_time",
 		Help: "chain head in resolution (t)",
 	})
+	rtime = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "res_real_time",
+		Help: "chain head in resolution (t)",
+	})
 	bNumber = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "res_block_number",
 		Help: "chain head in resolution (n)",
 	})
+	bDiff = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "res_block_difficulty",
+		Help: "chain head in resolution (n)",
+	})
 	prometheus.MustRegister(btimeDelta)
 	prometheus.MustRegister(btime)
+	prometheus.MustRegister(rtime)
 	prometheus.MustRegister(bNumber)
+	prometheus.MustRegister(bDiff)
 }
 func (bw *BW) startResolutionServices() {
 	bw.rdata.lastblock = bw.BC().CurrentBlock()
@@ -157,8 +169,9 @@ func (bw *BW) startResolutionServices() {
 			totalDelta += float64(delta)
 			btimeDelta.Set(totalDelta)
 			btime.Set(float64(htime.UnixNano()))
+			rtime.Set(float64(time.Now().UnixNano()))
 			bNumber.Set(float64(hdr.Number.Uint64()))
-
+			bDiff.Set(float64(hdr.Difficulty.Uint64()))
 			//Try avoid making the goroutine for a nop
 			bw.rdata.chainchangemu.Lock()
 			lblock := bw.rdata.lastblock

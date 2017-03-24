@@ -13,6 +13,7 @@ import (
 	"github.com/immesys/bw2/crypto"
 	"github.com/immesys/bw2/objects"
 	"github.com/immesys/bw2bc/common"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // todo
@@ -124,11 +125,29 @@ func (bw *BW) dropAllCaches() {
 	bw.rdata.holdoff = make(map[bc.Bytes32]uint64)
 }
 
+var btimeDelta prometheus.Gauge
+var btimeNumber prometheus.Gauge
+
+func init() {
+	btimeDelta = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "total_btimedelta",
+		Help: "total block time delta",
+	})
+	btimeNumber = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "res_block_number",
+		Help: "chain head in resolution",
+	})
+	prometheus.MustRegister(btimeDelta)
+	prometheus.MustRegister(btimeNumber)
+}
 func (bw *BW) startResolutionServices() {
 	bw.rdata.lastblock = bw.BC().CurrentBlock()
 	cheader := bw.BC().NewHeads(context.Background())
 	go func() {
-		for _ = range cheader {
+		for hdr := range cheader {
+			htime := time.Unix(hdr.Time.Int64(), 0)
+			delta := time.Now().Sub(htime)
+			btimeDelta.Set(float64(delta))
 			//Try avoid making the goroutine for a nop
 			bw.rdata.chainchangemu.Lock()
 			lblock := bw.rdata.lastblock

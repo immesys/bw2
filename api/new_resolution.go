@@ -126,28 +126,39 @@ func (bw *BW) dropAllCaches() {
 }
 
 var btimeDelta prometheus.Gauge
-var btimeNumber prometheus.Gauge
+var btime prometheus.Gauge
+var bNumber prometheus.Gauge
 
 func init() {
 	btimeDelta = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "total_btimedelta",
 		Help: "total block time delta",
 	})
-	btimeNumber = prometheus.NewGauge(prometheus.GaugeOpts{
+	btime = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "res_block_time",
+		Help: "chain head in resolution (t)",
+	})
+	bNumber = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "res_block_number",
-		Help: "chain head in resolution",
+		Help: "chain head in resolution (n)",
 	})
 	prometheus.MustRegister(btimeDelta)
-	prometheus.MustRegister(btimeNumber)
+	prometheus.MustRegister(btime)
+	prometheus.MustRegister(bNumber)
 }
 func (bw *BW) startResolutionServices() {
 	bw.rdata.lastblock = bw.BC().CurrentBlock()
 	cheader := bw.BC().NewHeads(context.Background())
+	totalDelta := 0.0
 	go func() {
 		for hdr := range cheader {
 			htime := time.Unix(hdr.Time.Int64(), 0)
 			delta := time.Now().Sub(htime)
-			btimeDelta.Set(float64(delta))
+			totalDelta += float64(delta)
+			btimeDelta.Set(totalDelta)
+			btime.Set(float64(htime.UnixNano()))
+			bNumber.Set(float64(hdr.Number.Uint64()))
+
 			//Try avoid making the goroutine for a nop
 			bw.rdata.chainchangemu.Lock()
 			lblock := bw.rdata.lastblock

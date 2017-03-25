@@ -164,8 +164,9 @@ func (bw *BW) startResolutionServices() {
 	totalDelta := 0.0
 	go func() {
 		for hdr := range cheader {
+			then := time.Now()
 			htime := time.Unix(hdr.Time.Int64(), 0)
-			delta := time.Now().Sub(htime)
+			delta := then.Sub(htime)
 			totalDelta += float64(delta)
 			btimeDelta.Set(totalDelta)
 			btime.Set(float64(htime.UnixNano()))
@@ -180,6 +181,7 @@ func (bw *BW) startResolutionServices() {
 			if lblock != currentBlock {
 				go bw.checkChainChange()
 			}
+			fmt.Printf("Processed new header in %s\n", time.Now().Sub(then))
 		}
 		panic("channel should not end")
 	}()

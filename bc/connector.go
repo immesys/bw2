@@ -252,7 +252,7 @@ func NewBlockChain(args NBCParams) (BlockChainProvider, chan bool) {
 		LightServ:               args.MaxLightResources,
 		LightPeers:              args.MaxLightPeers,
 		MaxPeers:                args.MaxPeers,
-		DatabaseCache:           128,
+		DatabaseCache:           DefaultDBCache,
 		DatabaseHandles:         utils.MakeDatabaseHandles(),
 		NetworkId:               28589,
 		MinerThreads:            args.MinerThreads,

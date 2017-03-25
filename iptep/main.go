@@ -50,7 +50,7 @@ func StartIPTEP() {
 	go func() {
 		for {
 			doround()
-			time.Sleep(1 * time.Second)
+			time.Sleep(3 * time.Second)
 		}
 	}()
 	http.Handle("/metrics", promhttp.Handler())

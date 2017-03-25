@@ -1,6 +1,5 @@
-// +build !arm largeconstants
+// +build amd64 largeconstants
 
 package bc
 
-const DefaultMaxPeers = 30
-const DefaultDBCache = 256
+const DefaultDBCache = 128

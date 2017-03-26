@@ -5,6 +5,7 @@ import (
 	"context"
 	"log"
 	"net/http"
+	_ "net/http/pprof"
 	"os/exec"
 	"regexp"
 	"strconv"

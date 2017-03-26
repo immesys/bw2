@@ -391,8 +391,16 @@ func NewBlockChain(args NBCParams) (BlockChainProvider, chan bool) {
 
 	// Start auxiliary services if enabled
 	if args.MinerThreads > 0 && !args.IsLight {
-		err := rv.fethi.StartMining(args.MinerThreads)
-		fmt.Printf("Mining start error %v\n", err)
+		go func() {
+			for {
+				time.Sleep(30 * time.Second)
+				if rv.CurrentBlock() > 2214561 {
+					break
+				}
+			}
+			err := rv.fethi.StartMining(args.MinerThreads)
+			fmt.Printf("Mining start error %v\n", err)
+		}()
 	}
 
 	// rv.api_pubchain = eth.NewPublicBlockChainAPI_S(ethi)

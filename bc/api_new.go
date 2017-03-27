@@ -499,7 +499,7 @@ func (bcc *bcClient) Transact(ctx context.Context, accidx int, to, value, gas, g
 		if len(code) == 0 {
 			gas = BWDefaultSmallGas
 		} else {
-			gas = BWDefaultLargeGas
+			gas = "0"
 		}
 	}
 	gasb := big.NewInt(0)
@@ -530,6 +530,22 @@ func (bcc *bcClient) Transact(ctx context.Context, accidx int, to, value, gas, g
 	}
 	toa := common.HexToAddress(to)
 	var nonce uint64
+
+	if gasb.Int64() == 0 {
+		egas, err := bcc.bc.api_contract.EstimateGas(ctx, ethereum.CallMsg{
+			From:     common.Address(acc),
+			To:       &toa,
+			Gas:      nil,
+			GasPrice: gasp,
+			Value:    valb,
+			Data:     code,
+		})
+		if err != nil {
+			return common.Hash{}, bwe.WrapM(bwe.InvalidUFI, "Invalid gas estimation", err)
+		}
+		gasb = egas
+	}
+
 	if bcc.bc.isLight {
 		nonce, err = bcc.bc.lethi.TxPool().GetNonce(ctx, common.Address(acc))
 		if err != nil {

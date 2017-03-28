@@ -131,6 +131,9 @@ var rtime prometheus.Gauge
 var bDiff prometheus.Gauge
 var bNumber prometheus.Gauge
 
+var gUsed prometheus.Gauge
+var gLimit prometheus.Gauge
+
 func init() {
 	btimeDelta = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "total_block_timedelta",
@@ -152,11 +155,22 @@ func init() {
 		Name: "res_block_difficulty",
 		Help: "chain head in resolution (n)",
 	})
+	gUsed = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "res_gas_used",
+		Help: "gas used in block",
+	})
+	gLimit = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "res_gas_limit",
+		Help: "gas limit in block",
+	})
 	prometheus.MustRegister(btimeDelta)
 	prometheus.MustRegister(btime)
 	prometheus.MustRegister(rtime)
 	prometheus.MustRegister(bNumber)
 	prometheus.MustRegister(bDiff)
+	prometheus.MustRegister(gUsed)
+	prometheus.MustRegister(gLimit)
+
 }
 func (bw *BW) startResolutionServices() {
 	bw.rdata.lastblock = bw.BC().CurrentBlock()
@@ -173,6 +187,8 @@ func (bw *BW) startResolutionServices() {
 			rtime.Set(float64(time.Now().UnixNano()))
 			bNumber.Set(float64(hdr.Number.Uint64()))
 			bDiff.Set(float64(hdr.Difficulty.Uint64()))
+			gUsed.Set(float64(hdr.GasUsed.Uint64()))
+			gLimit.Set(float64(hdr.GasLimit.Uint64()))
 			//Try avoid making the goroutine for a nop
 			bw.rdata.chainchangemu.Lock()
 			lblock := bw.rdata.lastblock

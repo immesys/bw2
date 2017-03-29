@@ -25,6 +25,7 @@ void bw_generate_keypair(unsigned char *private, unsigned char *public)
     ed25519_publickey(private, public);
 }
 
+
 /*
 	Generates a (extsk[0..31]) and aExt (extsk[32..63])
 */
@@ -35,6 +36,26 @@ ed25519_extsk(hash_512bits extsk, const ed25519_secret_key sk) {
 	extsk[0] &= 248;
 	extsk[31] &= 127;
 	extsk[31] |= 64;
+}
+
+void bw_extsk(unsigned char* extsk, unsigned char *secret){
+  ed25519_extsk(extsk, secret);
+}
+
+void bw_ed2curvePK(unsigned char* cpub, unsigned char *edpub){
+  bignum25519 ALIGN(16) yplusz, zminusy;
+
+  ge25519 ALIGN(16) p;
+
+  ge25519_unpack_negative_vartime(&p, edpub);
+
+  /* u = (y + z) / (z - y) */
+  curve25519_add(yplusz, p.y, p.z);
+  curve25519_sub(zminusy, p.z, p.y);
+  curve25519_recip(zminusy, zminusy);
+  curve25519_mul(yplusz, yplusz, zminusy);
+  curve25519_contract(cpub, yplusz);
+
 }
 
 static void

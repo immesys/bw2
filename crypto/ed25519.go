@@ -147,6 +147,27 @@ func VKforSK(sk []byte) []byte {
 	return vk
 }
 
+func ConvertEd25519SKtoCurve25519SK(sk []byte) []byte {
+	rv := make([]byte, 64)
+	C.bw_extsk((*C.uchar)(unsafe.Pointer(&rv[0])), (*C.uchar)(unsafe.Pointer(&sk[0])))
+	return rv[:32]
+}
+func ConvertEd25519VKtoCurve25519PK(vk []byte) []byte {
+	rv := make([]byte, 32)
+	C.bw_ed2curvePK((*C.uchar)(unsafe.Pointer(&rv[0])), (*C.uchar)(unsafe.Pointer(&vk[0])))
+	return rv
+}
+func Curve25519PrivToCurve25519Pub
+// func SKExt2(sk []byte) []byte {
+// 	rv := make([]byte, 64)
+// 	C.bw_extsk2((*C.uchar)(unsafe.Pointer(&rv[0])), (*C.uchar)(unsafe.Pointer(&sk[0])))
+// 	return rv
+// }
+func SMMB(sk []byte) []byte {
+	rv := make([]byte, 32)
+	C.curved25519_scalarmult_basepoint((*C.uchar)(unsafe.Pointer(&rv[0])), (*C.uchar)(unsafe.Pointer(&sk[0])))
+	return rv
+}
 func GenerateKeypair() (sk []byte, vk []byte) {
 	sk = make([]byte, 32)
 	vk = make([]byte, 32)

@@ -1112,9 +1112,9 @@ func actionInspect(c *cli.Context) error {
 	}
 	if qr {
 		// Generate a QR code for each entity with an available signing key
-		for _, qrd := range(toqrg) {
+		for _, qrd := range toqrg {
 			roi := qrd.ro
-			if (roi.GetRONum() == objects.ROEntity) {
+			if roi.GetRONum() == objects.ROEntity {
 				entity := roi.(*objects.Entity)
 				signingblob := entity.GetSigningBlob()
 				if signingblob != nil {

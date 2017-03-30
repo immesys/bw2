@@ -30,9 +30,12 @@ import (
 	"crypto/sha512"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"hash"
 	"sync"
 	"unsafe"
+
+	"golang.org/x/crypto/curve25519"
 )
 
 //These functions are used on windows by the C so we don't have to link to openSSL
@@ -157,7 +160,26 @@ func ConvertEd25519VKtoCurve25519PK(vk []byte) []byte {
 	C.bw_ed2curvePK((*C.uchar)(unsafe.Pointer(&rv[0])), (*C.uchar)(unsafe.Pointer(&vk[0])))
 	return rv
 }
-func Curve25519PrivToCurve25519Pub
+func Curve25519PrivToCurve25519Pub(priv []byte) []byte {
+	rv := make([]byte, 32)
+	C.curved25519_scalarmult_basepoint((*C.uchar)(unsafe.Pointer(&rv[0])), (*C.uchar)(unsafe.Pointer(&priv[0])))
+	return rv
+}
+
+func Ed25519CalcSecret(ourSK []byte, theirVK []byte) []byte {
+	if len(ourSK) != 32 || len(theirVK) != 32 {
+		fmt.Printf("sk is %d vk is %d\n", len(ourSK), len(theirVK))
+		panic("bad sk/vk len")
+	}
+	priva := [64]byte{}
+	C.bw_extsk((*C.uchar)(unsafe.Pointer(&priva[0])), (*C.uchar)(unsafe.Pointer(&ourSK[0])))
+	puba := [32]byte{}
+	C.bw_ed2curvePK((*C.uchar)(unsafe.Pointer(&puba[0])), (*C.uchar)(unsafe.Pointer(&theirVK[0])))
+	rv := [32]byte{}
+	curve25519.ScalarMult(&rv, (*[32]byte)(unsafe.Pointer(&priva)), &puba)
+	return rv[:]
+}
+
 // func SKExt2(sk []byte) []byte {
 // 	rv := make([]byte, 64)
 // 	C.bw_extsk2((*C.uchar)(unsafe.Pointer(&rv[0])), (*C.uchar)(unsafe.Pointer(&sk[0])))

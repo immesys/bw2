@@ -55,7 +55,6 @@ void bw_ed2curvePK(unsigned char* cpub, unsigned char *edpub){
   curve25519_recip(zminusy, zminusy);
   curve25519_mul(yplusz, yplusz, zminusy);
   curve25519_contract(cpub, yplusz);
-
 }
 
 static void

@@ -131,7 +131,7 @@ type NBCParams struct {
 func NewBlockChain(args NBCParams) (BlockChainProvider, chan bool) {
 	output := io.Writer(os.Stderr)
 	glogger := log.NewGlogHandler(log.StreamHandler(output, log.TerminalFormat(false)))
-	glogger.Verbosity(5)
+	glogger.Verbosity(3)
 	log.Root().SetHandler(glogger)
 
 	var optIdentity string

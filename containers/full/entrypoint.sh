@@ -83,7 +83,7 @@ then
   : ${MINERTHREADS:=0}
   : ${MINERBENIFICIARY:=0xe244fc97fbc0819a508cb02a7bbd9495a07eedf4}
   : ${MAXPEERS:=20}
-  : ${MAXLIGHTPEERS:=10}
+  : ${MAXLIGHTPEERS:=0}
   bw2 makeconf --maxpeers $MAXPEERS --maxlightpeers $MAXLIGHTPEERS  --externalip "${EXTERNALIP}" --listenport "${LISTENPORT}" --listenglobal --minerthreads=${MINERTHREADS} --benificiary=${MINERBENIFICIARY} ${BW2_MAKECONF_OPTS}
 fi
 cat bw2.ini

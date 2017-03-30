@@ -1,0 +1,9 @@
+Language: Cpp
+BasedOnStyle: LLVM
+
+ColumnLimit: 0
+UseTab: ForIndentation
+IndentWidth: 8
+
+BreakBeforeBraces: Linux
+ReflowComments: false

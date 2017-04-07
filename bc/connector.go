@@ -283,7 +283,7 @@ func NewBlockChain(args NBCParams) (BlockChainProvider, chan bool) {
 	} else {
 		if err := stack.Register(func(ctx *node.ServiceContext) (node.Service, error) {
 			fullNode, err := eth.New(ctx, ethConf)
-			if fullNode != nil && ethConf.LightServ > 0 {
+			if fullNode != nil && ethConf.LightServ > 0 && args.MaxLightPeers > 0 {
 				ls, _ := les.NewLesServer(fullNode, ethConf)
 				fullNode.AddLesServer(ls)
 			}

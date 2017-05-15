@@ -74,12 +74,15 @@ func NewSnode() *subTreeNode {
 
 //This identifies an individual client subscription
 type subscription struct {
-	subid   UniqueMessageID
-	handler func(m *Message, s UniqueMessageID)
-	client  *Client
-	tap     bool
-	uri     string
-	created time.Time
+	subid     UniqueMessageID
+	handler   func(m *Message)
+	client    *Client
+	tap       bool
+	uri       string
+	created   time.Time
+	mqueue    chan *Message
+	ctx       context.Context
+	ctxcancel func()
 }
 
 type Terminus struct {
@@ -280,7 +283,12 @@ func (cl *Client) Publish(m *Message) {
 		if !sub.tap && m.Consumers != 0 && count >= m.Consumers {
 			continue //We hit limit
 		}
-		go sub.handler(m, sub.subid)
+		select {
+		case sub.mqueue <- m:
+		default:
+			fmt.Printf("UNSUBSCRIBING %v::%s QUEUE FULL\n", sub.client.name, sub.uri)
+			sub.ctxcancel()
+		}
 		count++
 	}
 }
@@ -288,18 +296,34 @@ func (cl *Client) Publish(m *Message) {
 //Subscribe should bind the given handler with the given topic
 //returns the identifier used for Unsubscribe
 //func (cl *Client) Subscribe(topic string, tap bool, meta interface{}) (uint32, bool) {
-func (cl *Client) Subscribe(m *Message, cb func(m *Message, id UniqueMessageID)) UniqueMessageID {
+func (cl *Client) Subscribe(ctx context.Context, m *Message, cb func(m *Message)) UniqueMessageID {
+	cctx, cancel := context.WithCancel(ctx)
 	newsub := subscription{subid: m.UMid,
-		tap:     m.Type == TypeTap,
-		client:  cl,
-		handler: cb,
-		created: time.Now(),
-		uri:     m.Topic}
+		tap:       m.Type == TypeTap,
+		client:    cl,
+		handler:   cb,
+		mqueue:    make(chan *Message, 4096),
+		created:   time.Now(),
+		uri:       m.Topic,
+		ctx:       cctx,
+		ctxcancel: cancel}
 
+	go func() {
+		for {
+			select {
+			case mm := <-newsub.mqueue:
+				newsub.handler(mm)
+			case <-newsub.ctx.Done():
+				newsub.client.Unsubscribe(newsub.subid)
+				newsub.handler(nil)
+			}
+		}
+	}()
 	//Add to the sub tree
 	subid := cl.tm.AddSub(m.Topic, &newsub)
 	//Record it for destroy
 	cl.subs = append(cl.subs, subid)
+
 	return subid
 }
 
@@ -373,7 +397,6 @@ func (cl *Client) Unsubscribe(subid UniqueMessageID) error {
 	node, ok := cl.tm.rstree[subid]
 	if !ok {
 		cl.tm.rstree_lock.Unlock()
-		panic("got not exists")
 		return bwe.M(bwe.UnsubscribeError, "Subscription does not exist (terminus)")
 	}
 	toTerm := []*subscription{}
@@ -393,7 +416,7 @@ func (cl *Client) Unsubscribe(subid UniqueMessageID) error {
 	// that is probably ok
 	cl.tm.rstree_lock.Unlock()
 	for _, tt := range toTerm {
-		tt.handler(nil, tt.subid)
+		tt.ctxcancel()
 	}
 	return nil
 }

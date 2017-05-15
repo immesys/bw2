@@ -242,7 +242,7 @@ func handleSession(cl *BosswaveClient, conn net.Conn) {
 					}
 
 				case core.TypeSubscribe, core.TypeTap:
-					subid := cl.cl.Subscribe(msg, func(m *core.Message, subid core.UniqueMessageID) {
+					subid := cl.cl.Subscribe(cl.ctx, msg, func(m *core.Message) {
 						if m == nil {
 							rv := nativeFrame{
 								seqno: nf.seqno,

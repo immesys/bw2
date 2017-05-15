@@ -157,6 +157,7 @@ func init() {
 	prometheus.MustRegister(rtime)
 	prometheus.MustRegister(bNumber)
 	prometheus.MustRegister(bDiff)
+
 }
 func (bw *BW) startResolutionServices() {
 	bw.rdata.lastblock = bw.BC().CurrentBlock()
@@ -613,9 +614,9 @@ func (bw *BW) cacheBuiltChains(k CacheKey, ro []*objects.DChain) {
 			return
 		}
 	}
-    if len(ro) == 0 {
-       return
-    }
+	if len(ro) == 0 {
+		return
+	}
 	nsmap, ok := bw.rdata.chaincache[k.nsvk]
 	if !ok {
 		nsmap = make(map[CacheKey][]*objects.DChain)

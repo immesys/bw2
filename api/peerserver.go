@@ -155,12 +155,14 @@ func handleSession(cl *BosswaveClient, conn net.Conn) {
 		if err != nil {
 			log.Info("peer write error: ", err.Error())
 			conn.Close()
+			cl.ctxCancel()
 			return
 		}
 		_, err = conn.Write(f.body)
 		if err != nil {
 			log.Info("peer write error: ", err.Error())
 			conn.Close()
+			cl.ctxCancel()
 		}
 	}
 	errframe := func(seqno uint64, code int, msg string) {
@@ -233,7 +235,6 @@ func handleSession(cl *BosswaveClient, conn net.Conn) {
 					errframe(nf.seqno, bwe.Okay, "")
 					cl.cl.Persist(msg)
 				case core.TypeUnsubscribe:
-
 					err := cl.cl.Unsubscribe(msg.UnsubUMid)
 					if err == nil {
 						errframe(nf.seqno, bwe.Okay, "")

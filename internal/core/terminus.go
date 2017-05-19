@@ -298,7 +298,7 @@ func (cl *Client) Publish(m *Message) {
 //func (cl *Client) Subscribe(topic string, tap bool, meta interface{}) (uint32, bool) {
 func (cl *Client) Subscribe(ctx context.Context, m *Message, cb func(m *Message)) UniqueMessageID {
 	cctx, cancel := context.WithCancel(ctx)
-	newsub := subscription{subid: m.UMid,
+	newsub := &subscription{subid: m.UMid,
 		tap:       m.Type == TypeTap,
 		client:    cl,
 		handler:   cb,
@@ -311,16 +311,22 @@ func (cl *Client) Subscribe(ctx context.Context, m *Message, cb func(m *Message)
 	go func() {
 		for {
 			select {
-			case mm := <-newsub.mqueue:
-				newsub.handler(mm)
 			case <-newsub.ctx.Done():
 				newsub.client.Unsubscribe(newsub.subid)
 				newsub.handler(nil)
+				return
+			case mm := <-newsub.mqueue:
+				if newsub.ctx.Err() != nil {
+					newsub.client.Unsubscribe(newsub.subid)
+					newsub.handler(nil)
+					return
+				}
+				newsub.handler(mm)
 			}
 		}
 	}()
 	//Add to the sub tree
-	subid := cl.tm.AddSub(m.Topic, &newsub)
+	subid := cl.tm.AddSub(m.Topic, newsub)
 	//Record it for destroy
 	cl.subs = append(cl.subs, subid)
 

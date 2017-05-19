@@ -151,6 +151,7 @@ func handleSession(cl *BosswaveClient, conn net.Conn) {
 		tmphdr[16] = byte(f.cmd)
 		rmutex.Lock()
 		defer rmutex.Unlock()
+		conn.SetWriteDeadline(time.Now().Add(60 * time.Second))
 		_, err := conn.Write(tmphdr)
 		if err != nil {
 			log.Info("peer write error: ", err.Error())

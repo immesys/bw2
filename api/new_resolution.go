@@ -129,7 +129,7 @@ func (bw *BW) dropAllCaches() {
 func init() {
 
 	go func() {
-		http.ListenAndServe("localhost:6060", nil)
+		http.ListenAndServe("localhost:6061", nil)
 	}()
 
 }

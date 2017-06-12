@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"net/http"
 	_ "net/http/pprof"
+	"os"
 	"runtime"
 	"sync"
 	"time"
@@ -127,11 +128,11 @@ func (bw *BW) dropAllCaches() {
 }
 
 func init() {
-
-	go func() {
-		http.ListenAndServe("localhost:6061", nil)
-	}()
-
+	if os.Getenv("ENABLE_PROFILING") != "" {
+		go func() {
+			http.ListenAndServe("localhost:6061", nil)
+		}()
+	}
 }
 func (bw *BW) startResolutionServices() {
 	bw.rdata.lastblock = bw.BC().CurrentBlock()

@@ -78,11 +78,13 @@ func (bc *blockChain) GasPrice(ctx context.Context) (*big.Int, error) {
 func (bc *blockChain) GetAddrBalance(ctx context.Context, addr string) (decimal string, human string, err error) {
 	var rv *big.Int
 	if bc.isLight {
-		sdb := bc.lethi.BlockChain().State()
-		rv, err = sdb.GetBalance(ctx, common.HexToAddress(addr))
-		if err != nil {
-			return "", "", err
-		}
+		panic("we need to update this")
+		/*
+			sdb := bc.lethi.BlockChain().State()
+			rv, err = sdb.GetBalance(ctx, common.HexToAddress(addr))
+			if err != nil {
+				return "", "", err
+			}*/
 	} else {
 		sdb, err := bc.fethi.BlockChain().State()
 		if err != nil {

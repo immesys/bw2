@@ -970,7 +970,7 @@ func doChainOp(cl *bw2bind.BW2Client, done chan string) {
 }
 
 type qrdata struct {
-	ro objects.RoutingObject
+	ro   objects.RoutingObject
 	name string
 }
 

@@ -16,16 +16,19 @@ import (
 	"github.com/immesys/bw2bc/common"
 	"github.com/immesys/bw2bc/common/hexutil"
 	"github.com/immesys/bw2bc/common/math"
+	"github.com/immesys/bw2bc/core"
 	"github.com/immesys/bw2bc/eth"
+	"github.com/immesys/bw2bc/eth/downloader"
 	"github.com/immesys/bw2bc/eth/filters"
+	"github.com/immesys/bw2bc/eth/gasprice"
 	"github.com/immesys/bw2bc/les"
 	"github.com/immesys/bw2bc/log"
 	"github.com/immesys/bw2bc/node"
+	"github.com/immesys/bw2bc/p2p"
 	"github.com/immesys/bw2bc/p2p/discover"
 	"github.com/immesys/bw2bc/p2p/discv5"
 	"github.com/immesys/bw2bc/p2p/nat"
 	"github.com/immesys/bw2bc/p2p/netutil"
-	"github.com/immesys/bw2bc/params"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -183,32 +186,35 @@ func NewBlockChain(args NBCParams) (BlockChainProvider, chan bool) {
 		panic(err)
 	}
 	nodeUserIdent := strings.Join(comps, "/")
+	p2p := p2p.Config{
+		PrivateKey:       nil,
+		NoDiscovery:      false, //Only use v5
+		DiscoveryV5:      true,
+		DiscoveryV5Addr:  fmt.Sprintf(":%d", args.ListenPort+1),
+		NetRestrict:      netrestrictl,
+		BootstrapNodes:   BOSSWAVEBootNodes,
+		BootstrapNodesV5: BOSSWAVEBootNodes5,
+		ListenAddr:       fmt.Sprintf(":%d", args.ListenPort),
+		NAT:              nati,
+		MaxPeers:         args.MaxPeers,
+		MaxPendingPeers:  optMaxPendingPeers,
+	}
 	config := &node.Config{
 		DataDir:           optDatadir,
 		KeyStoreDir:       optKeystoreDir,
 		UseLightweightKDF: true,
-		PrivateKey:        nil,
 		Name:              "BW2",
 		Version:           vsn,
 		UserIdent:         nodeUserIdent,
-		NoDiscovery:       false, //Only use v5
-		DiscoveryV5:       true,
-		DiscoveryV5Addr:   fmt.Sprintf(":%d", args.ListenPort+1),
-		NetRestrict:       netrestrictl,
-		BootstrapNodes:    BOSSWAVEBootNodes,
-		BootstrapNodesV5:  BOSSWAVEBootNodes5,
-		ListenAddr:        fmt.Sprintf(":%d", args.ListenPort),
-		NAT:               nati,
-		MaxPeers:          args.MaxPeers,
-		MaxPendingPeers:   optMaxPendingPeers,
+		P2P:               p2p,
 		IPCPath:           "",
 		HTTPHost:          "",
 		HTTPPort:          0,
-		HTTPCors:          "",
+		HTTPCors:          []string{},
 		HTTPModules:       []string{},
 		WSHost:            "",
 		WSPort:            0,
-		WSOrigins:         "",
+		WSOrigins:         []string{},
 		WSModules:         []string{},
 	}
 	stack, err := node.New(config)
@@ -227,45 +233,48 @@ func NewBlockChain(args NBCParams) (BlockChainProvider, chan bool) {
 	am := accounts.NewManager(backends...)
 	stack.SetAccMan(am)
 
-	cconfig := new(params.ChainConfig)
+	//cconfig := new(params.ChainConfig)
 
-	// Homestead fork
-	cconfig.HomesteadBlock = params.MainNetHomesteadBlock
-	// DAO fork
-	cconfig.DAOForkBlock = params.MainNetDAOForkBlock
-	cconfig.DAOForkSupport = true
+	/*
+		// Homestead fork
+		cconfig.HomesteadBlock = params.MainNetHomesteadBlock
+		// DAO fork
+		cconfig.DAOForkBlock = params.MainNetDAOForkBlock
+		cconfig.DAOForkSupport = true
 
-	// DoS reprice fork
-	cconfig.EIP150Block = params.MainNetHomesteadGasRepriceBlock
-	cconfig.EIP150Hash = params.MainNetHomesteadGasRepriceHash
+		// DoS reprice fork
+		cconfig.EIP150Block = params.MainNetHomesteadGasRepriceBlock
+		cconfig.EIP150Hash = params.MainNetHomesteadGasRepriceHash
 
-	// DoS state cleanup fork
-	cconfig.EIP155Block = params.MainNetSpuriousDragon
-	cconfig.EIP158Block = params.MainNetSpuriousDragon
-	cconfig.ChainId = params.MainNetChainID
+		// DoS state cleanup fork
+		cconfig.EIP155Block = params.MainNetSpuriousDragon
+		cconfig.EIP158Block = params.MainNetSpuriousDragon
+		cconfig.ChainId = params.MainNetChainID
+	*/
 
 	ethConf := &eth.Config{
-		Etherbase:               args.CoinBase,
-		ChainConfig:             cconfig,
-		FastSync:                true,
-		LightMode:               args.IsLight,
-		LightServ:               args.MaxLightResources,
-		LightPeers:              args.MaxLightPeers,
-		MaxPeers:                args.MaxPeers,
-		DatabaseCache:           DefaultDBCache,
-		DatabaseHandles:         utils.MakeDatabaseHandles(),
-		NetworkId:               28589,
-		MinerThreads:            args.MinerThreads,
-		ExtraData:               []byte(extra),
-		DocRoot:                 "",
-		GasPrice:                math.MustParseBig256(DefGasPrice),
-		GpoMinGasPrice:          math.MustParseBig256(GpoMinGasPrice),
-		GpoMaxGasPrice:          math.MustParseBig256(GpoMaxGasPrice),
-		GpoFullBlockRatio:       80,
-		GpobaseStepDown:         10,
-		GpobaseStepUp:           100,
-		GpobaseCorrectionFactor: 110,
-		SolcPath:                "",
+		Genesis:       core.DefaultGenesisBlock(),
+		Etherbase:     args.CoinBase,
+		SyncMode:      downloader.FastSync,
+		LightServ:     args.MaxLightResources,
+		LightPeers:    args.MaxLightPeers,
+		MaxPeers:      args.MaxPeers,
+		DatabaseCache: DefaultDBCache,
+		NetworkId:     28589,
+		MinerThreads:  args.MinerThreads,
+		ExtraData:     []byte(extra),
+		DocRoot:       "",
+		GPO: gasprice.Config{
+			Percentile: 50,
+			Blocks:     10,
+		},
+		GasPrice: math.MustParseBig256(DefGasPrice),
+		// GpoMinGasPrice:          math.MustParseBig256(GpoMinGasPrice),
+		// GpoMaxGasPrice:          math.MustParseBig256(GpoMaxGasPrice),
+		// GpoFullBlockRatio:       80,
+		// GpobaseStepDown:         10,
+		// GpobaseStepUp:           100,
+		// GpobaseCorrectionFactor: 110,
 		EthashCacheDir:          optEthashCacheDir,
 		EthashCachesInMem:       1,
 		EthashCachesOnDisk:      2,
@@ -274,7 +283,7 @@ func NewBlockChain(args NBCParams) (BlockChainProvider, chan bool) {
 		EthashDatasetsOnDisk:    2,
 		EnablePreimageRecording: false,
 	}
-	if ethConf.LightMode {
+	if args.IsLight {
 		if err := stack.Register(func(ctx *node.ServiceContext) (node.Service, error) {
 			return les.New(ctx, ethConf)
 		}); err != nil {
@@ -394,11 +403,11 @@ func NewBlockChain(args NBCParams) (BlockChainProvider, chan bool) {
 		go func() {
 			for {
 				time.Sleep(30 * time.Second)
-				if rv.CurrentBlock() > 2214561 {
+				if rv.CurrentBlock() > 3000000 {
 					break
 				}
 			}
-			err := rv.fethi.StartMining(args.MinerThreads)
+			err := rv.fethi.StartMining(true)
 			fmt.Printf("Mining start error %v\n", err)
 		}()
 	}

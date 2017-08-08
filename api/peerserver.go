@@ -151,16 +151,19 @@ func handleSession(cl *BosswaveClient, conn net.Conn) {
 		tmphdr[16] = byte(f.cmd)
 		rmutex.Lock()
 		defer rmutex.Unlock()
+		conn.SetWriteDeadline(time.Now().Add(60 * time.Second))
 		_, err := conn.Write(tmphdr)
 		if err != nil {
 			log.Info("peer write error: ", err.Error())
 			conn.Close()
+			cl.ctxCancel()
 			return
 		}
 		_, err = conn.Write(f.body)
 		if err != nil {
 			log.Info("peer write error: ", err.Error())
 			conn.Close()
+			cl.ctxCancel()
 		}
 	}
 	errframe := func(seqno uint64, code int, msg string) {
@@ -233,7 +236,6 @@ func handleSession(cl *BosswaveClient, conn net.Conn) {
 					errframe(nf.seqno, bwe.Okay, "")
 					cl.cl.Persist(msg)
 				case core.TypeUnsubscribe:
-
 					err := cl.cl.Unsubscribe(msg.UnsubUMid)
 					if err == nil {
 						errframe(nf.seqno, bwe.Okay, "")
@@ -242,7 +244,7 @@ func handleSession(cl *BosswaveClient, conn net.Conn) {
 					}
 
 				case core.TypeSubscribe, core.TypeTap:
-					subid := cl.cl.Subscribe(msg, func(m *core.Message, subid core.UniqueMessageID) {
+					subid := cl.cl.Subscribe(cl.ctx, msg, func(m *core.Message) {
 						if m == nil {
 							rv := nativeFrame{
 								seqno: nf.seqno,

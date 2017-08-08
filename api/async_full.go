@@ -272,7 +272,7 @@ func (c *BosswaveClient) Subscribe(params *SubscribeParams,
 
 	err = c.VerifyAffinity(m)
 	if err == nil { //Local delivery
-		subid := c.cl.Subscribe(m, func(m *core.Message, subid core.UniqueMessageID) {
+		subid := c.cl.Subscribe(c.ctx, m, func(m *core.Message) {
 			messageCB(m)
 		})
 		regActionCB(nil, subid)

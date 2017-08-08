@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"net/http"
+	_ "net/http/pprof"
+	"os"
 	"runtime"
 	"sync"
 	"time"
@@ -13,7 +16,6 @@ import (
 	"github.com/immesys/bw2/crypto"
 	"github.com/immesys/bw2/objects"
 	"github.com/immesys/bw2bc/common"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 // todo
@@ -125,54 +127,18 @@ func (bw *BW) dropAllCaches() {
 	bw.rdata.holdoff = make(map[bc.Bytes32]uint64)
 }
 
-var btimeDelta prometheus.Gauge
-var btime prometheus.Gauge
-var rtime prometheus.Gauge
-var bDiff prometheus.Gauge
-var bNumber prometheus.Gauge
-
 func init() {
-	btimeDelta = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "total_block_timedelta",
-		Help: "total block time delta",
-	})
-	btime = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "res_block_time",
-		Help: "chain head in resolution (t)",
-	})
-	rtime = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "res_real_time",
-		Help: "chain head in resolution (t)",
-	})
-	bNumber = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "res_block_number",
-		Help: "chain head in resolution (n)",
-	})
-	bDiff = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "res_block_difficulty",
-		Help: "chain head in resolution (n)",
-	})
-	prometheus.MustRegister(btimeDelta)
-	prometheus.MustRegister(btime)
-	prometheus.MustRegister(rtime)
-	prometheus.MustRegister(bNumber)
-	prometheus.MustRegister(bDiff)
+	if os.Getenv("ENABLE_PROFILING") != "" {
+		go func() {
+			http.ListenAndServe("localhost:6061", nil)
+		}()
+	}
 }
 func (bw *BW) startResolutionServices() {
 	bw.rdata.lastblock = bw.BC().CurrentBlock()
 	cheader := bw.BC().NewHeads(context.Background())
-	totalDelta := 0.0
 	go func() {
-		for hdr := range cheader {
-			then := time.Now()
-			htime := time.Unix(hdr.Time.Int64(), 0)
-			delta := then.Sub(htime)
-			totalDelta += float64(delta)
-			btimeDelta.Set(totalDelta)
-			btime.Set(float64(htime.UnixNano()))
-			rtime.Set(float64(time.Now().UnixNano()))
-			bNumber.Set(float64(hdr.Number.Uint64()))
-			bDiff.Set(float64(hdr.Difficulty.Uint64()))
+		for _ = range cheader {
 			//Try avoid making the goroutine for a nop
 			bw.rdata.chainchangemu.Lock()
 			lblock := bw.rdata.lastblock
@@ -181,7 +147,6 @@ func (bw *BW) startResolutionServices() {
 			if lblock != currentBlock {
 				go bw.checkChainChange()
 			}
-			fmt.Printf("Processed new header in %s\n", time.Now().Sub(then))
 		}
 		panic("channel should not end")
 	}()
@@ -612,6 +577,9 @@ func (bw *BW) cacheBuiltChains(k CacheKey, ro []*objects.DChain) {
 			log.Info("observing holdoff")
 			return
 		}
+	}
+	if len(ro) == 0 {
+		return
 	}
 	nsmap, ok := bw.rdata.chaincache[k.nsvk]
 	if !ok {

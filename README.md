@@ -6,7 +6,7 @@ bw2.io
 If you are using a 64 bit Ubuntu release >= 14.04 then the recommended method is:
 
 ```
-curl get.bw2.io/agent | sh
+curl get.bw2.io/agent | bash
 ```
 
 ## What is new

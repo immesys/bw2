@@ -3,7 +3,6 @@ package dotv3
 import (
 	"bytes"
 	"container/list"
-	"fmt"
 
 	"github.com/immesys/bw2/objects"
 	"github.com/immesys/bw2/util"
@@ -99,7 +98,7 @@ func NewChainBuilder(e *Engine, ns []byte, uri, perms string, target []byte) *Ch
 
 func (b *ChainBuilder) dotUseful(d *DOTV3) bool {
 	if !bytes.Equal(d.Label.Namespace, b.nsvk) {
-		fmt.Printf("dot not useful: wrong namespace")
+		//fmt.Printf("dot not useful: wrong namespace")
 		return false
 	}
 	// adps := d.GetPermissionSet()
@@ -114,12 +113,12 @@ func (b *ChainBuilder) dotUseful(d *DOTV3) bool {
 		}
 	}
 	if !hasPerm {
-		fmt.Printf("dot not useful, wrong permissions")
+		//fmt.Printf("dot not useful, wrong permissions")
 		return false
 	}
 	nu, ok := util.RestrictBy(b.urisuffix, string(d.Content.URI))
 	if !ok || nu != b.urisuffix {
-		fmt.Printf("dot not useful, URI is too restrictive")
+		//fmt.Printf("dot not useful, URI is too restrictive")
 		return false
 	}
 	return true
@@ -133,7 +132,7 @@ func (b *ChainBuilder) getOptions(from []byte) []*DOTV3 {
 	rv := []*DOTV3{}
 	for _, d := range dz {
 		if b.dotUseful(d) {
-			fmt.Printf("possible edge DOT")
+			//fmt.Printf("possible edge DOT")
 			rv = append(rv, d)
 		}
 	}
@@ -163,7 +162,7 @@ func (b *ChainBuilder) getOptions(from []byte) []*DOTV3 {
 	// return rv
 }
 
-func (b *ChainBuilder) Build() ([]*objects.DChain, error) {
+func (b *ChainBuilder) Build() ([][]*DOTV3, error) {
 	// ck := CacheKey{
 	// 	uri:   b.uri,
 	// 	perms: b.perms,
@@ -203,10 +202,10 @@ func (b *ChainBuilder) Build() ([]*objects.DChain, error) {
 	for _, dt := range initial {
 		s := NewScenario(dt)
 		if bytes.Equal(s.GetTerminalVK(), b.target) || bytes.Equal(s.GetTerminalVK(), util.EverybodySlice) {
-			fmt.Printf("found valid scenario")
+			//fmt.Printf("found valid scenario")
 			validscenarios.PushBack(s)
 		} else {
-			fmt.Printf("adding scenario: " + s.String())
+			//fmt.Printf("adding scenario: " + s.String())
 			evals.PushBack(s)
 		}
 	}
@@ -221,7 +220,7 @@ func (b *ChainBuilder) Build() ([]*objects.DChain, error) {
 				continue
 			}
 			if bytes.Equal(newscenario.GetTerminalVK(), b.target) || bytes.Equal(newscenario.GetTerminalVK(), util.EverybodySlice) {
-				fmt.Printf("graph walk found a valid scenario!")
+				//fmt.Printf("graph walk found a valid scenario!")
 				validscenarios.PushBack(newscenario)
 			} else {
 				evals.PushBack(newscenario)
@@ -230,10 +229,11 @@ func (b *ChainBuilder) Build() ([]*objects.DChain, error) {
 		evals.Remove(le)
 	}
 	//seen := make(map[string]bool)
-	rv := make([]*objects.DChain, 0, validscenarios.Len())
+	rv := make([][]*DOTV3, 0, validscenarios.Len())
 	e := validscenarios.Front()
 	for e != nil {
-		fmt.Printf("found chain %p", e.Value)
+		//fmt.Printf("found chain %p", e.Value)
+		rv = append(rv, e.Value.(*scenario).chain)
 		// chn := e.Value.(*scenario).ToChain()
 		// k := crypto.FmtHash(chn.GetChainHash())
 		// _, ok := seen[k]

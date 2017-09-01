@@ -18,7 +18,9 @@ func NewEngine() *Engine {
 		DB: db,
 	}
 }
-
+func (e *Engine) Close() {
+	e.DB.Close()
+}
 func (e *Engine) InsertDOT(d *DOTV3) {
 	//Key should be namespace+from
 	key := []byte{}

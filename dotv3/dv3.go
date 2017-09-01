@@ -9,39 +9,6 @@ import (
 	"vuvuzela.io/crypto/ibe"
 )
 
-//go:generate msgp
-
-type DOTV3Content struct {
-	SRCVK       []byte   `msg:"f"`
-	DSTVK       []byte   `msg:"t"`
-	URI         []byte   `msg:"u"`
-	Permissions []string `msg:"x"`
-	Expiry      int64    `msg:"e"`
-	Created     int64    `msg:"w"`
-	Contact     string   `msg:"c"`
-	Comment     string   `msg:"m"`
-	TTL         int8     `msg:"l"`
-}
-type DOTV3Label struct {
-	Namespace []byte `msg:"n"`
-	//For future use. Is appended onto namespace
-	Partition []byte `msg:"p"`
-	Signature []byte `msg:"s"`
-}
-
-type DOTV3 struct {
-	//Private information
-	Content *DOTV3Content
-	//Encoded form
-	EncryptedContent []byte
-	PlaintextContent []byte
-
-	//Public information
-	Label *DOTV3Label
-	//Encoded form
-	EncodedLabel []byte
-}
-
 //Available information to assist decryption
 type DecryptionContext struct {
 	Pub    *ibe.MasterPublicKey
@@ -85,7 +52,7 @@ func (dt *DOTV3) Reveal(ctx *DecryptionContext) error {
 	}
 	if ctx.Entity != nil {
 		blob, err := box.DecryptBoxWithEd25519(dt.EncryptedContent, ctx.Entity)
-		if err != nil {
+		if err == nil {
 			dt.PlaintextContent = blob
 			content := &DOTV3Content{}
 			rem, err := content.UnmarshalMsg(blob)
@@ -104,7 +71,7 @@ func (dt *DOTV3) Reveal(ctx *DecryptionContext) error {
 		id = append(id, dt.Label.Partition...)
 		bid := box.ExtractIdentity(ctx.Pub, ctx.Priv, id)
 		blob, err := box.DecryptBoxWithIBEK(dt.EncryptedContent, bid)
-		if err != nil {
+		if err == nil {
 			dt.PlaintextContent = blob
 			content := &DOTV3Content{}
 			rem, err := content.UnmarshalMsg(blob)
@@ -121,7 +88,7 @@ func (dt *DOTV3) Reveal(ctx *DecryptionContext) error {
 	return fmt.Errorf("insufficient stuffs in context")
 }
 
-func (dt *DOTV3) Encode(src *objects.Entity, ed25519Recipients [][]byte, ibeRecipients []*ibe.MasterPublicKey) error {
+func (dt *DOTV3) Encode(src *objects.Entity, ed25519Recipients [][]byte, ibeRecipients []*ibe.MasterPublicKey) ([]byte, error) {
 	plaintextcontents, err := dt.Content.MarshalMsg(nil)
 	if err != nil {
 		panic(err)
@@ -132,17 +99,40 @@ func (dt *DOTV3) Encode(src *objects.Entity, ed25519Recipients [][]byte, ibeReci
 		bx.AddEd25519Keyhole(vk)
 	}
 	for _, ibek := range ibeRecipients {
-		bx.AddIBEKeyhole(ibek, dt.Label.Partition)
+		id := append([]byte{}, dt.Label.Namespace...)
+		id = append(id, dt.Label.Partition...)
+		bx.AddIBEKeyhole(ibek, id)
 	}
 	dt.EncryptedContent, err = bx.Encrypt()
 	if err != nil {
 		panic(err)
 	}
+	sig := make([]byte, 64)
+	dt.Label.Signature = nil
 	dt.EncodedLabel, err = dt.Label.MarshalMsg(nil)
 	if err != nil {
 		panic(err)
 	}
-	return nil
+	vec := make([]byte, 0, len(dt.EncodedLabel)+len(dt.PlaintextContent))
+	vec = append(vec, dt.EncodedLabel...)
+	vec = append(vec, dt.PlaintextContent...)
+	crypto.SignBlob(src.GetSK(), src.GetVK(), sig, vec)
+	if err != nil {
+		panic(err)
+	}
+	dt.Label.Signature = sig
+	return bx.AESK, nil
+}
+
+func (dt *DOTV3) Marshal() []byte {
+	if len(dt.EncodedLabel) == 0 || len(dt.EncryptedContent) == 0 {
+		panic("need to encode first")
+	}
+	rv := make([]byte, 0, len(dt.EncodedLabel)+len(dt.EncryptedContent)+64)
+	rv = append(rv, dt.EncodedLabel...)
+	rv = append(rv, dt.Label.Signature...)
+	rv = append(rv, dt.EncryptedContent...)
+	return rv
 }
 
 func (dt *DOTV3) Validate() error {

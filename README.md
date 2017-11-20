@@ -1,12 +1,12 @@
 bw2.io
 ======
 
-## How to install the Fermion release
+## How to install the latest release
 
 If you are using a 64 bit Ubuntu release >= 14.04 then the recommended method is:
 
 ```
-curl get.bw2.io/agent | bash
+curl get.bw2.io/agent | sudo bash
 ```
 
 ## What is new

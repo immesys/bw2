@@ -98,7 +98,7 @@ func NewChainBuilder(e *Engine, ns []byte, uri, perms string, target []byte) *Ch
 
 func (b *ChainBuilder) dotUseful(d *DOTV3) bool {
 	if !bytes.Equal(d.Label.Namespace, b.nsvk) {
-		//fmt.Printf("dot not useful: wrong namespace")
+		//x fmt.Printf("dot not useful: wrong namespace\n")
 		return false
 	}
 	// adps := d.GetPermissionSet()
@@ -113,14 +113,15 @@ func (b *ChainBuilder) dotUseful(d *DOTV3) bool {
 		}
 	}
 	if !hasPerm {
-		//fmt.Printf("dot not useful, wrong permissions")
+		//x fmt.Printf("dot not useful, wrong permissions\n")
 		return false
 	}
 	nu, ok := util.RestrictBy(b.urisuffix, string(d.Content.URI))
 	if !ok || nu != b.urisuffix {
-		//fmt.Printf("dot not useful, URI is too restrictive")
+		//x fmt.Printf("dot not useful, URI is too restrictive: %v %q %q %q\n", ok, nu, b.urisuffix, string(d.Content.URI))
 		return false
 	}
+	//x fmt.Printf("dot is useful\n")
 	return true
 }
 
@@ -129,8 +130,10 @@ func (b *ChainBuilder) getOptions(from []byte) []*DOTV3 {
 	if err != nil {
 		panic(err)
 	}
+	//x fmt.Printf("lookup returned %d dots\n", len(dz))
 	rv := []*DOTV3{}
 	for _, d := range dz {
+		//x fmt.Printf("evaluating edge dot: %v\n", string(d.Content.URI))
 		if b.dotUseful(d) {
 			//fmt.Printf("possible edge DOT")
 			rv = append(rv, d)

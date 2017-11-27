@@ -1,6 +1,8 @@
 package dotv3
 
 import (
+	"crypto/rand"
+
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/util"
 )
@@ -26,6 +28,9 @@ func (e *Engine) InsertDOT(d *DOTV3) {
 	key := []byte{}
 	key = append(key, d.Label.Namespace...)
 	key = append(key, d.Content.SRCVK...)
+	randomness := make([]byte, 16)
+	rand.Read(randomness)
+	key = append(key, randomness...)
 	body, err := d.MarshalMsg(nil)
 	if err != nil {
 		panic(err)

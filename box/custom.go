@@ -362,7 +362,10 @@ func (bx *BW2Box) Encrypt() ([]byte, error) {
 	//We are using the AESK as a type of nonce here to prevent the signature from
 	//meaning too much on the message contents (so an oracle attack cannot use
 	//box signing to make DoTs for example)
-	crypto.SignVector(bx.owner.GetSK(), bx.owner.GetVK(), out[48:48+64], bx.AESK, bx.Contents)
+	vec := []byte{}
+	vec = append(vec, bx.AESK...)
+	vec = append(vec, bx.Contents...)
+	crypto.SignBlob(bx.owner.GetSK(), bx.owner.GetVK(), out[48:48+64], vec) //,, bx.AESK, bx.Contents)
 	off := 48 + 64
 	for i := 0; i < len(bx.ibeKeyholes); i++ {
 		keyhole_ciphertext := bx.makeIBEKeyhole(bx.ibeKeyholes[i].targetpk, bx.ibeKeyholes[i].identity)

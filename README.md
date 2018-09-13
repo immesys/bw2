@@ -5,9 +5,26 @@ bw2.io
 
 If you are using a 64 bit Ubuntu release >= 14.04 then the recommended method is:
 
-```
+```bash
 curl get.bw2.io/agent | sudo bash
 ```
+
+If you are using Windows 10, installing bw2 is possible for development purposes using WSL:
+
+1. Start cmd.exe
+2. Run the command: `Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux` and reboot.
+3. Go to the windows store and download "Ubuntu 18.04" or newer.
+4. Go to cmd.exe again and write "bash", which starts the Linux environment.
+5. Enter the command from the Linux install guide `curl get.bw2.io/agent | sudo bash` to install BOSSWAVE.
+6. Enjoy running BW2 on Windows.
+
+Running BW2 on windows in this way has one drawback: The service BW2 service does not automatically start after a reboot. To do this run the following command:
+
+```Batchfile
+sudo /etc/init.d/bw2 start
+```
+
+If cause this process can be automated by running it at system start. Sockets are shared with the windows host, and therefore, the BW2 bindings can be run directly on top of windows, and not the Linux environment.
 
 ## What is new
 
@@ -123,7 +140,7 @@ bw2 inspect --publish --bankroll highroller.ent highroller.ent
 Waiting for entity jMYG9Oj0bqbmITTSqdACFBztgNcVR2oE1w4tglmQyGQ=
 
 Current BCIP set to 2 confirmation blocks or 20 block timeout
-confirming:🔗🔗🔗🔗 (last block genesis was 3 seconds ago)  
+confirming:🔗🔗🔗🔗 (last block genesis was 3 seconds ago)
 Successfully published Entity jMYG9Oj0bqbmITTSqdACFBztgNcVR2oE1w4tglmQyGQ=
 ```
 

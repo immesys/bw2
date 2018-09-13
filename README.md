@@ -24,7 +24,7 @@ Running BW2 on windows in this way has one drawback: The service BW2 service doe
 sudo /etc/init.d/bw2 start
 ```
 
-If cause this process can be automated by running it at system start. Sockets are shared with the windows host, and therefore, the BW2 bindings can be run directly on top of windows, and not the Linux environment.
+Of course this process can be automated by running it at system start. Sockets are shared with the Windows host, and therefore, the BW2 bindings can be run directly on top of Windows, and not the Linux environment.
 
 ## What is new
 

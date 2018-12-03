@@ -206,16 +206,17 @@ func NewBlockChain(args NBCParams) (BlockChainProvider, chan bool) {
 		Name:              "BW2",
 		Version:           vsn,
 		UserIdent:         nodeUserIdent,
-		P2P:               p2p,
-		IPCPath:           "",
-		HTTPHost:          "",
-		HTTPPort:          0,
-		HTTPCors:          []string{},
-		HTTPModules:       []string{},
-		WSHost:            "",
-		WSPort:            0,
-		WSOrigins:         []string{},
-		WSModules:         []string{},
+
+		P2P:         p2p,
+		IPCPath:     "",
+		HTTPHost:    "",
+		HTTPPort:    0,
+		HTTPCors:    []string{},
+		HTTPModules: []string{},
+		WSHost:      "",
+		WSPort:      0,
+		WSOrigins:   []string{},
+		WSModules:   []string{},
 	}
 	stack, err := node.New(config)
 	if err != nil {
@@ -400,6 +401,13 @@ func NewBlockChain(args NBCParams) (BlockChainProvider, chan bool) {
 
 	// Start auxiliary services if enabled
 	if args.MinerThreads > 0 && !args.IsLight {
+		// type threaded interface {
+		// 	SetThreads(threads int)
+		// }
+		// if th, ok := fethi.Engine().(threaded); ok {
+		// 	th.SetThreads(args.MinerThreads)
+		// }
+
 		go func() {
 			for {
 				time.Sleep(30 * time.Second)
@@ -412,6 +420,12 @@ func NewBlockChain(args NBCParams) (BlockChainProvider, chan bool) {
 		}()
 	}
 
+	go func() {
+		for {
+			time.Sleep(15 * time.Second)
+			fmt.Printf("XXX: mining is %v\n", rv.fethi.IsMining())
+		}
+	}()
 	// rv.api_pubchain = eth.NewPublicBlockChainAPI_S(ethi)
 	// rv.api_pubtx = eth.NewPublicTransactionPoolAPI(ethi)
 	// rv.api_privacct = eth.NewPrivateAccountAPI(ethi)
